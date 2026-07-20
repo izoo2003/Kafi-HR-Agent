@@ -1,0 +1,52 @@
+# Role profiles used to steer CV scoring per position.
+# Add one entry per open role. `aliases` lets the pipeline match a role even
+# if the applicant/email/form typed the title slightly differently.
+# `default` is used whenever an applied-for position has no matching entry
+# below, so scoring never breaks for a role we haven't profiled yet.
+
+default:
+  title: "General Role"
+  aliases: []
+  required_skills: []
+  nice_to_have_skills: []
+  min_experience_years: 0
+  description: >
+    No specific role profile has been defined yet for this position.
+    Score generically on experience quality, skill breadth, education,
+    measurable impact, and CV clarity.
+
+roles:
+  - key: ai_engineer
+    title: "AI Engineer"
+    aliases:
+      - "AI Engineer"
+      - "AI/ML Engineer"
+      - "Machine Learning Engineer"
+      - "Applied AI Engineer"
+    required_skills:
+      - Python
+      - "LLM / RAG pipelines"
+      - "LangChain or LangGraph"
+      - "API development (FastAPI/Flask)"
+      - "Cloud deployment (AWS/GCP/Azure)"
+    nice_to_have_skills:
+      - Docker
+      - Kubernetes
+      - "Vector databases (Pinecone/FAISS/Chroma)"
+      - "Computer Vision (YOLO/CNN)"
+      - MLOps
+    min_experience_years: 1
+    description: >
+      Builds and ships AI-powered systems: LLM/agentic pipelines, RAG,
+      model integration, and production deployment. Looking for
+      demonstrated, shipped impact over pure coursework.
+
+  # Add more roles below as job descriptions are finalized, e.g.:
+  # - key: hr_executive
+  #   title: "HR Executive"
+  #   aliases: ["HR Executive", "HR Generalist"]
+  #   required_skills: [...]
+  #   nice_to_have_skills: [...]
+  #   min_experience_years: 1
+  #   description: >
+  #     ...

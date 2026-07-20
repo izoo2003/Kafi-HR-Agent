@@ -1,0 +1,32 @@
+# CV Scoring Rubric — HR & Admin Agent
+# Generic weighted rubric applied to every role. Role-specific expectations
+# (required/nice-to-have skills, min experience) live in roles.yaml and are
+# injected into the LLM prompt alongside these weights.
+#
+# Weights must sum to 100.
+
+weights:
+  relevant_experience: 30 # depth/seniority of experience directly tied to the role
+  technical_skill_match: 25 # overlap with required_skills / nice_to_have_skills for the role
+  education: 15 # degree relevance + institution/academic standing
+  measurable_impact: 15 # quantified outcomes, shipped projects, production systems
+  certifications_learning: 10 # certifications, courses, continuous learning signals
+  cv_quality_clarity: 5 # clarity, structure, completeness of the CV/contact info
+
+verdict_bands:
+  - min_score: 85
+    max_score: 100
+    label: "STRONG HIRE"
+    description: "Experienced, production-grade skills, measurable impact"
+  - min_score: 70
+    max_score: 84
+    label: "RECOMMEND"
+    description: "Solid skills with relevant experience, good growth potential"
+  - min_score: 55
+    max_score: 69
+    label: "CONDITIONAL"
+    description: "Emerging skills; suitable for junior roles or re-evaluation later"
+  - min_score: 0
+    max_score: 54
+    label: "NOT RECOMMENDED"
+    description: "Insufficient experience for current hiring requirements"

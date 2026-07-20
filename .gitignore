@@ -1,0 +1,22 @@
+# --- Backend (Python) ---
+backend/.venv/
+backend/venv/
+**/__pycache__/
+**/*.pyc
+backend/.env
+backend/credentials/*.json
+backend/data/*.db
+backend/data/cv_files/*
+backend/data/reports/*
+!backend/data/cv_files/.gitkeep
+!backend/data/reports/.gitkeep
+
+# --- Frontend (Node) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/*.local
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
