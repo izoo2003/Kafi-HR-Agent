@@ -1,29 +1,19 @@
 # HR & Admin Agent
 
-Phase 1: **CV Ranking** — ingests candidate CVs from Gmail and a Google
-Form, scores them against role-specific criteria using Gemini, ranks them
-per position, and produces HR-friendly formatted Excel reports. A React
-dashboard lets HR trigger the pipeline and browse rankings without touching
-the CLI.
-
-WhatsApp intake is stubbed for a later phase.
+Bounded HR & Admin capability module (Agent 10). Specs live in `docs/` and
+are mirrored as always-on Cursor rules under `.cursor/rules/`.
 
 ## Structure
 
 ```
-backend/    Python — FastAPI + CLI, ingestion/scoring/ranking/reporting pipeline
-frontend/   React + Vite + TypeScript — admin dashboard consuming the backend API
+backend/    Python FastAPI — /api/v1, JWT auth, SQLAlchemy, Alembic
+frontend/   React + Vite + TypeScript (awaiting frontend rule pack)
+docs/       Foundational + backend architecture sources of truth
 ```
 
-See `backend/README.md` and `frontend/README.md` for full setup details
-(Gemini API key, Google OAuth, Google Form field spec, etc.). Quick start
-below assumes that one-time setup is already done.
+## Running
 
-## Running the project
-
-Two terminals, from the project root:
-
-**Terminal 1 — backend API** (port **8808**)
+**Terminal 1 — backend (port 8808)**
 
 ```powershell
 cd backend
@@ -31,26 +21,21 @@ cd backend
 python main.py
 ```
 
-**Terminal 2 — frontend dashboard** (port **5288**)
+**Terminal 2 — frontend (port 5288)**
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Then open http://localhost:5288 (or http://127.0.0.1:5288).
+Open http://localhost:5288 — sign in with seed admin from `backend/.env`
+(default `admin@kafi-group.com` / `ChangeMeAdmin123!`).
 
-### Alternative: backend-only via CLI (no dashboard, scriptable/cron-friendly)
+## Docs / rules
 
-```powershell
-cd backend
-.venv\Scripts\activate
-python main.py cli run-all
-```
-
-## Multi-agent integration
-
-This agent is built to plug into a future shared orchestrator without a
-rewrite — see the always-applied Cursor rule `.cursor/rules/hr-admin-agent.mdc`
-and `backend/app/integration/interface.py`, the only module a parent/sibling
-agent should ever import from.
+| Pack | Docs |
+|------|------|
+| Foundational | `PROJECT_OVERVIEW`, `DATABASE_SCHEMA`, `API_ENDPOINTS`, `INTEGRATION_CONTRACT` |
+| Backend | `BACKEND_ARCHITECTURE`, `AUTH_AND_RBAC` |
+| Frontend | `FRONTEND_ARCHITECTURE`, `UI_DESIGN_SYSTEM` |
+| Next | Feature packs + `IMPLEMENTATION_PHASES.md` |

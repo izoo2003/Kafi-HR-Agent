@@ -1,0 +1,25 @@
+---
+description: Rule pack index — all foundational, backend, frontend, feature, and phase docs
+alwaysApply: true
+---
+
+# Cursor Rule Packs — HR & Admin Agent
+
+## Foundational / Backend / Frontend
+See existing `foundational-*`, `backend-*`, `frontend-*` rules.
+
+## Features & Phases (active)
+
+| Rule | Source |
+|---|---|
+| `phases-implementation.mdc` | `docs/IMPLEMENTATION_PHASES.md` |
+| `feature-cv-screening.mdc` | `docs/FEATURE_CV_SCREENING.md` |
+| `feature-attendance.mdc` | `docs/FEATURE_ATTENDANCE.md` |
+| `feature-payroll.mdc` | `docs/FEATURE_PAYROLL.md` |
+| `feature-kpi.mdc` | `docs/FEATURE_KPI.md` |
+| `feature-admin-panel.mdc` | `docs/FEATURE_ADMIN_PANEL.md` |
+| `feature-audit-log.mdc` | `docs/FEATURE_AUDIT_LOG.md` |
+
+## Build order (do not skip)
+
+Phase 0 ✅ → Phase 1 (Employees) → Phase 2 (CV) → Phase 3 (Attendance) → Phase 4 (Payroll) → Phase 5 (KPI) → Phase 6 (Admin/Audit UI) → Phase 7 (Integration)

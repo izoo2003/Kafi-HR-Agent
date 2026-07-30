@@ -1,0 +1,162 @@
+# PROJECT OVERVIEW — HR & Admin Agent (Agent 10)
+
+> Read this file first in every new Cursor session. It is the single source of truth for scope, stack, and structure. If anything in chat contradicts this file, this file wins unless the user explicitly says otherwise.
+
+---
+
+## 1. What This Project Is
+
+This project builds **one** agent out of a future multi-agent admin system: the **HR & Admin Agent**. Other developers are building sibling agents (e.g. a Utilities & Maintenance agent covering kitchen, IT, generator, solar). Those are **not** built here. This agent must work standalone today and plug into a shared orchestrator later without a rewrite.
+
+### In Scope (build these — all Critical priority)
+
+| # | Module | Summary |
+|---|--------|---------|
+| 1 | Job Descriptions | CRUD for job descriptions per role, Word/PDF export |
+| 2 | CV Screening | Upload → parse → score against per-role criteria → rank candidates |
+| 3 | Attendance | Attendance sheet format, biometric device data ingestion, rules engine |
+| 4 | Payroll | Base + overtime + deductions + advances → net salary, payslips |
+| 5 | KPI | Per-department KPI definitions, target vs actual tracking |
+| 6 | User Role Matrix | Who can access which agent/module — the RBAC backbone |
+| 7 | Admin Control Panel | Unified dashboard, user management, audit log viewer |
+| — | Audit Logging | Every meaningful action logged for the admin panel |
+
+### Explicitly Out of Scope (do NOT build here)
+
+These belong to the **Utilities & Maintenance agent** being built by someone else. If a feature request touches any of these, flag it and stop — do not implement it in this codebase, even as a stub with real logic:
+
+- Kitchen inventory & reorder levels
+- IT equipment register
+- Generator maintenance schedule & fuel log
+- Solar system specs & monitoring
+- Internet & utility account details
+- IoT sensors on generator/solar
+- IT asset management system
+
+**Rule of thumb:** if it's about people, pay, performance, or admin access control → in scope. If it's about physical assets, utilities, or facilities → out of scope, route to sibling agent later via the integration interface.
+
+---
+
+## 2. Tech Stack
+
+### Backend
+- **Language:** Python 3.11+
+- **Framework:** FastAPI
+- **Database:** SQLite (file-based, lives in `backend/data/`)
+- **ORM:** SQLAlchemy (recommended) with Alembic for migrations
+- **Auth:** JWT-based session tokens, role claims embedded in token
+- **File parsing:** CV ingestion pipeline (PDF/Word parsing — library TBD in `BACKEND_ARCHITECTURE.md`)
+- **Validation:** Pydantic v2 models for all request/response schemas
+
+### Frontend
+- **Framework:** React 18+
+- **Build tool:** Vite
+- **Language:** TypeScript (strict mode)
+- **Styling:** defined in `UI_DESIGN_SYSTEM.md`
+- **Data fetching:** React Query (TanStack Query) recommended for server state
+- **Routing:** React Router
+
+### Dev/Infra
+- Backend and frontend run as separate processes in dev (`uvicorn` + `vite dev server`)
+- Frontend talks to backend **only** via REST API at `VITE_API_BASE_URL` — never imports backend code directly
+- Secrets (OAuth, API keys) live in `backend/credentials/`, gitignored, never committed
+
+---
+
+## 3. Folder Structure
+
+```
+project-root/
+├── backend/
+│   ├── app/
+│   │   ├── api/                  # FastAPI routers — one subfolder/file per module
+│   │   │   └── routes/
+│   │   │       ├── auth.py
+│   │   │       ├── users.py
+│   │   │       ├── job_descriptions.py
+│   │   │       ├── cv_screening.py
+│   │   │       ├── attendance.py
+│   │   │       ├── payroll.py
+│   │   │       ├── kpi.py
+│   │   │       └── audit_log.py
+│   │   ├── ingestion/             # CV file intake, biometric data intake
+│   │   ├── parsing/                # CV text/field extraction
+│   │   ├── scoring/                 # CV scoring engine against criteria
+│   │   ├── ranking/                  # Candidate ranking logic
+│   │   ├── reporting/                 # PDF/Word/Excel report + export generation
+│   │   ├── integration/
+│   │   │   └── interface.py            # ⚠️ ONLY module a future orchestrator/sibling agent imports
+│   │   ├── models/                       # SQLAlchemy models
+│   │   ├── schemas/                       # Pydantic request/response schemas
+│   │   ├── core/                           # config, security, dependencies, db session
+│   │   └── pipeline.py                      # Orchestrates ingestion→parsing→scoring→ranking→reporting
+│   ├── data/                                 # SQLite db file(s), gitignored contents except .gitkeep
+│   ├── config/                                # YAML/JSON config (scoring weights, KPI templates, etc.)
+│   ├── credentials/                            # OAuth/API secrets — gitignored
+│   ├── alembic/                                  # DB migrations
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── pages/                # One folder per module, matches backend modules
+│   │   │   ├── JobDescriptions/
+│   │   │   ├── CvScreening/
+│   │   │   ├── Attendance/
+│   │   │   ├── Payroll/
+│   │   │   ├── Kpi/
+│   │   │   └── AdminPanel/
+│   │   ├── components/            # Shared/reusable UI components
+│   │   ├── api/                     # API client functions, one file per backend module
+│   │   ├── hooks/                     # Shared React hooks
+│   │   ├── context/                     # Auth context, role context
+│   │   ├── types/                         # Shared TS types (mirror backend Pydantic schemas)
+│   │   └── styles/                          # Design tokens, global CSS
+│   ├── .env                                    # VITE_API_BASE_URL etc.
+│   └── package.json
+└── docs/                                          # This documentation set
+```
+
+**Convention:** every new backend capability gets its own module under `backend/app/` (or a subfolder of an existing one) plus its own route file under `backend/app/api/routes/`. Every new frontend feature gets its own folder under `src/pages/` plus API functions under `src/api/`. Keep this 1:1 mapping for every future phase.
+
+---
+
+## 4. Multi-Agent Integration Principles
+
+This agent must be built as a **bounded capability module**, not a closed monolith, because it will eventually sit alongside sibling agents under one orchestrator.
+
+- **Single public interface:** `backend/app/integration/interface.py` is the *only* file any future orchestrator or sibling agent is allowed to import from. Nothing else in `backend/app/` is a stable external contract.
+- **Typed contracts:** all request/response shapes are Pydantic models. All events emitted (see `INTEGRATION_CONTRACT.md`) have documented, versioned shapes.
+- **Shared identity:** roles and permissions align with the shared user role matrix (in scope item 6). Don't invent a parallel auth system — this agent's RBAC must be mergeable into a shared one later.
+- **Integration seams left as stubs:** registry entry, event hooks, and "auth context from parent" should exist as no-ops now, so wiring them up later doesn't require restructuring code.
+- **No hardcoded ownership of out-of-scope domains.** If a KPI or admin panel feature seems to need kitchen/IT/generator/solar data, it should call out to the sibling agent via the (stubbed) integration interface — never implement that logic here.
+- **Test question for every new feature:** *"Will this still work when this agent is one of many under one admin control plane?"* If the answer requires assuming this agent is the only one running, redesign it.
+
+---
+
+## 5. Working Style / Build Order
+
+- Build in **stages/phases** — see `IMPLEMENTATION_PHASES.md` for the actual sequencing.
+- Do not silently expand scope into utilities/maintenance territory, even if it "would be easy to add."
+- Prefer clear module boundaries over premature coupling to sibling agents' internals — everything sibling-facing goes through the integration interface, not direct imports.
+- Every module (attendance, payroll, KPI, admin panel, etc.) follows the same backend+frontend split described in section 3, no exceptions.
+
+---
+
+## 6. Related Docs in This Set
+
+| File | Purpose |
+|---|---|
+| `DATABASE_SCHEMA.md` | All tables, columns, relationships, migrations |
+| `API_ENDPOINTS.md` | Full REST contract |
+| `INTEGRATION_CONTRACT.md` | Public interface spec for orchestrator/sibling agents |
+| `BACKEND_ARCHITECTURE.md` | Internal backend module design |
+| `AUTH_AND_RBAC.md` | Role matrix implementation |
+| `FRONTEND_ARCHITECTURE.md` | Frontend structure & state management |
+| `UI_DESIGN_SYSTEM.md` | Visual design system |
+| `FEATURE_CV_SCREENING.md` | CV screening module spec |
+| `FEATURE_ATTENDANCE.md` | Attendance module spec |
+| `FEATURE_PAYROLL.md` | Payroll module spec |
+| `FEATURE_KPI.md` | KPI module spec |
+| `FEATURE_ADMIN_PANEL.md` | Admin control panel spec |
+| `FEATURE_AUDIT_LOG.md` | Audit logging spec |
+| `IMPLEMENTATION_PHASES.md` | Build order & milestones |

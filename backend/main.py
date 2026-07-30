@@ -1,13 +1,4 @@
-"""Backend entry point.
-
-Start the API server:
-    python main.py
-
-Optional CLI (same as `python -m app.cli ...`):
-    python main.py cli init-db
-    python main.py cli fetch
-    python main.py cli run-all
-"""
+"""Backend entry point — uvicorn serves app.main:app."""
 from __future__ import annotations
 
 import os
@@ -17,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Dedicated HR Agent ports (avoid common 8000/8080/5173 used by other projects).
 DEFAULT_PORT = 8808
 
 
@@ -26,7 +16,6 @@ def run_server() -> None:
 
     host = os.getenv("API_HOST", "127.0.0.1")
     port = int(os.getenv("API_PORT", str(DEFAULT_PORT)))
-    # Reload can fail with WinError 10013 on some Windows setups; enable via API_RELOAD=1
     reload = os.getenv("API_RELOAD", "0").strip().lower() in {"1", "true", "yes"}
 
     print(f"Starting HR & Admin Agent API at http://{host}:{port}")
@@ -34,7 +23,7 @@ def run_server() -> None:
 
     try:
         uvicorn.run(
-            "app.api.main:app",
+            "app.main:app",
             host=host,
             port=port,
             reload=reload,
@@ -47,10 +36,4 @@ def run_server() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "cli":
-        from app.cli import cli
-
-        sys.argv = [sys.argv[0], *sys.argv[2:]]
-        cli()
-    else:
-        run_server()
+    run_server()

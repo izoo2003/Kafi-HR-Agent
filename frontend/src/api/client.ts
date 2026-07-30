@@ -1,75 +1,124 @@
-import type {
-  CandidateRanking,
-  JobState,
-  PositionSummary,
-  SourceChannel,
-} from "./types";
+import { keysToCamel, keysToSnake } from "../lib/case";
+import type { ApiErrorResponse } from "../types/common";
 
-// Empty = same origin (Vite proxy in dev). Override only if you intentionally
-// call the API on another host.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
-  let response: Response;
-  try {
-    response = await fetch(url, options);
-  } catch {
-    throw new Error(
-      `Failed to reach API at ${url || path}. ` +
-        `Make sure backend is running (cd backend && python main.py) AND ` +
-        `the Vite dev server was restarted after config changes.`,
-    );
-  }
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`${response.status} ${response.statusText}: ${body}`);
-  }
-  return (await response.json()) as T;
+const ACCESS_KEY = "hr_access_token";
+const REFRESH_KEY = "hr_refresh_token";
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_KEY);
 }
 
-async function startAndWait(path: string, label: string): Promise<JobState> {
-  const started = await request<JobState>(path, { method: "POST" });
-  if (started.status !== "running") {
-    return started;
-  }
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY);
+}
 
-  const deadline = Date.now() + 5 * 60 * 1000;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1500));
-    const state = await request<JobState>("/pipeline/status");
-    if (state.status === "succeeded" || state.status === "failed" || state.status === "idle") {
-      if (state.status === "failed") {
-        throw new Error(state.error || state.message || `${label} failed`);
+export function setTokens(access: string, refresh: string): void {
+  localStorage.setItem(ACCESS_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  details?: Record<string, unknown> | null;
+
+  constructor(status: number, body: ApiErrorResponse | string) {
+    if (typeof body === "string") {
+      super(body);
+      this.code = "internal_error";
+      this.details = null;
+    } else {
+      super(body.error.message);
+      this.code = body.error.code;
+      this.details = body.error.details;
+    }
+    this.status = status;
+    this.name = "ApiError";
+  }
+}
+
+type RequestOptions = {
+  method?: string;
+  body?: unknown;
+  params?: Record<string, string | number | boolean | undefined>;
+  auth?: boolean;
+  formData?: FormData;
+};
+
+function buildUrl(path: string, params?: RequestOptions["params"]): string {
+  const base = BASE_URL.replace(/\/$/, "");
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${base}${cleanPath}`, window.location.origin);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) {
+        url.searchParams.set(keysToSnake({ [k]: v }) && typeof k === "string" ? k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`) : k, String(v));
       }
-      return state;
     }
   }
-  throw new Error(
-    `${label} is still running after 5 minutes. Check the backend terminal logs, ` +
-      `then refresh this page.`,
-  );
+  // Relative to origin when BASE_URL is absolute path
+  return url.pathname + url.search;
 }
 
-export const api = {
-  listPositions: () => request<PositionSummary[]>("/positions"),
+let onUnauthorized: (() => void) | null = null;
 
-  listCandidates: (position: string) =>
-    request<CandidateRanking[]>(`/positions/${encodeURIComponent(position)}/candidates`),
+export function setUnauthorizedHandler(handler: () => void): void {
+  onUnauthorized = handler;
+}
 
-  fetchSubmissions: (source: SourceChannel = "all") =>
-    startAndWait(`/pipeline/fetch?source=${source}`, "fetch"),
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  const useAuth = options.auth !== false;
+  if (useAuth) {
+    const token = getAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
 
-  scorePending: () => startAndWait("/pipeline/score", "score"),
+  let body: BodyInit | undefined;
+  if (options.formData) {
+    body = options.formData;
+  } else if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(keysToSnake(options.body));
+  }
 
-  recomputeRanks: () => startAndWait("/pipeline/rank", "rank"),
+  const response = await fetch(buildUrl(path, options.params), {
+    method: options.method ?? (options.body || options.formData ? "POST" : "GET"),
+    headers,
+    body,
+  });
 
-  runFullPipeline: () => startAndWait("/pipeline/run-all", "run-all"),
+  if (response.status === 204) {
+    return undefined as T;
+  }
 
-  getPipelineStatus: () => request<JobState>("/pipeline/status"),
+  const text = await response.text();
+  let parsed: unknown = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
 
-  masterReportUrl: () => `${API_BASE_URL}/reports/master`,
+  if (!response.ok) {
+    const err =
+      parsed && typeof parsed === "object" && "error" in (parsed as object)
+        ? new ApiError(response.status, keysToCamel<ApiErrorResponse>(parsed))
+        : new ApiError(response.status, typeof parsed === "string" ? parsed : "Request failed");
+    if (err.code === "unauthorized" || response.status === 401) {
+      onUnauthorized?.();
+    }
+    throw err;
+  }
 
-  positionReportUrl: (position: string) =>
-    `${API_BASE_URL}/reports/positions/${encodeURIComponent(position)}`,
-};
+  return keysToCamel<T>(parsed);
+}

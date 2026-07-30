@@ -1,0 +1,1 @@
+export { PayrollRunDetailPage } from "./PayrollRunListPage";

@@ -1,0 +1,54 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--color-status-neutral-bg);
+  color: var(--color-status-neutral);
+}
+
+[data-badge-status="positive"],
+[data-badge-status="present"],
+[data-badge-status="approved"],
+[data-badge-status="hired"],
+[data-badge-status="shortlisted"],
+[data-badge-status="on_target"],
+[data-badge-status="paid"] {
+  background: var(--color-status-positive-bg);
+  color: var(--color-status-positive);
+}
+
+[data-badge-status="warning"],
+[data-badge-status="late"],
+[data-badge-status="pending"],
+[data-badge-status="pending_approval"],
+[data-badge-status="at_risk"] {
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning);
+}
+
+[data-badge-status="critical"],
+[data-badge-status="absent"],
+[data-badge-status="rejected"],
+[data-badge-status="below_target"] {
+  background: var(--color-status-critical-bg);
+  color: var(--color-status-critical);
+}
+
+[data-badge-status="info"],
+[data-badge-status="scored"],
+[data-badge-status="on_leave"] {
+  background: var(--color-status-info-bg);
+  color: var(--color-status-info);
+}
+
+[data-badge-status="neutral"],
+[data-badge-status="draft"],
+[data-badge-status="uploaded"] {
+  background: var(--color-status-neutral-bg);
+  color: var(--color-status-neutral);
+}

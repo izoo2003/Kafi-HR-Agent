@@ -1,0 +1,165 @@
+---
+description: Backend pack: layering (routes→services→pipeline→engines→models→core), module layout, stubs, startup sequence
+alwaysApply: true
+---
+
+# BACKEND ARCHITECTURE — HR & Admin Agent
+
+> How `backend/app/` is wired internally. Read alongside `PROJECT_OVERVIEW.md` (structure), `DATABASE_SCHEMA.md` (models), `API_ENDPOINTS.md` (routes), and `INTEGRATION_CONTRACT.md` (the one file outside code that's allowed to be imported externally).
+
+---
+
+## 1. Layering
+
+Strict one-directional dependency flow. A layer may only call the layer(s) below it, never sideways into another route's business logic and never upward.
+
+```
+api/routes/*.py        ← FastAPI routers: request validation, permission check, call service, return schema
+        │
+services (per module)  ← business logic: orchestrates models + pipeline steps, enforces business rules
+        │
+pipeline.py             ← cross-cutting orchestration for multi-step flows (CV ingestion→parsing→scoring→ranking→reporting)
+        │
+ingestion / parsing / scoring / ranking / reporting   ← single-purpose engines, no knowledge of HTTP or DB sessions beyond what's passed in
+        │
+models/ (SQLAlchemy)   ← DB schema, no business logic
+        │
+core/ (db session, config, security)
+```
+
+`integration/interface.py` sits **beside** this stack, not inside it — it's the only module allowed to be called from outside `backend/app/`, and internally it calls into services the same way routes do (never reaches into `models/` directly).
+
+**Rule:** if you're writing business logic and typing `from app.api.routes...`, stop — that's a layering violation. Routes are the thinnest possible layer: parse request → check permission → call service → serialize response.
+
+---
+
+## 2. Module Breakdown
+
+### `app/core/`
+- `config.py` — Pydantic `Settings` class, loads from env vars + `backend/config/*.yaml`. No secrets hardcoded; secrets come from `backend/credentials/` (gitignored) referenced by path/env var name only.
+- `security.py` — password hashing, JWT encode/decode, `AuthContext` construction (matches `INTEGRATION_CONTRACT.md` §2).
+- `db.py` — SQLAlchemy engine + session factory, `get_db()` FastAPI dependency.
+- `deps.py` — shared FastAPI dependencies: `get_current_user`, `require_permission(module_key, action)`, pagination params parser.
+- `exceptions.py` — the exception hierarchy from `INTEGRATION_CONTRACT.md` §5 (`HrAdminAgentError` and subclasses), plus a global exception handler registered on the FastAPI app that maps them to the HTTP error codes in `API_ENDPOINTS.md` §11.
+
+### `app/models/`
+One file per logical group, matching `DATABASE_SCHEMA.md` sections exactly:
+- `identity.py` — `User`, `Role`, `UserRole`, `AgentAccessMatrix`, `Permission`, `RolePermission`
+- `employees.py` — `Department`, `Employee`
+- `cv_screening.py` — `JobDescription`, `ScoringCriteria`, `Candidate`, `CandidateScore`, `CandidateRanking`
+- `attendance.py` — `AttendanceRule`, `AttendanceRecord`, `LeaveRequest`
+- `payroll.py` — `PayrollStructure`, `PayrollRun`, `Payslip`, `Deduction`, `SalaryAdvance`
+- `kpi.py` — `KpiDefinition`, `KpiEntry`
+- `audit.py` — `AuditLog`
+- `system.py` — `IntegrationRegistry`, `SystemConfig`
+
+Models are SQLAlchemy declarative classes only — no business methods beyond simple computed properties (e.g. a `net_pay` property is fine; a `def approve()` that sends emails is not — that belongs in the payroll service).
+
+### `app/schemas/`
+Mirrors `models/` 1:1, one file per group. Each entity gets at minimum:
+- `{Entity}Create` — input for POST
+- `{Entity}Update` — input for PATCH (all fields optional)
+- `{Entity}Read` — output shape, includes `id`, `created_at`, `updated_at`
+- List responses wrap `{Entity}Read` in the shared `PaginatedResponse[T]` generic defined once in `schemas/common.py`.
+
+`schemas/common.py` also defines: `PaginatedResponse`, `ErrorResponse`, `AuthContext` (imported by both API layer and `integration/interface.py` so there's exactly one definition).
+
+### `app/api/routes/`
+One router file per module (see `PROJECT_OVERVIEW.md` structure). Each route function:
+1. Depends on `get_current_user` (and `require_permission(...)` where write/approve actions apply).
+2. Validates input via the Pydantic schema (FastAPI does this automatically from the type hint).
+3. Calls the corresponding service function — never touches `db` session directly for anything beyond simple reads FastAPI can do inline (prefer even simple reads go through a service for consistency).
+4. Returns the `Read` schema; FastAPI serializes it.
+
+All routers are mounted in `app/api/__init__.py` under `/api/v1`, matching `API_ENDPOINTS.md`.
+
+### `app/services/` (new folder, not explicitly in original structure — add it)
+One file per module: `job_description_service.py`, `cv_screening_service.py`, `attendance_service.py`, `payroll_service.py`, `kpi_service.py`, `admin_service.py`, `audit_service.py`.
+
+This is where business rules live: "can't approve a payroll run twice," "candidate must be parsed before scoring," "leave request can't overlap an existing approved one." Services call models directly (via the DB session) and call into `pipeline.py` / the single-purpose engines when a multi-step flow is needed. Every service function that performs a write ends by calling `audit_service.log_action(...)` (which itself calls `interface.emit_audit_event`).
+
+### `app/ingestion/`
+Handles intake of external data:
+- `cv_intake.py` — accepts uploaded CV files (PDF/DOCX), validates file type/size, stores to disk (`backend/data/uploads/cvs/`), creates `Candidate` row with `status="uploaded"`.
+- `biometric_intake.py` — accepts biometric device exports (CSV/Excel) or a stubbed device-API pull, normalizes rows into `AttendanceRecord` shape. The actual device API client is a stub (`biometric_client_stub.py`) until real device access/credentials exist — see §5.
+
+### `app/parsing/`
+- `cv_parser.py` — extracts structured fields (name, email, phone, education, experience, skills) from raw CV text. Library choice (e.g. `pdfplumber`/`python-docx` for extraction, plus a text-parsing/NLP step) is an implementation detail decided when this module is actually built — this doc fixes the *interface*: input = file path, output = the `parsed_data` JSON shape matching `Candidate.parsed_data` in `DATABASE_SCHEMA.md`.
+
+### `app/scoring/`
+- `cv_scorer.py` — takes a `Candidate.parsed_data` + a `JobDescription`'s `ScoringCriteria` list, applies each criterion's `scoring_rules`, returns per-criterion `CandidateScore` rows and a weighted total. Rule evaluation logic (keyword match, threshold bands, etc.) detailed in `FEATURE_CV_SCREENING.md`.
+
+### `app/ranking/`
+- `candidate_ranker.py` — takes all `CandidateScore` totals for a job description, sorts, writes `CandidateRanking` rows with `rank_position`.
+
+### `app/reporting/`
+- `pdf_export.py`, `word_export.py`, `excel_export.py` — shared, reusable exporters called by multiple modules (job description export, payslip PDF, ranking report, attendance summary export). One exporter per format, not one per feature, so the same PDF-building utility serves payroll and CV screening alike.
+
+### `app/pipeline.py`
+Thin orchestration only, for flows that span multiple engines:
+
+```python
+def run_cv_pipeline(candidate_id: int, db: Session) -> Candidate:
+    """ingestion (already done at upload) -> parsing -> scoring -> ranking refresh"""
+```
+
+```python
+def run_payroll_generation(payroll_run_id: int, db: Session) -> PayrollRun:
+    """attendance summary -> apply payroll_structure -> compute deductions/overtime -> create payslips"""
+```
+
+Pipeline functions call services/engines, never models or DB writes directly beyond what's needed to pass data between steps.
+
+### `app/integration/`
+- `interface.py` — implements the full spec in `INTEGRATION_CONTRACT.md`. Calls into `services/` the same way routes do.
+- `event_bus_stub.py` — the one abstracted "publish event" function referenced in `INTEGRATION_CONTRACT.md` §7. Today it just writes to `audit_logs` / logs locally; later swapped for real transport without touching callers.
+
+---
+
+## 3. Config Management
+
+- `backend/config/` holds YAML files that are **data**, not secrets: default scoring weights, KPI review period templates, attendance rule defaults, payroll rounding rules.
+- Loaded once at startup into `SystemConfig` table (seed migration) so they're editable at runtime via `/admin/system-config` without a redeploy, but have a versioned file-based fallback/default in git.
+- `backend/credentials/` holds actual secrets (biometric device API keys, SMTP creds if payslip emailing is added later, etc.) — gitignored, loaded via `core/config.py` `Settings`, never logged, never returned in any API response.
+
+---
+
+## 4. Error Handling Pattern
+
+- Services raise domain exceptions from `core/exceptions.py` (extends the `HrAdminAgentError` hierarchy from `INTEGRATION_CONTRACT.md`).
+- A single FastAPI exception handler (registered in `app/main.py`) catches these and converts to the `{ error: { code, message, details } }` shape with the right HTTP status, per `API_ENDPOINTS.md` §11.
+- Unhandled exceptions fall through to a catch-all handler that logs full traceback server-side and returns a generic `internal_error` to the client — never leak stack traces to the frontend.
+
+---
+
+## 5. Stubs & Integration Seams (build now, wire later)
+
+These must exist as real, callable code — not TODO comments — even though nothing exercises them yet:
+
+| Stub | Location | Behavior Today | Behavior Later |
+|---|---|---|---|
+| Biometric device client | `ingestion/biometric_client_stub.py` | Returns empty list / requires manual CSV import | Real API/SDK calls to device once access is confirmed |
+| Orchestrator registration | `integration/interface.py::register_with_orchestrator` | No-op, returns `status="standalone"` | Real handshake with orchestrator |
+| Event publishing | `integration/event_bus_stub.py` | Writes to local `audit_logs` only | Publishes to shared bus (transport TBD) |
+| Sibling agent routing | `integration/interface.py::route_to_sibling_agent` | Raises `NotOwnedByThisAgent` | Forwards to Utilities & Maintenance agent |
+
+---
+
+## 6. Testing Strategy
+
+- `backend/tests/` mirrors `app/` structure: `tests/services/test_payroll_service.py`, etc.
+- Services are the primary unit-test target (business rules), since routes are thin and models have no logic.
+- Pipeline functions get integration tests with a test SQLite DB (in-memory or temp file), not mocked at the service layer, so multi-step flows are verified end-to-end.
+- `integration/interface.py` gets its own test file asserting every public function signature matches this doc and `INTEGRATION_CONTRACT.md` — this is the contract Cursor should treat as close to "don't break without updating both docs."
+
+---
+
+## 7. Startup Sequence (`app/main.py`)
+
+1. Load `Settings` from `core/config.py`.
+2. Create DB engine, run any pending Alembic migrations check (fail fast if migrations are out of sync in non-dev environments).
+3. Register exception handlers.
+4. Mount all routers under `/api/v1`.
+5. Mount CORS middleware (frontend origin from `Settings`).
+6. Seed `SystemConfig` defaults from `backend/config/*.yaml` if not already present.
+7. Call `integration.interface.register_with_orchestrator()` (no-op today, logs `status=standalone`).

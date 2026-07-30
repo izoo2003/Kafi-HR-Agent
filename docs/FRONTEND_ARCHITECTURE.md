@@ -1,0 +1,244 @@
+# FRONTEND ARCHITECTURE — HR & Admin Agent
+
+> How `frontend/src/` is wired internally. Read alongside `PROJECT_OVERVIEW.md` (folder structure), `API_ENDPOINTS.md` (the contract this layer talks to), `AUTH_AND_RBAC.md` (role-aware rendering), and `UI_DESIGN_SYSTEM.md` (visual tokens/components used by everything described here).
+
+---
+
+## 1. Layering
+
+```
+pages/{Module}/*.tsx        ← route-level components: compose components, call hooks, handle page layout
+        │
+components/                  ← reusable presentational + shared interactive components (module-agnostic where possible)
+        │
+hooks/                         ← useQuery/useMutation wrappers per resource, shared logic (pagination, filters)
+        │
+api/{module}.ts                  ← typed fetch functions, one file per backend module, mirrors API_ENDPOINTS.md exactly
+        │
+types/                             ← TS interfaces mirroring backend Pydantic schemas 1:1
+```
+
+**Rule:** pages never call `fetch`/`axios` directly. Pages call hooks. Hooks call `api/` functions. `api/` functions are the only place that knows the base URL and endpoint paths.
+
+---
+
+## 2. Folder Breakdown
+
+### `src/pages/`
+One folder per module, matching backend modules exactly:
+
+```
+pages/
+├── JobDescriptions/
+│   ├── JobDescriptionListPage.tsx
+│   ├── JobDescriptionDetailPage.tsx
+│   └── JobDescriptionFormPage.tsx
+├── CvScreening/
+│   ├── CandidateListPage.tsx
+│   ├── CandidateDetailPage.tsx
+│   └── RankingPage.tsx
+├── Attendance/
+│   ├── AttendanceOverviewPage.tsx
+│   ├── AttendanceRecordsPage.tsx
+│   └── LeaveRequestsPage.tsx
+├── Payroll/
+│   ├── PayrollRunListPage.tsx
+│   ├── PayrollRunDetailPage.tsx
+│   ├── PayslipDetailPage.tsx
+│   └── SalaryAdvancesPage.tsx
+├── Kpi/
+│   ├── KpiDefinitionsPage.tsx
+│   └── KpiDashboardPage.tsx
+└── AdminPanel/
+    ├── DashboardPage.tsx
+    ├── UserManagementPage.tsx
+    ├── AuditLogPage.tsx
+    └── SystemConfigPage.tsx
+```
+
+Every new feature phase adds a new subfolder here — never bolt a new module's pages onto an existing folder.
+
+### `src/components/`
+Split into two tiers:
+
+- `components/ui/` — pure presentational primitives (Button, Table, Modal, Badge, Card, FormField, Pagination). These know nothing about HR/payroll/CV domain — see `UI_DESIGN_SYSTEM.md` for their specs.
+- `components/domain/` — composed, HR-aware but still reusable across pages (e.g. `EmployeePicker`, `DepartmentFilter`, `StatusBadge`, `ScoreBar`, `PayslipSummaryCard`, `KpiProgressRing`). If a component is used on 2+ pages, it belongs here, not duplicated inside a page file.
+
+### `src/api/`
+One file per backend module, exact 1:1 with `API_ENDPOINTS.md` sections:
+
+```
+api/
+├── client.ts              # base axios/fetch instance, attaches auth token, handles base URL from VITE_API_BASE_URL
+├── auth.ts
+├── users.ts
+├── employees.ts
+├── jobDescriptions.ts
+├── cvScreening.ts
+├── attendance.ts
+├── payroll.ts
+├── kpi.ts
+└── admin.ts
+```
+
+Every function here returns a typed Promise, e.g.:
+
+```typescript
+export async function getCandidates(jobId: number, params: PaginationParams): Promise<PaginatedResponse<Candidate>> {
+  const { data } = await apiClient.get(`/job-descriptions/${jobId}/candidates`, { params });
+  return data;
+}
+```
+
+No component ever constructs a URL path itself — always through these functions.
+
+### `src/hooks/`
+One hook file per resource, wrapping React Query:
+
+```
+hooks/
+├── useAuth.ts                 # wraps AuthContext, exposes user, roles, permission-check helper
+├── useCandidates.ts
+├── usePayrollRuns.ts
+├── useAttendance.ts
+├── useKpi.ts
+└── usePagination.ts           # shared pagination/filter state helper
+```
+
+Pattern:
+
+```typescript
+export function useCandidates(jobId: number, params: PaginationParams) {
+  return useQuery({
+    queryKey: ["candidates", jobId, params],
+    queryFn: () => getCandidates(jobId, params),
+  });
+}
+
+export function useScoreOverride(candidateId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ScoreOverridePayload) => scoreOverride(candidateId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidates"] }),
+  });
+}
+```
+
+Consistent `queryKey` naming (`[resource, ...filters]`) across all hooks so cache invalidation is predictable.
+
+### `src/context/`
+- `AuthContext.tsx` — holds current user, roles, `agent_permissions` map (from `/auth/me`), exposes `hasPermission(moduleKey, minLevel)` helper used throughout the app for conditional rendering. Mirrors backend `AuthContext` shape from `INTEGRATION_CONTRACT.md` §2.
+- Route guarding wraps `<AppRoutes />` — unauthenticated users redirect to login; authenticated users with no `read` access to a module's route redirect to a "not authorized" page rather than 404.
+
+### `src/types/`
+Mirrors `backend/app/schemas/` 1:1 — one file per module, same entity names. This is the contract boundary on the frontend side; if a backend schema changes, this is the file that must change in the same session (per `API_ENDPOINTS.md`/`DATABASE_SCHEMA.md` discipline).
+
+```typescript
+// types/payroll.ts
+export interface PayrollRun {
+  id: number;
+  periodMonth: number;
+  periodYear: number;
+  status: "draft" | "pending_approval" | "approved" | "paid";
+  createdBy: number;
+  approvedBy: number | null;
+  approvedAt: string | null;
+}
+```
+
+Note: backend uses `snake_case`, frontend types use `camelCase` — the `api/client.ts` layer (or a shared serializer) handles the case conversion in one place, not scattered across components.
+
+---
+
+## 3. State Management
+
+- **Server state** (anything from the API): React Query exclusively. No server data duplicated into local `useState`/Redux — React Query's cache is the source of truth, components read via hooks.
+- **Client-only state** (form inputs before submit, modal open/closed, filter UI state not yet applied): local `useState`/`useReducer` per component, or lifted to the nearest shared parent. No global store needed for this scope.
+- **Auth/session state:** `AuthContext` (React Context), populated once at app load via `/auth/me`, refreshed on token refresh.
+- **No Redux/Zustand/etc. unless a specific cross-cutting need emerges** (e.g. a multi-step wizard spanning several routes) — keep it simple until proven necessary.
+
+---
+
+## 4. Routing
+
+React Router, top-level structure:
+
+```
+/login
+/                          → redirect to /admin/dashboard (or role-appropriate landing page)
+/job-descriptions
+/job-descriptions/:id
+/job-descriptions/:id/candidates
+/candidates/:id
+/attendance
+/attendance/leave-requests
+/payroll/runs
+/payroll/runs/:id
+/payroll/payslips/:id
+/kpi/definitions
+/kpi/dashboard
+/admin/dashboard
+/admin/users
+/admin/audit-log
+/admin/config
+/not-authorized
+/404
+```
+
+Each route wrapped by a `<RequirePermission module="..." level="read">` guard component (implemented using `useAuth().hasPermission`), consistent with backend `require_permission` naming so the same module/level vocabulary is used on both sides.
+
+---
+
+## 5. Error & Loading Handling
+
+- Every `useQuery`/`useMutation` consumer handles three states explicitly: loading (skeleton/spinner from `components/ui/`), error (mapped from the backend's `{ error: { code, message } }` shape to a user-facing message — see mapping table below), and success.
+- Global mutation error handler (React Query `onError` default, set in `queryClient` config) shows a toast for unexpected errors; field-level validation errors (`validation_error`, 422) are surfaced inline on the relevant form field instead of a toast.
+
+| Backend `error.code` | Frontend Handling |
+|---|---|
+| `unauthorized` | Force logout, redirect to `/login` |
+| `forbidden` | Toast "You don't have permission for this action," do not redirect |
+| `not_found` | Inline "not found" state on the page, not a toast |
+| `validation_error` | Map `details` to field-level form errors |
+| `conflict` | Toast with the specific message from backend (usually actionable, e.g. "Attendance record already exists for this date") |
+| `business_rule_violation` | Toast with backend message |
+| `internal_error` | Generic toast: "Something went wrong, please try again" |
+
+---
+
+## 6. Forms
+
+- Recommend `react-hook-form` + a schema validation lib (e.g. `zod`) with schemas that mirror `types/` — single source of validation truth reused across create/edit forms for the same entity.
+- Multi-step forms (e.g. payroll run generation, CV upload + criteria review) live under `pages/{Module}/` as a dedicated page, not a modal, given the complexity involved.
+- Simple single-entity forms (department, KPI definition) can be modals using `components/ui/Modal`.
+
+---
+
+## 7. File Uploads
+
+- CV upload (`Candidates`) and biometric import (`Attendance`) are the two file-upload flows.
+- Both use a shared `components/domain/FileUploadDropzone` component, `multipart/form-data` POST via `api/` functions, progress indicator from `components/ui/`.
+
+---
+
+## 8. Environment Config
+
+`.env` (frontend):
+```
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+No other secrets belong on the frontend — this agent's frontend never talks to third-party services directly (biometric device, etc.), always through the backend.
+
+---
+
+## 9. Consistency Rule for Every New Feature Phase
+
+When a new module/feature is added (per `IMPLEMENTATION_PHASES.md`), it must add, in this order:
+1. `types/{module}.ts`
+2. `api/{module}.ts`
+3. `hooks/use{Module}.ts`
+4. `pages/{Module}/*.tsx`
+5. Any new `components/domain/*` reused across its pages
+6. Route entries + `RequirePermission` guards
+
+Skipping the types/api/hooks layers and calling `fetch` directly from a page is not acceptable, even for a "quick" feature — it breaks the 1:1 contract mirroring this whole doc set is built around.

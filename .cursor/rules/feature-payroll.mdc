@@ -1,0 +1,121 @@
+---
+description: Feature: payroll structures, run lifecycle, calculation engine, advances, payslips
+alwaysApply: true
+---
+
+# FEATURE: PAYROLL — HR & Admin Agent
+
+> Covers in-scope item 4 (Payroll structure: base, overtime, deductions, advances). Read alongside `DATABASE_SCHEMA.md` §5, `API_ENDPOINTS.md` §7, `FEATURE_ATTENDANCE.md` §7 (the attendance summary this module consumes).
+
+---
+
+## 1. End-to-End Flow
+
+```
+1. HR sets up a PayrollStructure per employee (base salary, overtime rate, effective dates)
+2. Payroll Officer creates a PayrollRun for a period (month/year) — status: draft
+3. Payroll Officer triggers "Generate" — system computes a Payslip per active employee using:
+   - PayrollStructure (base + overtime rate)
+   - Attendance summary for the period (FEATURE_ATTENDANCE.md §7)
+   - Outstanding SalaryAdvances to recover
+4. Payroll Officer reviews/adjusts individual payslips if needed (audit-logged)
+5. Run submitted for approval → status: pending_approval
+6. Approver (payroll-approve permission) approves → status: approved
+7. Run marked paid → status: paid, payslip PDFs generated and available for download
+```
+
+Status transitions are strictly forward-only: `draft → pending_approval → approved → paid`. No skipping steps, no going backward once approved (a mistake after approval requires a correction run or reversal process — not silently editing an approved payslip).
+
+---
+
+## 2. Payroll Structure
+
+- One active `PayrollStructure` per employee at any time (`effective_to = null` means currently active); a salary revision creates a new row and closes the old one (`effective_to` set to the day before the new one's `effective_from`) — never overwrite salary history, payroll runs for past periods must always compute against the structure that was active *then*.
+- `overtime_rate_per_hour` is optional — some roles may not be eligible for overtime; if null, overtime hours are tracked but not paid (flagged, not silently dropped).
+
+---
+
+## 3. Calculation Engine (`services/payroll_service.py`, orchestrated via `pipeline.run_payroll_generation`)
+
+For each active employee, for the run's period:
+
+```
+1. Fetch the PayrollStructure active during this period (by date range, not just "current")
+2. Fetch attendance summary for the period (days_present, days_late, days_half_day, days_absent, total_working_days)
+3. per_day_rate = base_salary / total_working_days
+4. base_amount = base_salary - (days_absent * per_day_rate) - (days_half_day * per_day_rate * 0.5)
+   → late days do NOT automatically deduct pay by default (late is tracked for HR visibility/policy, 
+     not an automatic payroll deduction, unless a specific late-deduction policy is configured — 
+     see "Deduction Policy Config" below)
+5. overtime_amount = overtime_hours * overtime_rate_per_hour  (overtime_hours sourced from attendance 
+   check_out - shift_end when positive, summed for the period — requires attendance_service to expose 
+   this alongside the summary; add to FEATURE_ATTENDANCE.md §7 response shape if not already present 
+   when this is implemented)
+6. advances_deducted = min(outstanding_advance_balance, configured_max_recovery_per_period)
+7. deductions_amount = sum of any Deduction rows for this payslip (absence deduction, late-policy 
+   deduction if enabled, tax if applicable, manual deductions)
+8. net_pay = base_amount + overtime_amount - deductions_amount - advances_deducted
+```
+
+**Deduction Policy Config:** whether late days trigger a deduction, at what rate, and any tax/statutory deduction rules are **configurable**, not hardcoded — stored in `system_config` (per `BACKEND_ARCHITECTURE.md` §3) as a versioned policy object, e.g.:
+
+```json
+{
+  "key": "payroll.deduction_policy",
+  "value": {
+    "late_deduction_enabled": false,
+    "late_deduction_per_occurrence": 0,
+    "late_deduction_after_n_occurrences": 3,
+    "tax_enabled": false,
+    "tax_bands": []
+  }
+}
+```
+This means the calculation engine reads policy from config at generation time, not from a hardcoded formula — important because payroll rules are exactly the kind of thing that changes per company/jurisdiction and must be adjustable by an admin without a code change.
+
+---
+
+## 4. Deductions
+
+- `Deduction` rows are created automatically by the generation engine (absence, late-if-enabled) and can be added manually (`PATCH /payslips/{id}` before approval) for ad-hoc cases (e.g. loan repayment, equipment damage) — manual deductions require a `type = "other"` and a `notes` explanation, audit-logged.
+- Deductions are only editable while the parent `PayrollRun.status = "draft"` or `"pending_approval"` — once `approved`, deductions (and the payslip as a whole) are locked; corrections require a new run or a documented reversal process (out of scope to design fully now — flag as a future need, don't half-build it).
+
+---
+
+## 5. Salary Advances
+
+- `SalaryAdvance` requested by/for an employee, approved by HR (`PATCH /salary-advances/{id}`), tracked with `amount_recovered` incrementing as payroll runs deduct against it.
+- A payroll run's generation step (step 6 above) pulls all `approved` advances with `amount_recovered < amount` for the employee, deducts up to the configured max-per-period (also in `payroll.deduction_policy` config), and increments `amount_recovered` — this update happens at `approve` time (not `draft` generation time), so re-generating a draft run repeatedly doesn't double-recover an advance. Status flips to `fully_recovered` once `amount_recovered >= amount`.
+
+---
+
+## 6. Payslip Generation & Export
+
+- `/payslips/{id}/pdf` uses `reporting/pdf_export.py`, a payslip template showing: employee info, period, base amount, overtime breakdown, each deduction line-itemized, advance recovery line, net pay — every number that appears on the payslip must trace back to a stored field (no numbers computed only at render time and not persisted), so payslips are reproducible and auditable later.
+- Payslip PDFs are generated once (on `mark-paid`, or on-demand before that for review) and the path stored in `Payslip.generated_pdf_path` — not regenerated fresh each download unless the underlying data changed (which, post-approval, it shouldn't).
+
+---
+
+## 7. Approval Workflow & Permissions
+
+Per `AUTH_AND_RBAC.md`: 
+- `payroll_officer` role: `write` on payroll module — can create runs, generate, edit drafts, submit for approval.
+- Approval (`approve` level) reserved for a distinct approver (e.g. `hr_manager` or `super_admin`) — the same person should generally not both generate and approve a run; this isn't enforced in code by default (no hard "different user" check) but the permission split makes it possible to enforce via role assignment, which is the intended control.
+- `employee` role: read-only, own payslips only (row-level filter per `AUTH_AND_RBAC.md` §6).
+
+---
+
+## 8. Frontend Pages
+
+- `PayrollRunListPage` — list of runs by period, status badges, "New Payroll Run" action.
+- `PayrollRunDetailPage` — all payslips in the run (table, net pay in `--font-data`), Generate/Submit/Approve/Mark Paid actions gated by permission, bulk export.
+- `PayslipDetailPage` — full breakdown matching the PDF layout, edit capability while still in draft/pending, download PDF button.
+- `SalaryAdvancesPage` — request/approve advances, recovery progress bar (reuse the KPI-style progress visual from `UI_DESIGN_SYSTEM.md`).
+
+---
+
+## 9. Edge Cases & Rules
+
+- New employee mid-period (joined after `period_start`): `total_working_days` and `base_amount` should prorate from `date_joined`, not assume a full period — attendance summary for that employee naturally reflects fewer days, but the per-day-rate calculation must use the correct denominator (working days *from date_joined*, not the full period), otherwise the prorated deduction math is wrong.
+- Employee exited mid-period (`date_exited` set): final payroll run for their last partial period should still generate correctly using the same proration logic, then the employee is excluded from all subsequent runs.
+- Re-generating a draft run overwrites previously generated (but not yet approved) payslips for that run — this is intentional (drafts are meant to be regenerated as attendance corrections come in) but must not touch advance `amount_recovered` until approval (see §5) to avoid double-counting on repeated regeneration.

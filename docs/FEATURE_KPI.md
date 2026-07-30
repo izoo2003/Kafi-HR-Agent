@@ -1,0 +1,86 @@
+# FEATURE: KPI — HR & Admin Agent
+
+> Covers in-scope item 5 (KPI definitions per department). Read alongside `DATABASE_SCHEMA.md` §6, `API_ENDPOINTS.md` §8.
+
+---
+
+## 1. End-to-End Flow
+
+```
+1. HR/Department Head defines KpiDefinitions for a department (name, target, weight, review period cadence)
+2. During/after each review period, actuals are recorded per employee as KpiEntry rows
+3. System computes a normalized score per entry, and rolls up per-employee and per-department summaries
+4. At period close, KPI results feed into performance review conversations (and optionally KPI-linked bonus 
+   logic in a later phase — not built now, don't half-implement it)
+5. hr_admin.kpi.period_closed event emitted per department per period (INTEGRATION_CONTRACT.md §4)
+```
+
+---
+
+## 2. KPI Definitions
+
+- Scoped to a `department_id` — a KPI is always department-specific by design (per the in-scope spec: "KPI definitions per department"), not global or per-individual. If a specific employee needs an individual target different from their department's, that's a future extension (e.g. an optional `employee_id` override) — flag it if requested, don't build it speculatively now.
+- Fields: `name`, `description`, `measurement_unit` (`%`, `count`, `score_1_5`, or others as needed — keep as a free-text unit label rather than a rigid enum, since departments will have varied metrics), `target_value`, `weight` (contribution to an overall department/employee score, same weighting principle as CV scoring criteria — weights across a department's active KPIs should sum to 1.0; create/update reject sums over 1.0 so KPIs can be added incrementally, and recording actuals requires an exact 1.0 sum), `review_period` (`monthly`/`quarterly`/`annual`).
+
+---
+
+## 3. Recording Actuals (`KpiEntry`)
+
+- One entry per `(kpi_definition_id, employee_id, period_start, period_end)` — recorded by a manager/HR (`recorded_by`), with an optional `notes` field for context (useful for review conversations later).
+- `score` is computed at entry time, not left for the frontend to derive:
+
+```
+normalized = actual_value / target_value   (capped at a configurable max, e.g. 1.5, so wildly 
+             exceeding a target doesn't produce a distorted score — cap value stored in 
+             system_config as "kpi.score_cap", default 1.5)
+score = normalized * 100   (expressed as a percentage of target achievement)
+```
+
+- Score bands for the frontend status-color mapping (`UI_DESIGN_SYSTEM.md` §1 semantic tokens):
+  - `score >= 90` → `--status-kpi-on-target`
+  - `70 <= score < 90` → `--status-kpi-at-risk`
+  - `score < 70` → `--status-kpi-below-target`
+  These thresholds live in `system_config` (`kpi.score_bands`), not hardcoded in frontend or backend, so they're adjustable without a redeploy.
+
+---
+
+## 4. Rollups
+
+### Employee-level (`GET /employees/{id}/kpi-summary`)
+```json
+{
+  "employee_id": 12,
+  "period_start": "2026-07-01",
+  "period_end": "2026-09-30",
+  "overall_score": 84.5,
+  "entries": [
+    { "kpi_definition_id": 3, "name": "Client Response Time", "target": 24, "actual": 20, "score": 100, "weight": 0.4 },
+    { "kpi_definition_id": 4, "name": "Ticket Resolution Rate", "target": 90, "actual": 78, "score": 76.7, "weight": 0.6 }
+  ]
+}
+```
+`overall_score` = weighted sum of entry scores using each `kpi_definition.weight`.
+
+### Department-level (`GET /departments/{id}/kpi-summary`)
+Average of employee `overall_score` values across the department for the period, plus a breakdown showing which KPIs are dragging the department average down — this is the view a department head or HR manager actually needs (not just an average, but "which KPI needs attention").
+
+---
+
+## 5. Period Close
+
+- A period is "closed" conceptually once all active employees in a department have a `KpiEntry` for every active `KpiDefinition` for that `review_period` cycle — this isn't necessarily a hard status flag on a table (KPI doesn't need its own run/approval workflow like payroll), but the department-summary endpoint should clearly indicate completeness (`entries_recorded / entries_expected`) so HR knows when it's safe to consider the period final.
+- `hr_admin.kpi.period_closed` event (per `INTEGRATION_CONTRACT.md` §4) is emitted when HR explicitly marks a period reviewed/closed via an action on the department summary page — not auto-inferred, since "is this period actually done" is a judgment call HR should make deliberately, not something the system silently decides.
+
+---
+
+## 6. Frontend Pages
+
+- `KpiDefinitionsPage` — per-department list, create/edit form with weight-sum validation (mirrors the CV scoring criteria builder pattern from `FEATURE_CV_SCREENING.md` §3 — reuse the same weight-validation component if practical).
+- `KpiDashboardPage` — department selector, employee-level score table (status rail + badge per `UI_DESIGN_SYSTEM.md`), drill-down to an individual employee's KPI breakdown, entry-recording form/modal, "mark period reviewed" action.
+
+---
+
+## 7. Edge Cases & Rules
+
+- New employee mid-period: don't require a `KpiEntry` for a period they weren't present for the majority of — completeness calculation (§5) should account for `date_joined`/`date_exited` rather than expecting every active employee to have every period's entry regardless of tenure.
+- Editing a `KpiDefinition`'s `target_value` or `weight` after entries already exist for the current period: existing `KpiEntry.score` values are **not** silently recomputed (unlike CV scoring's re-score-on-criteria-change behavior) — KPI actuals represent a point-in-time record against the target that was live *then*; changing the definition should apply going forward, prompting HR with a clear notice rather than retroactively rewriting historical scores.

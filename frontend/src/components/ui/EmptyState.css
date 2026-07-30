@@ -1,0 +1,19 @@
+.empty-state {
+  padding: var(--space-8) var(--space-5);
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.empty-state__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.empty-state__desc {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-secondary);
+  max-width: 42rem;
+}

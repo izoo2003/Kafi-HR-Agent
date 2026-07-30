@@ -1,0 +1,1 @@
+export { SystemConfigPage } from "./DashboardPage";

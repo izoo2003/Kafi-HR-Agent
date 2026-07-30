@@ -1,0 +1,182 @@
+/* Design tokens — UI_DESIGN_SYSTEM.md. Components must use these vars, never raw hex. */
+
+:root {
+  /* Base */
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-alt: #eef1f5;
+  --color-border: #dce1e8;
+  --color-border-strong: #b8c1cd;
+
+  /* Text */
+  --color-text-primary: #101828;
+  --color-text-secondary: #4b5567;
+  --color-text-muted: #8a93a3;
+  --color-text-inverse: #ffffff;
+
+  /* Accent */
+  --color-accent: #2b4c7e;
+  --color-accent-hover: #1f3a61;
+  --color-accent-subtle: #e5ebf3;
+
+  /* Status vocabulary */
+  --color-status-positive: #1d7a5f;
+  --color-status-positive-bg: #e3f3ee;
+  --color-status-warning: #b5790a;
+  --color-status-warning-bg: #fbf0dc;
+  --color-status-critical: #b3261e;
+  --color-status-critical-bg: #fbe7e5;
+  --color-status-neutral: #5a6270;
+  --color-status-neutral-bg: #eef0f3;
+  --color-status-info: #2b6cb0;
+  --color-status-info-bg: #e5f0fa;
+
+  /* Semantic mapping */
+  --status-attendance-present: var(--color-status-positive);
+  --status-attendance-late: var(--color-status-warning);
+  --status-attendance-absent: var(--color-status-critical);
+  --status-attendance-leave: var(--color-status-info);
+
+  --status-payroll-draft: var(--color-status-neutral);
+  --status-payroll-pending: var(--color-status-warning);
+  --status-payroll-approved: var(--color-status-positive);
+  --status-payroll-paid: var(--color-status-info);
+
+  --status-candidate-uploaded: var(--color-status-neutral);
+  --status-candidate-scored: var(--color-status-info);
+  --status-candidate-shortlisted: var(--color-status-positive);
+  --status-candidate-rejected: var(--color-status-critical);
+
+  --status-kpi-on-target: var(--color-status-positive);
+  --status-kpi-at-risk: var(--color-status-warning);
+  --status-kpi-below-target: var(--color-status-critical);
+
+  /* Typography */
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Spacing & layout */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-none: 0px;
+
+  --sidebar-width: 240px;
+  --content-max-width: 1440px;
+  --table-row-height: 44px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: var(--weight-regular);
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.font-data {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status rail utility — signature element */
+[data-status] {
+  border-left: 3px solid var(--color-status-neutral);
+}
+
+[data-status="positive"],
+[data-status="present"],
+[data-status="approved"],
+[data-status="hired"],
+[data-status="shortlisted"],
+[data-status="on_target"],
+[data-status="paid"] {
+  border-left-color: var(--color-status-positive);
+}
+
+[data-status="warning"],
+[data-status="late"],
+[data-status="pending"],
+[data-status="pending_approval"],
+[data-status="at_risk"] {
+  border-left-color: var(--color-status-warning);
+}
+
+[data-status="critical"],
+[data-status="absent"],
+[data-status="rejected"],
+[data-status="below_target"] {
+  border-left-color: var(--color-status-critical);
+}
+
+[data-status="info"],
+[data-status="scored"],
+[data-status="on_leave"],
+[data-status="in_progress"] {
+  border-left-color: var(--color-status-info);
+}
+
+[data-status="neutral"],
+[data-status="draft"],
+[data-status="uploaded"],
+[data-status="inactive"] {
+  border-left-color: var(--color-status-neutral);
+}

@@ -1,0 +1,215 @@
+---
+description: Frontend pack: slate/ink tokens, status rail, Inter + IBM Plex Mono, admin shell, component specs
+alwaysApply: true
+---
+
+# UI DESIGN SYSTEM — HR & Admin Agent
+
+> The visual language for the admin dashboard. Read alongside `FRONTEND_ARCHITECTURE.md` — this doc defines the tokens and components that layer builds with. Every page and component must derive its styling from the tokens here rather than inventing one-off colors/spacing.
+
+---
+
+## 0. Design Direction
+
+This is an **internal, data-dense admin tool** used by HR managers, payroll officers, and department heads to make consequential decisions (who gets hired, who gets paid what, who's underperforming). The design should read as **precise, trustworthy, and calm** — closer to a financial back-office system than a consumer SaaS marketing site. Avoid decorative flourishes that compete with the data; every visual choice should help someone scan a table, compare a score, or spot an anomaly faster.
+
+**Signature element:** a consistent left-edge **status rail** — a 3px colored bar on the left edge of table rows, cards, and list items that encodes state (attendance status, payroll run status, candidate status, KPI health) using one unified color vocabulary across every module. Someone scanning any page in the app learns the color language once and reuses it everywhere — this is the thread that ties CV screening, attendance, payroll, and KPI into one visual system instead of four disconnected modules.
+
+Explicitly avoided: the generic cream-background/terracotta-accent look, near-black-with-neon-accent look, and glossy card-with-big-rounded-corners SaaS-template look. Instead: a cool slate-and-ink palette with a single restrained accent, sharp small-radius corners, and typography built for dense tabular scanning.
+
+---
+
+## 1. Color Tokens
+
+```css
+:root {
+  /* Base */
+  --color-bg: #F7F8FA;           /* page background — cool off-white, not cream */
+  --color-surface: #FFFFFF;       /* cards, tables, panels */
+  --color-surface-alt: #EEF1F5;    /* subtle section separation, table header bg */
+  --color-border: #DCE1E8;          /* hairline borders */
+  --color-border-strong: #B8C1CD;    /* input borders, focus-adjacent */
+
+  /* Text */
+  --color-text-primary: #101828;      /* near-ink, not pure black */
+  --color-text-secondary: #4B5567;     /* labels, metadata */
+  --color-text-muted: #8A93A3;          /* placeholders, disabled */
+  --color-text-inverse: #FFFFFF;         /* on dark/accent backgrounds */
+
+  /* Accent — single restrained accent, used sparingly for primary actions & focus */
+  --color-accent: #2B4C7E;               /* deep slate-blue, not a bright SaaS blue */
+  --color-accent-hover: #1F3A61;
+  --color-accent-subtle: #E5EBF3;         /* accent-tinted backgrounds, selected rows */
+
+  /* Status vocabulary — used consistently for the status rail + badges across ALL modules */
+  --color-status-positive: #1D7A5F;        /* present, approved, hired, on-target */
+  --color-status-positive-bg: #E3F3EE;
+  --color-status-warning: #B5790A;          /* late, pending, at-risk */
+  --color-status-warning-bg: #FBF0DC;
+  --color-status-critical: #B3261E;          /* absent, rejected, overdue, below-target */
+  --color-status-critical-bg: #FBE7E5;
+  --color-status-neutral: #5A6270;            /* draft, not-started, inactive */
+  --color-status-neutral-bg: #EEF0F3;
+  --color-status-info: #2B6CB0;                /* in-progress, submitted, informational */
+  --color-status-info-bg: #E5F0FA;
+
+  /* Semantic mapping (reference in code by meaning, not raw color) */
+  --status-attendance-present: var(--color-status-positive);
+  --status-attendance-late: var(--color-status-warning);
+  --status-attendance-absent: var(--color-status-critical);
+  --status-attendance-leave: var(--color-status-info);
+
+  --status-payroll-draft: var(--color-status-neutral);
+  --status-payroll-pending: var(--color-status-warning);
+  --status-payroll-approved: var(--color-status-positive);
+  --status-payroll-paid: var(--color-status-info);
+
+  --status-candidate-uploaded: var(--color-status-neutral);
+  --status-candidate-scored: var(--color-status-info);
+  --status-candidate-shortlisted: var(--color-status-positive);
+  --status-candidate-rejected: var(--color-status-critical);
+
+  --status-kpi-on-target: var(--color-status-positive);
+  --status-kpi-at-risk: var(--color-status-warning);
+  --status-kpi-below-target: var(--color-status-critical);
+}
+```
+
+**Rule:** components never hardcode a hex value. Status colors are always resolved through the semantic mapping (e.g. `var(--status-payroll-approved)`), not by re-deriving "green means good" per component — this is what keeps the status rail consistent across modules.
+
+---
+
+## 2. Typography
+
+Two-family system, chosen for a back-office/financial-data context rather than a marketing site:
+
+- **Display/UI face:** `Inter` (or system-ui fallback stack: `-apple-system, "Segoe UI", Inter, sans-serif`) — used for all headings, nav, buttons, labels. Chosen for its neutrality and excellent legibility at small sizes in dense UI, not for personality — this product's personality comes from the status-color system and layout discipline, not display type.
+- **Tabular/data face:** `"IBM Plex Mono"` (or `ui-monospace` fallback) — used specifically for **numeric data**: salary figures, scores, percentages, dates in tables, employee/candidate IDs. Monospacing numerals is what makes columns of payroll figures or KPI scores actually scannable at a glance — this is the deliberate, subject-specific typographic choice for this brief.
+
+```css
+:root {
+  --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, monospace;
+
+  --text-xs: 0.75rem;    /* 12px — table meta, captions */
+  --text-sm: 0.8125rem;   /* 13px — table body, secondary labels */
+  --text-base: 0.9375rem;  /* 15px — default body/UI text */
+  --text-lg: 1.125rem;      /* 18px — section headings */
+  --text-xl: 1.5rem;         /* 24px — page titles */
+  --text-2xl: 1.875rem;        /* 30px — dashboard hero numbers only */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+}
+```
+
+**Rule:** any cell displaying a number (currency, score, count, percentage) uses `--font-data`. Any label, name, or descriptive text uses `--font-ui`. This split alone does most of the work of making tables feel precise rather than generic.
+
+---
+
+## 3. Spacing & Layout
+
+```css
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 48px;
+
+  --radius-sm: 4px;    /* inputs, badges, buttons */
+  --radius-md: 6px;     /* cards, modals */
+  --radius-none: 0px;    /* tables — sharp edges reinforce the data-tool feel, not soft cards */
+
+  --sidebar-width: 240px;
+  --content-max-width: 1440px;
+  --table-row-height: 44px;
+}
+```
+
+**Layout shell (all authenticated pages):**
+
+```
+┌────────────┬──────────────────────────────────────────┐
+│            │  Top bar: page title, breadcrumb, actions │
+│  Sidebar   ├──────────────────────────────────────────┤
+│  (nav,     │                                           │
+│  module    │  Page content (max-width 1440px,         │
+│  icons +   │  centered, --space-6 padding)             │
+│  labels)   │                                           │
+│            │                                           │
+└────────────┴──────────────────────────────────────────┘
+```
+
+- Sidebar: fixed width, grouped by module (Job Descriptions, CV Screening, Attendance, Payroll, KPI, Admin Panel), collapses to icon-only under 1024px viewport.
+- Top bar: always shows current page title + a short breadcrumb for nested pages (e.g. `Job Descriptions / Backend Engineer / Candidates`), primary action button (e.g. "New Job Description") right-aligned.
+
+---
+
+## 4. Core Components
+
+### Status Badge
+Pill-shaped, `--radius-sm`, background = the `-bg` variant of the status color, text = the solid status color, `--text-xs`, `--weight-medium`, uppercase, letter-spacing 0.02em. Always paired with the status rail on the containing row/card — badge and rail must use the same semantic status, never independently colored.
+
+### Status Rail (signature element)
+A 3px-wide colored bar on the left edge of: table rows (via `border-left`), cards, and list items. Color = the row/card's primary status via the semantic mapping in §1. This is the one consistent visual thread across every module — implement once as a shared CSS utility/component (`components/ui/StatusRail` or a `data-status` attribute + CSS), never reimplemented per module.
+
+### Table
+- Header row: `--color-surface-alt` background, `--text-xs` `--weight-semibold` uppercase labels, sticky on scroll for long lists.
+- Body rows: `--table-row-height`, hover state = `--color-surface-alt`, `--radius-none`, hairline `--color-border` bottom on each row (no full grid lines — horizontal only, keeps it calm).
+- Numeric columns right-aligned, `--font-data`.
+- Every table that maps to a paginated API response uses the shared `components/ui/Pagination` footer.
+
+### Card
+`--color-surface` background, `--radius-md`, `--color-border` 1px border (no shadow by default — shadows reserved for modals/dropdowns only, to keep the flat back-office feel), `--space-4` internal padding. Used for dashboard summary tiles, employee/candidate detail panels.
+
+### Button
+- Primary: `--color-accent` background, `--color-text-inverse` text, `--radius-sm`, `--weight-medium`, hover → `--color-accent-hover`.
+- Secondary: transparent background, `--color-border-strong` border, `--color-text-primary` text.
+- Destructive (reject candidate, delete): `--color-status-critical` text on transparent, `--color-status-critical-bg` on hover — never a filled red button, this is an admin tool where destructive actions should require a confirm step, not just be visually loud.
+- Approve/positive actions (approve payroll, shortlist candidate): filled `--color-status-positive`.
+
+### Form Field
+Label (`--text-sm`, `--weight-medium`, `--color-text-secondary`) above input. Input: `--color-surface` bg, `--color-border-strong` border, `--radius-sm`, focus state = 2px `--color-accent` outline (never remove focus outlines — keyboard accessibility matters in an internal tool used all day). Error state: `--color-status-critical` border + inline message below field in `--text-xs` critical color.
+
+### Modal
+`--color-surface`, `--radius-md`, drop shadow (`0 8px 24px rgba(16,24,40,0.12)`) — the one place shadow is used, to visually lift it above the flat page. Max-width 560px for simple forms, 800px for detail/review modals.
+
+### Score / KPI Visual
+A horizontal bar (not a gauge/donut — bars compare more legibly in a list of many rows) showing actual vs target, using the KPI status semantic colors. Numeric value in `--font-data` to the right of the bar, always shown alongside the visual (never color-only — accessibility, and precision matters for payroll-adjacent decisions).
+
+---
+
+## 5. Iconography
+
+Single icon set throughout (recommend `lucide-react` for consistency with the rest of the stack — same family used in Visualizer/artifact contexts, MIT licensed, works cleanly with React). Icons are functional wayfinding (module nav, status indicators, table actions), never decorative illustration — this tool doesn't need hero illustrations or empty-state mascots; a plain, direct message is more appropriate for this audience (see writing guidance below).
+
+---
+
+## 6. Writing / Microcopy Conventions
+
+- **Buttons name the action's result, not a generic verb:** "Approve Payroll Run," not "Submit." "Shortlist Candidate," not "Confirm."
+- **Errors state what happened and what to do**, in the interface's voice: "This attendance record already exists for this date. Edit the existing record instead." — not "Error: conflict."
+- **Empty states are instructive, not decorative:** "No candidates yet. Upload a CV to start screening for this role." with the relevant action button right there — not an illustration with vague copy.
+- **Status labels are the same word everywhere they appear** — a payslip that is "Approved" is never called "Confirmed" or "Finalized" on another screen. One vocabulary, enforced by pulling status labels from a single shared constants file (`frontend/src/constants/statusLabels.ts`), not re-typed as strings per page.
+
+---
+
+## 7. Responsiveness & Accessibility Floor
+
+- Sidebar collapses to icon rail below 1024px; tables become horizontally scrollable (not stacked cards — this audience needs to compare rows, stacking breaks that) below 768px.
+- All interactive elements keyboard-reachable, visible focus ring (`--color-accent` outline) never suppressed.
+- Color is never the only signal — status badges always carry text, KPI bars always carry a numeric value, not just a color fill.
+- Respect `prefers-reduced-motion` — transitions (hover states, modal open/close) are kept short (150–200ms) and simple regardless, no scroll-triggered animation anywhere in this tool.
+
+---
+
+## 8. What to Avoid
+
+- No gradients, no glassmorphism, no large rounded corners on tables/cards.
+- No stock illustration or mascot-style empty states.
+- No more than one accent color — status colors are functional, not decorative, and the accent (`--color-accent`) is reserved for primary actions and focus states only.
+- No animation for its own sake — every transition should communicate a state change, not add atmosphere. This is a tool people use for hours a day; visual quietness is a feature, not a lack of polish.

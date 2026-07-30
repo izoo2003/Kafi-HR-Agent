@@ -1,169 +1,77 @@
-"""Orchestrates the full CV ranking flow: ingest -> parse -> score -> rank ->
-report. Each stage is also callable independently from the CLI so you can
-re-run just scoring, or just reporting, without re-fetching everything.
-"""
+"""Cross-cutting multi-step orchestration."""
 from __future__ import annotations
 
-import datetime as dt
-import json
-import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Application, ApplicationStatus, Candidate, SourceChannel
-from app.ingestion.base import CandidateSubmission
-from app.ingestion.gmail_ingestor import GmailIngestor
-from app.ingestion.google_form_ingestor import GoogleFormIngestor
-from app.ingestion.position_matcher import match_position
-from app.ingestion.whatsapp_ingestor import WhatsAppIngestor
-from app.config import load_role_profiles
-from app.parsing.cv_parser import extract_text
-from app.ranking.ranker import list_positions, recompute_ranks
-from app.reporting.excel_report import generate_master_report, generate_position_report
-from app.scoring.gemini_scorer import score_cv
-
-logger = logging.getLogger(__name__)
-
-INGESTORS = {
-    SourceChannel.GMAIL: GmailIngestor,
-    SourceChannel.GOOGLE_FORM: GoogleFormIngestor,
-    SourceChannel.WHATSAPP: WhatsAppIngestor,
-}
+from app.core.exceptions import BusinessRuleViolation, EntityNotFound
+from app.models.cv_screening import Candidate, CandidateScore, ScoringCriteria
+from app.models.payroll import PayrollRun
+from app.parsing.cv_parser import parse_cv
+from app.ranking.candidate_ranker import rank_candidates_for_job
+from app.scoring.cv_scorer import score_candidate
 
 
-def fetch_submissions(session: Session, sources: list[SourceChannel] | None = None) -> int:
-    """Fetches new submissions from the given sources (default: all) and
-    persists them as candidates/applications. Returns count of new
-    applications created."""
-    sources = sources or list(INGESTORS.keys())
-    role_profiles = load_role_profiles()
-    created = 0
-
-    for source in sources:
-        ingestor_cls = INGESTORS[source]
-        try:
-            ingestor = ingestor_cls()
-        except Exception as exc:
-            logger.warning("Skipping %s ingestion — not configured yet: %s", source.value, exc)
-            continue
-
-        submissions = ingestor.fetch_new_submissions()
-        for submission in submissions:
-            # Match known roles against the full email/form context, but if
-            # nothing matches, fall back to the short subject/field value —
-            # never title-case the entire email body into a position name.
-            submission.position_applied = match_position(
-                submission.raw_context_text or submission.position_applied,
-                role_profiles,
-                fallback_label=submission.position_applied,
-            )
-            if _persist_submission(session, submission):
-                created += 1
-
-    return created
-
-
-def _persist_submission(session: Session, submission: CandidateSubmission) -> bool:
-    candidate = session.query(Candidate).filter_by(email=submission.email).one_or_none()
+def run_cv_pipeline(candidate_id: int, db: Session) -> Candidate:
+    """parse -> score -> ranking refresh."""
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).one_or_none()
     if candidate is None:
-        candidate = Candidate(
-            full_name=submission.full_name,
-            email=submission.email,
-            phone=submission.phone,
-            location=submission.location,
-        )
-        session.add(candidate)
-        session.flush()
+        raise EntityNotFound(f"Candidate {candidate_id} not found")
 
-    existing = (
-        session.query(Application)
-        .filter_by(
-            candidate_id=candidate.id,
-            position_applied=submission.position_applied,
-            source=submission.source,
-        )
-        .one_or_none()
-    )
-    if existing:
-        return False  # already have this exact application on file
+    parsed = parse_cv(candidate.cv_file_path)
+    if not (parsed.get("raw_text") or "").strip():
+        candidate.status = "uploaded"
+        db.flush()
+        raise BusinessRuleViolation("CV parsing produced empty text — check the file")
 
-    application = Application(
-        candidate_id=candidate.id,
-        position_applied=submission.position_applied,
-        source=submission.source,
-        source_ref=submission.source_ref,
-        cv_file_path=submission.cv_file_path,
-        status=ApplicationStatus.RECEIVED,
-        submitted_at=submission.submitted_at,
-    )
-    session.add(application)
-    return True
+    candidate.parsed_data = parsed
+    if parsed.get("full_name") and not candidate.full_name:
+        candidate.full_name = parsed["full_name"]
+    if parsed.get("email") and not candidate.email:
+        candidate.email = parsed["email"]
+    if parsed.get("phone") and not candidate.phone:
+        candidate.phone = parsed["phone"]
+    candidate.status = "parsed"
+    db.flush()
 
-
-def parse_and_score_pending(session: Session, retry_failed: bool = False) -> tuple[int, int]:
-    """Parses CV text + scores every application not yet scored. Returns
-    (succeeded_count, failed_count).
-
-    By default skips previously FAILED rows (so Run Full Pipeline does not
-    keep re-hitting Gemini on broken/empty CVs). Pass retry_failed=True to
-    include them again.
-    """
-    statuses = [ApplicationStatus.RECEIVED, ApplicationStatus.PARSED]
-    if retry_failed:
-        statuses.append(ApplicationStatus.FAILED)
-
-    pending = (
-        session.query(Application)
-        .filter(Application.status.in_(statuses))
+    criteria_rows = (
+        db.query(ScoringCriteria)
+        .filter(ScoringCriteria.job_description_id == candidate.job_description_id)
         .all()
     )
+    if not criteria_rows:
+        return candidate
 
-    succeeded, failed = 0, 0
-    for application in pending:
-        try:
-            if not application.cv_raw_text:
-                application.cv_raw_text = extract_text(application.cv_file_path)
-                application.status = ApplicationStatus.PARSED
+    payload = [
+        {"id": c.id, "weight": c.weight, "scoring_rules": c.scoring_rules or {}}
+        for c in criteria_rows
+    ]
+    score_rows, _total = score_candidate(parsed, payload)
 
-            result = score_cv(application.cv_raw_text, application.position_applied)
-            application.score = result.score
-            application.verdict = result.verdict.label
-            application.education_summary = result.education_summary
-            application.experience_summary = result.experience_summary
-            application.key_strengths_json = json.dumps(result.key_strengths)
-            application.hiring_summary = result.hiring_summary
-            application.status = ApplicationStatus.SCORED
-            application.scored_at = dt.datetime.now(dt.UTC)
-            succeeded += 1
-        except Exception as exc:
-            logger.exception("Failed to score application %s", application.id)
-            application.status = ApplicationStatus.FAILED
-            application.error_message = str(exc)
-            failed += 1
+    db.query(CandidateScore).filter(CandidateScore.candidate_id == candidate.id).delete()
+    db.flush()
+    for row in score_rows:
+        db.add(
+            CandidateScore(
+                candidate_id=candidate.id,
+                scoring_criteria_id=row["scoring_criteria_id"],
+                raw_score=row["raw_score"],
+                notes=row.get("notes"),
+            )
+        )
+    db.flush()
 
-    return succeeded, failed
-
-
-def rank_all(session: Session) -> None:
-    recompute_ranks(session)
+    candidate.status = "scored"
+    db.flush()
+    rank_candidates_for_job(db, candidate.job_description_id)
+    return candidate
 
 
-def generate_all_reports(session: Session) -> list[str]:
-    paths = []
-    for position in list_positions(session):
-        paths.append(str(generate_position_report(session, position)))
-    paths.append(str(generate_master_report(session)))
-    return paths
-
-
-def run_full_pipeline(session: Session) -> dict:
-    created = fetch_submissions(session)
-    succeeded, failed = parse_and_score_pending(session)
-    rank_all(session)
-    reports = generate_all_reports(session)
-    return {
-        "new_applications": created,
-        "scored": succeeded,
-        "failed": failed,
-        "reports": reports,
-    }
+def run_payroll_generation(payroll_run_id: int, db: Session) -> PayrollRun:
+    run = db.query(PayrollRun).filter(PayrollRun.id == payroll_run_id).one_or_none()
+    if run is None:
+        raise BusinessRuleViolation(f"Payroll run {payroll_run_id} not found")
+    raise BusinessRuleViolation(
+        "Payroll generation not implemented yet — complete Phase 3 attendance first"
+    )

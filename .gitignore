@@ -5,11 +5,17 @@ backend/venv/
 **/*.pyc
 backend/.env
 backend/credentials/*.json
+backend/credentials/*
+!backend/credentials/.gitkeep
 backend/data/*.db
 backend/data/cv_files/*
 backend/data/reports/*
+backend/data/uploads/**
+backend/data/exports/**
 !backend/data/cv_files/.gitkeep
 !backend/data/reports/.gitkeep
+!backend/data/uploads/.gitkeep
+!backend/data/exports/.gitkeep
 
 # --- Frontend (Node) ---
 frontend/node_modules/
