@@ -1,7 +1,25 @@
 import { keysToCamel, keysToSnake } from "../lib/case";
 import type { ApiErrorResponse } from "../types/common";
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
+const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
+const PRODUCTION_API = "https://kafi-hr-agent.up.railway.app/api/v1";
+
+/** Prefer absolute Railway URL in production builds; never call the Vercel origin for API. */
+function resolveApiBase(): string {
+  const configured = (RAW_BASE || "/api/v1").replace(/\/$/, "");
+  if (configured.startsWith("http://") || configured.startsWith("https://")) {
+    return configured;
+  }
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host.endsWith("vercel.app") || host === "kafi-hr-agent.vercel.app") {
+      return PRODUCTION_API;
+    }
+  }
+  return configured;
+}
+
+const BASE_URL = resolveApiBase();
 
 const ACCESS_KEY = "hr_access_token";
 const REFRESH_KEY = "hr_refresh_token";
