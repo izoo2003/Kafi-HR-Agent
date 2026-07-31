@@ -55,16 +55,20 @@ type RequestOptions = {
 function buildUrl(path: string, params?: RequestOptions["params"]): string {
   const base = BASE_URL.replace(/\/$/, "");
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  // Absolute API host (Railway) or relative path (local Vite proxy).
   const url = new URL(`${base}${cleanPath}`, window.location.origin);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined && v !== null) {
-        url.searchParams.set(keysToSnake({ [k]: v }) && typeof k === "string" ? k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`) : k, String(v));
+        const snakeKey = k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+        url.searchParams.set(snakeKey, String(v));
       }
     }
   }
-  // Relative to origin when BASE_URL is absolute path
-  return url.pathname + url.search;
+  // Keep full URL for absolute bases; path-only for relative (/api/v1).
+  return base.startsWith("http://") || base.startsWith("https://")
+    ? url.toString()
+    : url.pathname + url.search;
 }
 
 let onUnauthorized: (() => void) | null = null;
