@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     api_port: int = 8808
     api_reload: bool = False
     cors_origins: str = "http://localhost:5288,http://127.0.0.1:5288"
+    # Optional regex for preview hosts (e.g. Vercel): https://.*\.vercel\.app
+    cors_origin_regex: str = ""
+    public_api_url: str = ""  # e.g. https://kafi-hr-agent.up.railway.app
     app_version: str = "0.1.0"
     environment: str = "development"  # development | staging | production
 

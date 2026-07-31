@@ -40,6 +40,12 @@ npm run dev
 
 Open http://localhost:5288 — sign in with seed admin from backend `.env`.
 
+## Production (Vercel)
+
+- Build uses `frontend/.env.production` → API at `https://kafi-hr-agent.up.railway.app/api/v1`
+- In Vercel: set **Root Directory** to `frontend`, framework Vite
+- On Railway, set `CORS_ORIGIN_REGEX=https://.*\.vercel\.app` and add your production Vercel URL to `CORS_ORIGINS` if it is a custom domain
+
 ## Auth & permissions
 
 - Login → JWT stored in localStorage → `/auth/me` populates `AuthContext`
