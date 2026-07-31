@@ -121,54 +121,51 @@ export function KpiDefinitionsPage() {
             description="Create per-department targets and weights. Active weights must sum to 1.0."
           />
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Department</th>
-                <th>Target</th>
-                <th>Unit</th>
-                <th>Weight</th>
-                <th>Period</th>
-                {canWrite ? <th /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {(definitions.data ?? []).map((d) => {
-                const deptName =
-                  (departments.data ?? []).find((x) => x.id === d.departmentId)?.name ??
-                  String(d.departmentId);
-                return (
-                  <tr key={d.id}>
-                    <td>{d.name}</td>
-                    <td>{deptName}</td>
-                    <td className="font-data">{d.targetValue}</td>
-                    <td>{d.measurementUnit ?? "—"}</td>
-                    <td className="font-data">{d.weight}</td>
-                    <td>{d.reviewPeriod}</td>
-                    {canWrite ? (
-                      <td>
-                        <Button
-                          variant="secondary"
-                          onClick={async () => {
-                            setError(null);
-                            try {
-                              await archiveDef.mutateAsync(d.id);
-                            } catch (err) {
-                              setError(
-                                err instanceof ApiError ? err.message : "Archive failed",
-                              );
-                            }
-                          }}
-                        >
-                          Archive
-                        </Button>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
+          <Table
+            headers={[
+              "Name",
+              "Department",
+              "Target",
+              "Unit",
+              "Weight",
+              "Period",
+              ...(canWrite ? ["Actions"] : []),
+            ]}
+          >
+            {(definitions.data ?? []).map((d) => {
+              const deptName =
+                (departments.data ?? []).find((x) => x.id === d.departmentId)?.name ??
+                String(d.departmentId);
+              return (
+                <tr key={d.id}>
+                  <td>{d.name}</td>
+                  <td>{deptName}</td>
+                  <td className="font-data">{d.targetValue}</td>
+                  <td>{d.measurementUnit ?? "—"}</td>
+                  <td className="font-data">{d.weight}</td>
+                  <td>{d.reviewPeriod}</td>
+                  {canWrite ? (
+                    <td>
+                      <Button
+                        variant="secondary"
+                        onClick={async () => {
+                          setError(null);
+                          try {
+                            await archiveDef.mutateAsync(d.id);
+                          } catch (err) {
+                            setError(
+                              err instanceof ApiError ? err.message : "Archive failed",
+                            );
+                          }
+                        }}
+                      >
+                        Archive
+                      </Button>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
           </Table>
         )}
 

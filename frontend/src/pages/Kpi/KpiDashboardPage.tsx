@@ -203,62 +203,42 @@ export function KpiDashboardPage() {
 
             <section>
               <h2 style={{ fontSize: "var(--text-lg)" }}>KPI breakdown (weakest first)</h2>
-              <Table>
-                <thead>
-                  <tr>
-                    <th>KPI</th>
-                    <th>Avg score</th>
-                    <th>Weight</th>
-                    <th>Band</th>
+              <Table headers={["KPI", "Avg score", "Weight", "Band"]}>
+                {summary.data.kpiBreakdown.map((b) => (
+                  <tr key={b.kpiDefinitionId} data-status={b.band}>
+                    <td>{b.name}</td>
+                    <td className="font-data">{b.averageScore.toFixed(1)}</td>
+                    <td className="font-data">{b.weight}</td>
+                    <td>
+                      <StatusBadge status={b.band}>
+                        {KPI_STATUS_LABELS[b.band]}
+                      </StatusBadge>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {summary.data.kpiBreakdown.map((b) => (
-                    <tr key={b.kpiDefinitionId} data-status={b.band}>
-                      <td>{b.name}</td>
-                      <td className="font-data">{b.averageScore.toFixed(1)}</td>
-                      <td className="font-data">{b.weight}</td>
-                      <td>
-                        <StatusBadge status={b.band}>
-                          {KPI_STATUS_LABELS[b.band]}
-                        </StatusBadge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                ))}
               </Table>
             </section>
 
             <section>
               <h2 style={{ fontSize: "var(--text-lg)" }}>Employees</h2>
-              <Table>
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Overall</th>
-                    <th>Band</th>
-                    <th>Entries</th>
+              <Table headers={["Employee", "Overall", "Band", "Entries"]}>
+                {summary.data.employees.map((emp) => (
+                  <tr
+                    key={emp.employeeId}
+                    data-status={emp.band}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedEmployeeId(emp.employeeId)}
+                  >
+                    <td>{empName(emp.employeeId)}</td>
+                    <td className="font-data">{emp.overallScore.toFixed(1)}</td>
+                    <td>
+                      <StatusBadge status={emp.band}>
+                        {KPI_STATUS_LABELS[emp.band]}
+                      </StatusBadge>
+                    </td>
+                    <td className="font-data">{emp.entries.length}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {summary.data.employees.map((emp) => (
-                    <tr
-                      key={emp.employeeId}
-                      data-status={emp.band}
-                      style={{ cursor: "pointer" }}
-                      onClick={() => setSelectedEmployeeId(emp.employeeId)}
-                    >
-                      <td>{empName(emp.employeeId)}</td>
-                      <td className="font-data">{emp.overallScore.toFixed(1)}</td>
-                      <td>
-                        <StatusBadge status={emp.band}>
-                          {KPI_STATUS_LABELS[emp.band]}
-                        </StatusBadge>
-                      </td>
-                      <td className="font-data">{emp.entries.length}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                ))}
               </Table>
             </section>
 
