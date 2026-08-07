@@ -77,6 +77,7 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 | full_name | TEXT NOT NULL | |
 | department_id | INTEGER FK → departments.id | |
 | role_title | TEXT NOT NULL | job title, not RBAC role |
+| job_description_text | TEXT NULL | duties/requirements for this employee (internal JD — not a hiring job posting) |
 | employment_type | TEXT | `full_time`, `part_time`, `contract` |
 | date_joined | DATE | |
 | date_exited | DATE NULL | |
@@ -89,6 +90,7 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 ## 3. CV Screening
 
 ### `job_descriptions`
+Hiring **job postings** (open roles for CV screening). UI label: Job Postings. Distinct from `employees.job_description_text` (internal duties for current staff).
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
@@ -114,13 +116,18 @@ Per-role CV scoring rubric (in-scope item 2).
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
-| job_description_id | INTEGER FK → job_descriptions.id | |
+| job_description_id | INTEGER FK → job_descriptions.id NULL | NULL = fetched but not yet matched/assigned to a role (see §11 of `FEATURE_CV_SCREENING.md`) |
 | full_name | TEXT | extracted or manually entered |
 | email | TEXT NULL | |
 | phone | TEXT NULL | |
 | cv_file_path | TEXT NOT NULL | original uploaded file |
 | parsed_data | JSON | structured extraction output (education, experience, skills, etc.) |
 | status | TEXT | `uploaded`, `parsed`, `scored`, `shortlisted`, `rejected`, `hired` |
+| source | TEXT | `manual`, `gmail`, `google_form` — how this CV entered the system |
+| source_ref | TEXT NULL | dedupe key for automated sources (Gmail message id, form row id) — never re-imported twice |
+| match_confidence | FLOAT NULL | AI job-match confidence (0–1) when auto-matched; NULL for manual uploads/assignments |
+| match_reasoning | TEXT NULL | short AI explanation of the job match (or best-guess reasoning while still unassigned) |
+| submitted_at | DATETIME NULL | actual submission time from the source, distinct from `created_at` (ingestion time) |
 
 ### `candidate_scores`
 | Column | Type | Notes |

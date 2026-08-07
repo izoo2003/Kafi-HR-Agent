@@ -7,6 +7,7 @@ import { useDepartments } from "../../hooks/useEmployees";
 import {
   useCreateJobDescription,
   useCriteria,
+  useGenerateJobPostingAiDraft,
   useJobDescription,
   useUpdateJobDescription,
 } from "../../hooks/useJobDescriptions";
@@ -47,6 +48,7 @@ export function JobDescriptionFormPage() {
   const existing = useJobDescription(jobId);
   const createJob = useCreateJobDescription();
   const updateJob = useUpdateJobDescription(jobId);
+  const aiDraft = useGenerateJobPostingAiDraft();
   const criteriaQ = useCriteria(jobId);
 
   const [title, setTitle] = useState("");
@@ -59,6 +61,34 @@ export function JobDescriptionFormPage() {
     skillRow("Communication", 5),
   ]);
   const [error, setError] = useState<string | null>(null);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
+
+  async function onGenerateAiDraft() {
+    setError(null);
+    setAiMessage(null);
+    if (!title.trim() || !departmentId) {
+      setError("Enter a title and select a department before running AI Analyzer");
+      return;
+    }
+    const hasExisting = descriptionText.trim().length > 0 || requirementsText.trim().length > 0;
+    if (hasExisting) {
+      const ok = window.confirm(
+        "AI Analyzer will replace the current Description and Requirements. Continue?",
+      );
+      if (!ok) return;
+    }
+    try {
+      const draft = await aiDraft.mutateAsync({
+        title: title.trim(),
+        departmentId: Number(departmentId),
+      });
+      setDescriptionText(draft.descriptionText);
+      setRequirementsText(draft.requirementsText);
+      setAiMessage("AI Analyzer filled Description and Requirements — review and edit before saving.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "AI Analyzer failed");
+    }
+  }
 
   useEffect(() => {
     if (!existing.data) return;
@@ -119,8 +149,8 @@ export function JobDescriptionFormPage() {
   return (
     <>
       <PageHeader
-        title={isEdit ? "Edit Job Description" : "New Job Description"}
-        breadcrumb="Job Descriptions / Form"
+        title={isEdit ? "Edit Job Posting" : "New Job Posting"}
+        breadcrumb="Job Postings / Form"
       />
       <div className="page">
         <form className="card" onSubmit={onSubmit} style={{ display: "grid", gap: "var(--space-4)" }}>
@@ -142,6 +172,39 @@ export function JobDescriptionFormPage() {
               ))}
             </select>
           </label>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-3)",
+              alignItems: "center",
+              padding: "var(--space-3)",
+              background: "var(--color-accent-subtle)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            <div style={{ flex: "1 1 220px" }}>
+              <strong style={{ display: "block", marginBottom: 4 }}>AI Analyzer</strong>
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                After title and department are set, generate an appropriate description and
+                requirements for this posting.
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={aiDraft.isPending || !title.trim() || !departmentId}
+              onClick={onGenerateAiDraft}
+            >
+              {aiDraft.isPending ? "Generating…" : "Generate with AI"}
+            </Button>
+          </div>
+          {aiMessage ? (
+            <p style={{ color: "var(--color-status-info)", margin: 0 }}>{aiMessage}</p>
+          ) : null}
+
           <label className="form-field">
             <span className="form-field__label">Description</span>
             <textarea
@@ -228,7 +291,7 @@ export function JobDescriptionFormPage() {
           </div>
 
           <Button type="submit" variant="primary">
-            Save Job Description
+            Save Job Posting
           </Button>
         </form>
       </div>

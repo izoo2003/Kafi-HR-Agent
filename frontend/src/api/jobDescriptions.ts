@@ -3,8 +3,11 @@ import type { MessageResponse, PaginatedResponse, PaginationParams } from "../ty
 import type {
   Candidate,
   CandidateEvaluation,
+  CvSyncResult,
   JobDescription,
   JobDescriptionCreate,
+  JobPostingAiDraftRequest,
+  JobPostingAiDraftResult,
   RankingRow,
   ScoringCriteria,
   ScoringCriteriaInput,
@@ -18,6 +21,15 @@ export async function listJobDescriptions(
 
 export async function createJobDescription(payload: JobDescriptionCreate): Promise<JobDescription> {
   return apiRequest<JobDescription>("/job-descriptions", { method: "POST", body: payload });
+}
+
+export async function generateJobPostingAiDraft(
+  payload: JobPostingAiDraftRequest,
+): Promise<JobPostingAiDraftResult> {
+  return apiRequest<JobPostingAiDraftResult>("/job-descriptions/ai-draft", {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export async function getJobDescription(id: number): Promise<JobDescription> {
@@ -102,5 +114,22 @@ export async function scoreOverride(
   return apiRequest(`/candidates/${candidateId}/score-override`, {
     method: "POST",
     body: payload,
+  });
+}
+
+export async function syncCvSources(): Promise<CvSyncResult> {
+  return apiRequest<CvSyncResult>("/cv-screening/sync", { method: "POST" });
+}
+
+export async function listUnassignedCandidates(
+  params: PaginationParams = {},
+): Promise<PaginatedResponse<Candidate>> {
+  return apiRequest<PaginatedResponse<Candidate>>("/candidates/unassigned", { params });
+}
+
+export async function assignCandidate(id: number, jobDescriptionId: number): Promise<Candidate> {
+  return apiRequest<Candidate>(`/candidates/${id}/assign`, {
+    method: "POST",
+    body: { jobDescriptionId },
   });
 }

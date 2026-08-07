@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # backend/
@@ -52,15 +52,44 @@ class Settings(BaseSettings):
     seed_admin_password: str = "ChangeMeAdmin123!"
     seed_admin_name: str = "System Admin"
 
-    # --- Optional LLM / legacy ingestion (feature modules may use later) ---
+    # --- Optional LLM ---
+    # CV screening / matching / evaluation
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
+    # Job posting AI Analyzer only (description + requirements draft) — separate key
+    gemini_job_posting_api_key: str = ""
+    gemini_job_posting_model: str = "gemini-flash-latest"
+
+    # --- Automated CV intake (FEATURE_CV_SCREENING.md §11) ---
+    # All blank-safe: sync reports a source as "not configured" rather than failing.
+    gmail_address: str = "hr@kafi-group.com"
+    google_oauth_credentials_file: str = "credentials/google_oauth_client.json"
+    google_oauth_token_file: str = "credentials/gmail_token.json"
+    google_form_sheet_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GOOGLE_FORM_RESPONSES_SHEET_ID",
+            "google_form_sheet_id",
+            "GOOGLE_FORM_SHEET_ID",
+        ),
+    )
+    google_form_token_file: str = "credentials/form_token.json"
+    # If set, written to google_oauth_token_file on boot when that file is missing —
+    # lets a token minted once locally survive an ephemeral-filesystem redeploy (Railway).
+    google_oauth_token_json: str = ""
+    cv_auto_match_min_confidence: float = 0.55
 
     # --- Paths ---
     credentials_dir: Path = Field(default_factory=lambda: BASE_DIR / "credentials")
     config_dir: Path = Field(default_factory=lambda: BASE_DIR / "config")
     data_dir: Path = Field(default_factory=lambda: BASE_DIR / "data")
     uploads_cvs_dir: Path = Field(default_factory=lambda: BASE_DIR / "data" / "uploads" / "cvs")
+    cv_files_dir: Path = Field(default_factory=lambda: BASE_DIR / "data" / "cv_files")
+
+    def resolved_path(self, relative_or_absolute: str) -> Path:
+        """Resolves a credentials-style setting (path relative to backend/) to an absolute Path."""
+        p = Path(relative_or_absolute)
+        return p if p.is_absolute() else BASE_DIR / p
 
     @property
     def cors_origin_list(self) -> list[str]:

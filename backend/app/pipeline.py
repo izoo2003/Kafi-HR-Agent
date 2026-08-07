@@ -35,6 +35,11 @@ def run_cv_pipeline(candidate_id: int, db: Session) -> Candidate:
     candidate.status = "parsed"
     db.flush()
 
+    if candidate.job_description_id is None:
+        # Fetched but not yet matched/assigned to a job (FEATURE_CV_SCREENING.md §11) —
+        # parsing is all we can do until it lands on a job description.
+        return candidate
+
     criteria_rows = (
         db.query(ScoringCriteria)
         .filter(ScoringCriteria.job_description_id == candidate.job_description_id)

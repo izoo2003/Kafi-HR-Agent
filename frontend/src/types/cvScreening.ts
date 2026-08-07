@@ -19,6 +19,16 @@ export interface JobDescriptionCreate {
   status?: "draft" | "open" | "closed";
 }
 
+export interface JobPostingAiDraftRequest {
+  title: string;
+  departmentId: number;
+}
+
+export interface JobPostingAiDraftResult {
+  descriptionText: string;
+  requirementsText: string;
+}
+
 export interface ScoringCriteria {
   id: number;
   jobDescriptionId: number;
@@ -35,15 +45,22 @@ export interface ScoringCriteriaInput {
   scoringRules: Record<string, unknown>;
 }
 
+export type CvSource = "manual" | "gmail" | "google_form";
+
 export interface Candidate {
   id: number;
-  jobDescriptionId: number;
+  jobDescriptionId: number | null;
   fullName: string | null;
   email: string | null;
   phone: string | null;
   cvFilePath: string;
   parsedData: Record<string, unknown> | null;
   status: string;
+  source: CvSource;
+  sourceRef: string | null;
+  matchConfidence: number | null;
+  matchReasoning: string | null;
+  submittedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,10 +90,33 @@ export interface CandidateEvaluation {
   jobTitle: string;
   overallScore: number | null;
   rankPosition: number | null;
+  ratingOutOf10: number | null;
   recommendation: "shortlist" | "consider" | "reject";
   recommendationLabel: string;
   summary: string;
+  whyAccepted: string;
+  whyRejected: string;
   strengths: string[];
   gaps: string[];
   skills: SkillEvaluationRow[];
+}
+
+export interface CvSourceResult {
+  source: "gmail" | "google_form";
+  configured: boolean;
+  fetched: number;
+  message: string | null;
+}
+
+export interface CvSyncResult {
+  sources: CvSourceResult[];
+  totalFetched: number;
+  autoMatched: number;
+  unassigned: number;
+  duplicatesSkipped: number;
+  candidates: Candidate[];
+}
+
+export interface CandidateAssignRequest {
+  jobDescriptionId: number;
 }

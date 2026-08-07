@@ -27,7 +27,7 @@ export function JobDescriptionDetailPage() {
     <>
       <PageHeader
         title={job.data.title}
-        breadcrumb="Job Descriptions / Detail"
+        breadcrumb="Job Postings / Detail"
         actions={
           <>
             <Link to={`/job-descriptions/${jobId}/candidates`}>

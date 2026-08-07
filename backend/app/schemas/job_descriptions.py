@@ -15,6 +15,16 @@ class JobDescriptionCreate(BaseModel):
     status: Literal["draft", "open", "closed"] = "draft"
 
 
+class JobPostingAiDraftRequest(BaseModel):
+    title: str = Field(min_length=1)
+    department_id: int
+
+
+class JobPostingAiDraftResult(BaseModel):
+    description_text: str
+    requirements_text: str
+
+
 class JobDescriptionUpdate(BaseModel):
     title: str | None = None
     department_id: int | None = None

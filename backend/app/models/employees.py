@@ -37,6 +37,8 @@ class Employee(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"), nullable=False)
     role_title: Mapped[str] = mapped_column(Text, nullable=False)
+    # Duties / requirements for this employee (internal JD — not a hiring job posting).
+    job_description_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     employment_type: Mapped[str | None] = mapped_column(String, nullable=True)
     date_joined: Mapped[date | None] = mapped_column(Date, nullable=True)
     date_exited: Mapped[date | None] = mapped_column(Date, nullable=True)

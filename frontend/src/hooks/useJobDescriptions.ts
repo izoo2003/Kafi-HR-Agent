@@ -28,6 +28,12 @@ export function useCreateJobDescription() {
   });
 }
 
+export function useGenerateJobPostingAiDraft() {
+  return useMutation({
+    mutationFn: jdApi.generateJobPostingAiDraft,
+  });
+}
+
 export function useUpdateJobDescription(id: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -90,11 +96,11 @@ export function useCandidate(id: number) {
   });
 }
 
-export function useCandidateEvaluation(id: number) {
+export function useCandidateEvaluation(id: number, enabled = true) {
   return useQuery({
     queryKey: ["candidate-evaluation", id],
     queryFn: () => jdApi.getCandidateEvaluation(id),
-    enabled: id > 0,
+    enabled: id > 0 && enabled,
   });
 }
 
@@ -104,6 +110,40 @@ export function usePatchCandidate() {
     mutationFn: ({ id, ...payload }: { id: number; status?: string; fullName?: string }) =>
       jdApi.patchCandidate(id, payload),
     onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["candidates", data.jobDescriptionId] });
+      qc.invalidateQueries({ queryKey: ["ranking", data.jobDescriptionId] });
+      qc.invalidateQueries({ queryKey: ["candidate", data.id] });
+      qc.invalidateQueries({ queryKey: ["candidate-evaluation", data.id] });
+    },
+  });
+}
+
+export function useSyncCvSources() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => jdApi.syncCvSources(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["unassigned-candidates"] });
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      qc.invalidateQueries({ queryKey: ["ranking"] });
+    },
+  });
+}
+
+export function useUnassignedCandidates(params: PaginationParams = {}) {
+  return useQuery({
+    queryKey: ["unassigned-candidates", params],
+    queryFn: () => jdApi.listUnassignedCandidates(params),
+  });
+}
+
+export function useAssignCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, jobDescriptionId }: { id: number; jobDescriptionId: number }) =>
+      jdApi.assignCandidate(id, jobDescriptionId),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["unassigned-candidates"] });
       qc.invalidateQueries({ queryKey: ["candidates", data.jobDescriptionId] });
       qc.invalidateQueries({ queryKey: ["ranking", data.jobDescriptionId] });
       qc.invalidateQueries({ queryKey: ["candidate", data.id] });

@@ -6,8 +6,11 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import BusinessRuleViolation, ConflictError, EntityNotFound
-from app.ingestion.cv_intake import store_cv_upload
+from app.core.config import get_settings
+from app.core.exceptions import BusinessRuleViolation, ConflictError, EntityNotFound, ValidationFailed
+from app.ingestion.cv_intake import store_cv_upload, store_fetched_cv
+from app.ingestion.gmail_ingestor import fetch_gmail_submissions
+from app.ingestion.google_form_ingestor import fetch_form_submissions
 from app.integration.event_bus_stub import publish_event
 from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription
 from app.models.employees import Employee
@@ -15,14 +18,19 @@ from app.pipeline import run_cv_pipeline
 from app.ranking.candidate_ranker import rank_candidates_for_job
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.cv_screening import (
+    CandidateAssignRequest,
     CandidateEvaluation,
     CandidateRead,
     CandidateUpdate,
+    CvSourceResult,
+    CvSyncResult,
     HireRequest,
     RankingRow,
     ScoreOverrideRequest,
     SkillEvaluationRow,
 )
+from app.scoring.cv_job_evaluator import evaluate_cv_against_job
+from app.scoring.cv_job_matcher import OpenJobSummary, match_candidate_to_job
 from app.scoring.cv_scorer import _max_points_for_rule
 from app.services import audit_service
 
@@ -203,6 +211,11 @@ def get_candidate_evaluation(db: Session, candidate_id: int) -> CandidateEvaluat
     from app.models.cv_screening import ScoringCriteria
 
     cand = get_candidate(db, candidate_id)
+    if cand.job_description_id is None:
+        raise BusinessRuleViolation(
+            "This candidate is not yet assigned to a job description — assign it to a job "
+            "before requesting an evaluation."
+        )
     job = db.query(JobDescription).filter(JobDescription.id == cand.job_description_id).one()
     criteria = (
         db.query(ScoringCriteria)
@@ -251,58 +264,22 @@ def get_candidate_evaluation(db: Session, candidate_id: int) -> CandidateEvaluat
     overall = float(ranking.total_score) if ranking else None
     rank_pos = ranking.rank_position if ranking else None
 
-    matched_n = sum(1 for s in skill_evals if s.matched)
-    total_n = len(skill_evals) or 1
-    match_pct = matched_n / total_n
-
-    if overall is None and not skill_evals:
-        recommendation: str = "consider"
-        label = "Needs review"
-        summary = (
-            f"{cand.full_name or 'This candidate'} has been uploaded but there are no skill "
-            f"criteria on the job yet, so an automated accept/reject recommendation cannot be made."
-        )
-    elif overall is not None and overall >= 75 and match_pct >= 0.7:
-        recommendation = "shortlist"
-        label = "Recommend shortlist"
-        summary = (
-            f"{cand.full_name or 'This candidate'} scores {overall:.1f}/100 "
-            f"(rank #{rank_pos if rank_pos else '—'}) and evidences {matched_n}/{total_n} required skills. "
-            f"Overall fit is strong enough to shortlist for interview."
-        )
-    elif overall is not None and overall >= 45:
-        recommendation = "consider"
-        label = "Consider with caution"
-        summary = (
-            f"{cand.full_name or 'This candidate'} scores {overall:.1f}/100 "
-            f"(rank #{rank_pos if rank_pos else '—'}) with {matched_n}/{total_n} skills matched. "
-            f"There is partial fit — review the gaps below before deciding."
-        )
-    else:
-        recommendation = "reject"
-        label = "Recommend reject"
-        score_bit = f"{overall:.1f}/100" if overall is not None else "unavailable"
-        summary = (
-            f"{cand.full_name or 'This candidate'} scores {score_bit} "
-            f"and only matches {matched_n}/{total_n} required skills. "
-            f"Based on the job skill profile, this CV is a weak fit and rejection is recommended "
-            f"unless hiring for a junior/training track."
-        )
-
-    if gaps and recommendation == "shortlist":
-        summary += f" Minor gaps: {', '.join(g.split(' (')[0] for g in gaps[:3])}."
-    if strengths and recommendation == "reject":
-        summary += f" Present strengths: {', '.join(s.split(' (')[0] for s in strengths[:3])}."
-
     parsed = cand.parsed_data or {}
-    years = parsed.get("years_experience")
-    if years is not None:
-        try:
-            y = float(years)
-            if y <= 0 and recommendation != "reject":
-                summary += " Note: parsed years of experience is 0 (common for current students) — verify education/internships manually."
-        except (TypeError, ValueError):
-            pass
+    cv_text = str(parsed.get("raw_text") or "")
+    ai = evaluate_cv_against_job(
+        cv_text=cv_text,
+        job_title=job.title,
+        description_text=job.description_text or "",
+        requirements_text=job.requirements_text,
+        settings=get_settings(),
+        heuristic_overall_score=overall,
+        heuristic_strengths=strengths,
+        heuristic_gaps=gaps,
+    )
+
+    # Prefer AI-written bullets when present; keep criterion bullets as fallback.
+    out_strengths = ai.strengths or strengths
+    out_gaps = ai.gaps or gaps
 
     return CandidateEvaluation(
         candidate_id=cand.id,
@@ -310,12 +287,201 @@ def get_candidate_evaluation(db: Session, candidate_id: int) -> CandidateEvaluat
         job_title=job.title,
         overall_score=overall,
         rank_position=rank_pos,
-        recommendation=recommendation,  # type: ignore[arg-type]
-        recommendation_label=label,
-        summary=summary,
-        strengths=strengths,
-        gaps=gaps,
+        rating_out_of_10=ai.rating_out_of_10,
+        recommendation=ai.recommendation,  # type: ignore[arg-type]
+        recommendation_label=ai.recommendation_label,
+        summary=ai.summary,
+        why_accepted=ai.why_accepted,
+        why_rejected=ai.why_rejected,
+        strengths=out_strengths,
+        gaps=out_gaps,
         skills=skill_evals,
+    )
+
+
+def list_unassigned_candidates(
+    db: Session, *, page: int = 1, page_size: int = 20
+) -> PaginatedResponse[CandidateRead]:
+    """Candidates fetched automatically that haven't been matched/routed to a
+    job yet — FEATURE_CV_SCREENING.md §11."""
+    q = db.query(Candidate).filter(Candidate.job_description_id.is_(None))
+    total = q.count()
+    rows = (
+        q.order_by(Candidate.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    )
+    return PaginatedResponse(
+        items=[CandidateRead.model_validate(r) for r in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def assign_candidate_to_job(
+    db: Session, auth: AuthContext, candidate_id: int, payload: CandidateAssignRequest
+) -> Candidate:
+    """HR manually routes an unassigned (or misassigned) candidate to a job,
+    then runs the parse/score/rank pipeline against that job's criteria."""
+    cand = get_candidate(db, candidate_id)
+    job = (
+        db.query(JobDescription)
+        .filter(JobDescription.id == payload.job_description_id)
+        .one_or_none()
+    )
+    if job is None:
+        raise EntityNotFound(f"Job description {payload.job_description_id} not found")
+
+    before = {"job_description_id": cand.job_description_id}
+    cand.job_description_id = job.id
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="candidate.assigned_to_job",
+        entity_type="candidate",
+        entity_id=cand.id,
+        before_state=before,
+        after_state={"job_description_id": job.id},
+    )
+    try:
+        run_cv_pipeline(cand.id, db)
+    except Exception:
+        pass
+    return get_candidate(db, cand.id)
+
+
+def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
+    """Fetches new CVs from Gmail + Google Form, dedupes, stores them
+    unassigned, then AI-matches each against open job descriptions —
+    auto-assigning above the confidence threshold, leaving the rest in the
+    Unassigned pool for HR to route manually. FEATURE_CV_SCREENING.md §11."""
+    settings = get_settings()
+
+    open_jobs = db.query(JobDescription).filter(JobDescription.status == "open").all()
+    open_job_summaries = [
+        OpenJobSummary(
+            id=j.id,
+            title=j.title,
+            description_text=j.description_text,
+            requirements_text=j.requirements_text,
+        )
+        for j in open_jobs
+    ]
+
+    fetch_results = [
+        fetch_gmail_submissions(settings),
+        fetch_form_submissions(settings),
+    ]
+
+    source_results: list[CvSourceResult] = []
+    all_candidates: list[Candidate] = []
+    auto_matched = 0
+    unassigned = 0
+    duplicates_skipped = 0
+
+    for fetch_result in fetch_results:
+        fetched_count = 0
+        for submission in fetch_result.submissions:
+            existing = (
+                db.query(Candidate)
+                .filter(
+                    Candidate.source == fetch_result.source,
+                    Candidate.source_ref == submission.source_ref,
+                )
+                .one_or_none()
+            )
+            if existing:
+                duplicates_skipped += 1
+                continue
+
+            try:
+                candidate = store_fetched_cv(
+                    db,
+                    source=fetch_result.source,
+                    source_ref=submission.source_ref,
+                    filename=submission.cv_filename,
+                    content=submission.cv_bytes,
+                    full_name=submission.full_name,
+                    email=submission.email,
+                    phone=submission.phone,
+                    submitted_at=submission.submitted_at,
+                )
+            except ValidationFailed:
+                continue  # unreadable/oversized file — skip, don't fail the whole sync
+
+            try:
+                run_cv_pipeline(candidate.id, db)  # parse-only: job_description_id is still None
+            except Exception:
+                pass
+
+            cv_text = (candidate.parsed_data or {}).get("raw_text", "")
+            match_result = match_candidate_to_job(
+                cv_text, submission.position_hint, open_job_summaries, settings
+            )
+            candidate.match_confidence = match_result.confidence
+            candidate.match_reasoning = match_result.reasoning
+            db.flush()
+
+            if (
+                match_result.job_description_id is not None
+                and match_result.confidence >= settings.cv_auto_match_min_confidence
+            ):
+                candidate.job_description_id = match_result.job_description_id
+                db.flush()
+                audit_service.log_from_auth(
+                    db,
+                    auth,
+                    action="candidate.matched_to_job",
+                    entity_type="candidate",
+                    entity_id=candidate.id,
+                    after_state={
+                        "job_description_id": match_result.job_description_id,
+                        "confidence": match_result.confidence,
+                        "reasoning": match_result.reasoning,
+                    },
+                )
+                try:
+                    run_cv_pipeline(candidate.id, db)
+                except Exception:
+                    pass
+                auto_matched += 1
+            else:
+                unassigned += 1
+
+            fetched_count += 1
+            all_candidates.append(get_candidate(db, candidate.id))
+
+        source_results.append(
+            CvSourceResult(
+                source=fetch_result.source,
+                configured=fetch_result.configured,
+                fetched=fetched_count,
+                message=fetch_result.message,
+            )
+        )
+
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="candidate.cv_sync_run",
+        entity_type="candidate_import",
+        entity_id=0,
+        after_state={
+            "total_fetched": len(all_candidates),
+            "auto_matched": auto_matched,
+            "unassigned": unassigned,
+            "duplicates_skipped": duplicates_skipped,
+            "sources": [r.model_dump() for r in source_results],
+        },
+    )
+
+    return CvSyncResult(
+        sources=source_results,
+        total_fetched=len(all_candidates),
+        auto_matched=auto_matched,
+        unassigned=unassigned,
+        duplicates_skipped=duplicates_skipped,
+        candidates=[CandidateRead.model_validate(c) for c in all_candidates],
     )
 
 

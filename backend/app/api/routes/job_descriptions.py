@@ -14,6 +14,8 @@ from app.schemas.job_descriptions import (
     JobDescriptionCreate,
     JobDescriptionRead,
     JobDescriptionUpdate,
+    JobPostingAiDraftRequest,
+    JobPostingAiDraftResult,
     ScoringCriteriaCreate,
     ScoringCriteriaRead,
     ScoringCriteriaReplace,
@@ -48,6 +50,16 @@ def create_job(
     auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
 ) -> JobDescriptionRead:
     return JobDescriptionRead.model_validate(jd_service.create_job_description(db, auth, payload))
+
+
+@router.post("/job-descriptions/ai-draft", response_model=JobPostingAiDraftResult)
+def ai_draft_job_posting(
+    payload: JobPostingAiDraftRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
+) -> JobPostingAiDraftResult:
+    """AI Analyzer — generate description + requirements from title and department."""
+    return jd_service.generate_ai_draft(db, payload)
 
 
 @router.get("/job-descriptions/{job_id}", response_model=JobDescriptionRead)

@@ -18,6 +18,7 @@ export interface Employee {
   fullName: string;
   departmentId: number;
   roleTitle: string;
+  jobDescriptionText: string | null;
   employmentType: string | null;
   dateJoined: string | null;
   dateExited: string | null;
@@ -33,6 +34,7 @@ export interface EmployeeCreate {
   fullName: string;
   departmentId: number;
   roleTitle: string;
+  jobDescriptionText?: string | null;
   employmentType?: string;
   dateJoined?: string;
   baseSalary?: number;
@@ -45,6 +47,7 @@ export interface EmployeeUpdate {
   fullName?: string;
   departmentId?: number;
   roleTitle?: string;
+  jobDescriptionText?: string | null;
   employmentType?: string;
   dateJoined?: string | null;
   baseSalary?: number | null;

@@ -16,10 +16,12 @@ from app.ranking.candidate_ranker import rank_candidates_for_job
 from app.reporting.excel_export import export_ranking_excel
 from app.schemas.common import AuthContext, MessageResponse, PaginatedResponse
 from app.schemas.cv_screening import (
+    CandidateAssignRequest,
     CandidateEvaluation,
     CandidateRead,
     CandidateScoreRead,
     CandidateUpdate,
+    CvSyncResult,
     HireRequest,
     RankingRow,
     ScoreOverrideRequest,
@@ -28,6 +30,36 @@ from app.schemas.employees import EmployeeRead
 from app.services import audit_service, cv_screening_service as cv_service
 
 router = APIRouter(tags=["cv-screening"])
+
+
+@router.post("/cv-screening/sync", response_model=CvSyncResult)
+def sync_cv_sources(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("cv_screening", "write"))],
+) -> CvSyncResult:
+    return cv_service.sync_cv_sources(db, auth)
+
+
+@router.get("/candidates/unassigned", response_model=PaginatedResponse[CandidateRead])
+def list_unassigned_candidates(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("cv_screening", "read"))],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> PaginatedResponse[CandidateRead]:
+    return cv_service.list_unassigned_candidates(db, page=page, page_size=page_size)
+
+
+@router.post("/candidates/{candidate_id}/assign", response_model=CandidateRead)
+def assign_candidate(
+    candidate_id: int,
+    payload: CandidateAssignRequest,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("cv_screening", "write"))],
+) -> CandidateRead:
+    return CandidateRead.model_validate(
+        cv_service.assign_candidate_to_job(db, auth, candidate_id, payload)
+    )
 
 
 @router.post("/job-descriptions/{job_id}/candidates", response_model=list[CandidateRead])

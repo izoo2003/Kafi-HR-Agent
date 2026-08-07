@@ -172,7 +172,8 @@ uploaded → parsed → scored → (shortlisted | rejected) → hired
 - `JobDescriptionDetailPage` — description + criteria summary + link to candidates.
 - `CandidateListPage` (scoped to a job) — upload dropzone, table with status badges, score, rank.
 - `RankingPage` — ranked list view, score breakdown per candidate (bar per criterion, using the KPI-style score visual from `UI_DESIGN_SYSTEM.md` §4), shortlist/reject actions, export button.
-- `CandidateDetailPage` — parsed data review/edit, per-criterion score breakdown, manual review scoring UI, override action.
+- `CandidateDetailPage` — parsed data review/edit, per-criterion score breakdown, manual review scoring UI, override action; renders an "Unassigned — pick a job" state with an inline assign control when `jobDescriptionId` is null (see §11).
+- `UnassignedCandidatesPage` — table of automatically-fetched candidates not yet matched to a job, with an inline "assign to job" action per row (see §11).
 
 ---
 
@@ -181,3 +182,40 @@ uploaded → parsed → scored → (shortlisted | rejected) → hired
 - Duplicate CV upload (same email) for the same job → warn, don't silently create a duplicate candidate; let HR choose to replace or keep both.
 - Re-scoring after criteria are edited: existing `CandidateScore` rows for that job's candidates should be recomputed, not left stale — editing criteria on a job with existing scored candidates should either (a) trigger a re-score of all candidates, or (b) clearly flag "criteria changed since last scoring" until re-run. Pick (a) by default for simplicity, confirm with HR via a dialog before doing it since it changes recorded scores.
 - Closing a job description does not delete or hide existing candidate data — historical shortlisting reports must remain accurate after a job closes.
+
+---
+
+## 11. Automated CV Intake
+
+Connects Job Descriptions and CV Screening end-to-end so HR doesn't manually upload every CV per role.
+
+### Sources
+- **Gmail** (`hr@kafi-group.com`) — CV attachments (PDF/DOCX) on inbound email. Each processed message gets a Gmail label (`HR-Agent-Processed`) applied so a re-sync never re-downloads it; the primary dedupe key is still `(source, source_ref)` on `Candidate`.
+- **Google Form** — reads the form's linked response Sheet via the Sheets API, downloads the uploaded CV from Drive per row. New-row tracking uses a small local state file (`data/google_form_state.json`), so a re-sync only reads rows added since the last run.
+- WhatsApp intake stays out of scope — not touched by this feature.
+
+Both sources are wrapped so a missing/expired OAuth token, missing `GOOGLE_FORM_RESPONSES_SHEET_ID`, or any API error produces a clean per-source "not configured" / "fetch failed" result (`app/ingestion/cv_submission.py::SourceFetchResult`) — a sync never crashes because one source isn't set up yet.
+
+### Trigger
+Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from both sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against all currently **open** job descriptions.
+
+### AI Matching (`app/scoring/cv_job_matcher.py`)
+- Primary: Gemini reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every open job's title/description/requirements and returns `{job_description_id, confidence, reasoning}` as strict JSON.
+- Fallback (no `GEMINI_API_KEY` configured): deterministic keyword overlap between the CV/position text and each job's title/requirements — capped confidence so it rarely crosses the auto-assign threshold without a strong signal, keeping the feature honestly "best-effort" without an AI key.
+- `cv_auto_match_min_confidence` (`system_config`-style setting, default `0.55`) is the auto-assign threshold: at or above it, the candidate is assigned to that job and the normal parse/score/rank pipeline runs immediately; below it, the candidate stays unassigned with `match_confidence`/`match_reasoning` recorded as a "best guess" for HR to see.
+
+### Unassigned Pool
+- `GET /candidates/unassigned` lists candidates with no job yet — surfaced via the `UnassignedCandidatesPage` and a badge/link on the CV Screening hub whenever the count is above zero.
+- `POST /candidates/{id}/assign` lets HR manually route (or re-route) a candidate to a job description; this re-runs the scoring pipeline against that job's criteria the same way an automated match does.
+- `GET /candidates/{id}/evaluation` returns `business_rule_violation` (not a 500) for a candidate with no `job_description_id` — evaluation is meaningless before assignment.
+- Nothing fetched is ever silently dropped — every CV lands either on a job or in the Unassigned pool.
+
+### Audit Logging
+- One summary entry per sync run (`candidate.cv_sync_run`, batch counts — not one row per candidate, mirroring the attendance-import logging pattern).
+- `candidate.matched_to_job` (automated) and `candidate.assigned_to_job` (manual) are logged per candidate with confidence/reasoning in `after_state`.
+
+### Operational Setup (one-time, outside code)
+1. Create a Google Cloud OAuth client (Desktop app type); place the downloaded JSON at `backend/credentials/google_oauth_client.json` (gitignored).
+2. Run a sync once locally to complete the interactive OAuth consent — this mints `credentials/gmail_token.json` / `credentials/form_token.json`.
+3. Set `GOOGLE_FORM_RESPONSES_SHEET_ID` to the form's linked Sheet ID.
+4. For cloud deploys with an ephemeral filesystem (Railway): paste the minted token file's contents into `GOOGLE_OAUTH_TOKEN_JSON`; on boot, `app/main.py` writes it back to `google_oauth_token_file` if that file doesn't already exist, so a redeploy doesn't require re-doing the interactive consent.

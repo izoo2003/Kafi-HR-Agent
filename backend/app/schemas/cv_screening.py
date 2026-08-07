@@ -25,13 +25,18 @@ class CandidateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    job_description_id: int
+    job_description_id: int | None
     full_name: str | None
     email: str | None
     phone: str | None
     cv_file_path: str
     parsed_data: dict[str, Any] | None
     status: str
+    source: str = "manual"
+    source_ref: str | None = None
+    match_confidence: float | None = None
+    match_reasoning: str | None = None
+    submitted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -88,9 +93,12 @@ class CandidateEvaluation(BaseModel):
     job_title: str
     overall_score: float | None
     rank_position: int | None
+    rating_out_of_10: float | None = None
     recommendation: Literal["shortlist", "consider", "reject"]
     recommendation_label: str
     summary: str
+    why_accepted: str = ""
+    why_rejected: str = ""
     strengths: list[str]
     gaps: list[str]
     skills: list[SkillEvaluationRow]
@@ -102,3 +110,23 @@ class HireRequest(BaseModel):
     role_title: str | None = None
     base_salary: float | None = None
     date_joined: str | None = None  # ISO date
+
+
+class CvSourceResult(BaseModel):
+    source: Literal["gmail", "google_form"]
+    configured: bool
+    fetched: int
+    message: str | None = None
+
+
+class CvSyncResult(BaseModel):
+    sources: list[CvSourceResult]
+    total_fetched: int
+    auto_matched: int
+    unassigned: int
+    duplicates_skipped: int
+    candidates: list[CandidateRead]
+
+
+class CandidateAssignRequest(BaseModel):
+    job_description_id: int

@@ -9,6 +9,7 @@ import { CandidateListPage } from "./pages/CvScreening/CandidateListPage";
 import { CandidateDetailPage } from "./pages/CvScreening/CandidateDetailPage";
 import { RankingPage } from "./pages/CvScreening/RankingPage";
 import { CvScreeningHubPage } from "./pages/CvScreening/CvScreeningHubPage";
+import { UnassignedCandidatesPage } from "./pages/CvScreening/UnassignedCandidatesPage";
 import { EmployeeListPage } from "./pages/Employees/EmployeeListPage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
 import { AttendanceRecordsPage } from "./pages/Attendance/AttendanceRecordsPage";
@@ -50,6 +51,7 @@ export default function App() {
 
           <Route element={<RequirePermission module="cv_screening" />}>
             <Route path="/cv-screening" element={<CvScreeningHubPage />} />
+            <Route path="/cv-screening/unassigned" element={<UnassignedCandidatesPage />} />
             <Route path="/job-descriptions/:id/candidates" element={<CandidateListPage />} />
             <Route path="/job-descriptions/:id/ranking" element={<RankingPage />} />
             <Route path="/candidates" element={<Navigate to="/cv-screening" replace />} />

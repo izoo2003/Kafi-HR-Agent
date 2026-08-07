@@ -49,6 +49,7 @@ class EmployeeCreate(BaseModel):
     full_name: str = Field(min_length=1)
     department_id: int
     role_title: str = Field(min_length=1)
+    job_description_text: str | None = None
     employment_type: str | None = "full_time"
     date_joined: date | None = None
     base_salary: Decimal | None = None
@@ -66,6 +67,7 @@ class EmployeeUpdate(BaseModel):
     full_name: str | None = None
     department_id: int | None = None
     role_title: str | None = None
+    job_description_text: str | None = None
     employment_type: str | None = None
     date_joined: date | None = None
     base_salary: Decimal | None = None
@@ -88,6 +90,7 @@ class EmployeeRead(BaseModel):
     full_name: str
     department_id: int
     role_title: str
+    job_description_text: str | None = None
     employment_type: str | None
     date_joined: date | None
     date_exited: date | None

@@ -18,7 +18,7 @@ import "./AppShell.css";
 const NAV = [
   { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: LayoutDashboard },
   { to: "/employees", label: "Employees", module: "employees", icon: UserRound },
-  { to: "/job-descriptions", label: "Job Descriptions", module: "job_descriptions", icon: BriefcaseBusiness },
+  { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: BriefcaseBusiness },
   { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: ClipboardList },
   { to: "/attendance", label: "Attendance", module: "attendance", icon: FileSpreadsheet },
   { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: Wallet },

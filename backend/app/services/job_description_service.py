@@ -7,14 +7,33 @@ from app.core.exceptions import BusinessRuleViolation, EntityNotFound, Validatio
 from app.models.cv_screening import JobDescription, ScoringCriteria
 from app.models.employees import Department
 from app.schemas.common import AuthContext, PaginatedResponse
+from app.core.config import get_settings
 from app.schemas.job_descriptions import (
     JobDescriptionCreate,
     JobDescriptionRead,
     JobDescriptionUpdate,
+    JobPostingAiDraftRequest,
+    JobPostingAiDraftResult,
     ScoringCriteriaCreate,
     ScoringCriteriaReplace,
 )
+from app.scoring.job_posting_generator import generate_job_posting_draft
 from app.services import audit_service
+
+
+def generate_ai_draft(db: Session, payload: JobPostingAiDraftRequest) -> JobPostingAiDraftResult:
+    dept = db.query(Department).filter(Department.id == payload.department_id).one_or_none()
+    if dept is None:
+        raise ValidationFailed("department_id does not exist")
+    draft = generate_job_posting_draft(
+        title=payload.title,
+        department_name=dept.name,
+        settings=get_settings(),
+    )
+    return JobPostingAiDraftResult(
+        description_text=draft.description_text,
+        requirements_text=draft.requirements_text,
+    )
 
 
 def _validate_skill_ratings(criteria: list[ScoringCriteriaCreate]) -> None:

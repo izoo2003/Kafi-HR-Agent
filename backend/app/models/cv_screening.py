@@ -38,8 +38,8 @@ class ScoringCriteria(Base, TimestampMixin):
 class Candidate(Base, TimestampMixin):
     __tablename__ = "candidates"
 
-    job_description_id: Mapped[int] = mapped_column(
-        ForeignKey("job_descriptions.id"), nullable=False, index=True
+    job_description_id: Mapped[int | None] = mapped_column(
+        ForeignKey("job_descriptions.id"), nullable=True, index=True
     )
     full_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -47,6 +47,13 @@ class Candidate(Base, TimestampMixin):
     cv_file_path: Mapped[str] = mapped_column(Text, nullable=False)
     parsed_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String, default="uploaded", nullable=False)
+
+    # --- Automated CV intake (FEATURE_CV_SCREENING.md §11) ---
+    source: Mapped[str] = mapped_column(String, default="manual", nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    match_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    match_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class CandidateScore(Base, TimestampMixin):

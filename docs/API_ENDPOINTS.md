@@ -63,6 +63,7 @@
 |---|---|---|
 | GET | `/job-descriptions` | List job descriptions (filter by department, status) |
 | POST | `/job-descriptions` | Create job description |
+| POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description + requirements from title + department (Gemini) |
 | GET | `/job-descriptions/{id}` | Detail |
 | PATCH | `/job-descriptions/{id}` | Update |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
@@ -89,6 +90,12 @@
 | GET | `/job-descriptions/{id}/ranking` | Get current ranked candidate list |
 | POST | `/candidates/{id}/score-override` | Manual override of a candidate's score, with required reason (audit-logged) |
 | GET | `/job-descriptions/{id}/report` | Export shortlist/ranking report (PDF/Excel) |
+| POST | `/cv-screening/sync` | Fetch new CVs from Gmail + Google Form, AI-match to open job descriptions, auto-assign or leave unassigned (see `FEATURE_CV_SCREENING.md` §11) |
+| GET | `/candidates/unassigned` | List candidates fetched automatically that aren't yet matched/assigned to a job |
+| POST | `/candidates/{id}/assign` | Manually assign an unassigned (or misassigned) candidate to a job description, then re-runs the scoring pipeline |
+| GET | `/candidates/{id}/scores` | Per-criterion scores for a candidate |
+| GET | `/candidates/{id}/evaluation` | AI-style hire recommendation summary; returns `business_rule_violation` if the candidate has no `job_description_id` yet — assign it first |
+| POST | `/candidates/{id}/hire` | Convert a candidate to an `Employee` record, emits `hr_admin.candidate.hired` |
 
 ---
 
@@ -115,6 +122,8 @@
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | `/payroll/salaries` | List active employees with current `base_salary` (paginated) |
+| PATCH | `/payroll/salaries/{employee_id}` | Update an active employee's `base_salary` (audit-logged; requires payroll write) |
 | GET | `/payroll-structures` | List pay structures (filter by employee) |
 | POST | `/payroll-structures` | Create pay structure for an employee |
 | PATCH | `/payroll-structures/{id}` | Update (e.g. salary revision, closes old with `effective_to`) |
