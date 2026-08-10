@@ -124,7 +124,7 @@ Per-role CV scoring rubric (in-scope item 2).
 | parsed_data | JSON | structured extraction output (education, experience, skills, etc.) |
 | status | TEXT | `uploaded`, `parsed`, `scored`, `shortlisted`, `rejected`, `hired` |
 | source | TEXT | `manual`, `gmail`, `google_form` — how this CV entered the system |
-| source_ref | TEXT NULL | dedupe key for automated sources (Gmail message id, form row id) — never re-imported twice |
+| source_ref | TEXT NULL | dedupe key for automated sources (Outlook/Graph message id, WhatsApp message id, Gmail message id, form row id) — never re-imported twice |
 | match_confidence | FLOAT NULL | AI job-match confidence (0–1) when auto-matched; NULL for manual uploads/assignments |
 | match_reasoning | TEXT NULL | short AI explanation of the job match (or best-guess reasoning while still unassigned) |
 | submitted_at | DATETIME NULL | actual submission time from the source, distinct from `created_at` (ingestion time) |
@@ -148,6 +148,23 @@ Denormalized/cached ranking result per job description, refreshed on scoring cha
 | total_score | FLOAT | |
 | rank_position | INTEGER | |
 | computed_at | DATETIME | |
+
+### `whatsapp_inbound_messages`
+Pending Meta WhatsApp Cloud API document messages waiting for **Sync CVs** (FEATURE_CV_SCREENING.md §11).
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| wa_message_id | TEXT UNIQUE NOT NULL | Meta message id |
+| from_phone | TEXT NULL | sender E.164 |
+| media_id | TEXT NOT NULL | Meta media id for download |
+| filename | TEXT NULL | |
+| mime_type | TEXT NULL | |
+| caption | TEXT NULL | used as position hint when present |
+| status | TEXT NOT NULL | `pending`, `imported`, `skipped`, `failed` |
+| skip_reason | TEXT NULL | classifier / error reason |
+| received_at | DATETIME NOT NULL | |
+| created_at | DATETIME | |
+| updated_at | DATETIME | |
 
 ---
 

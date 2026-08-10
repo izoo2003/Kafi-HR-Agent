@@ -1,21 +1,41 @@
 import { Link, useParams } from "react-router-dom";
+import { useState } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
-import { usePatchCandidate, useRanking } from "../../hooks/useJobDescriptions";
+import { useDeleteCandidate, usePatchCandidate, useRanking } from "../../hooks/useJobDescriptions";
 import { downloadReport, rerank } from "../../api/jobDescriptions";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../../hooks/useAuth";
+import { ApiError } from "../../api/client";
 
 export function RankingPage() {
   const { id } = useParams();
   const jobId = Number(id);
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("cv_screening", "write");
   const ranking = useRanking(jobId);
   const patch = usePatchCandidate();
+  const remove = useDeleteCandidate();
   const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete(candidateId: number, name: string | null) {
+    const label = name?.trim() || `candidate #${candidateId}`;
+    if (!window.confirm(`Remove ${label} from this job posting? This cannot be undone.`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await remove.mutateAsync(candidateId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove candidate");
+    }
+  }
 
   return (
     <>
@@ -51,6 +71,7 @@ export function RankingPage() {
         }
       />
       <div className="page">
+        {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {ranking.isLoading ? <Spinner /> : null}
         {ranking.data && ranking.data.length === 0 ? (
           <EmptyState
@@ -74,19 +95,30 @@ export function RankingPage() {
                     {CANDIDATE_STATUS_LABELS[r.status as keyof typeof CANDIDATE_STATUS_LABELS] ?? r.status}
                   </StatusBadge>
                 </td>
-                <td style={{ display: "flex", gap: 8 }}>
-                  <Button
-                    variant="positive"
-                    onClick={() => patch.mutate({ id: r.candidateId, status: "shortlisted" })}
-                  >
-                    Shortlist Candidate
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => patch.mutate({ id: r.candidateId, status: "rejected" })}
-                  >
-                    Reject Candidate
-                  </Button>
+                <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {canWrite ? (
+                    <>
+                      <Button
+                        variant="positive"
+                        onClick={() => patch.mutate({ id: r.candidateId, status: "shortlisted" })}
+                      >
+                        Shortlist Candidate
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => patch.mutate({ id: r.candidateId, status: "rejected" })}
+                      >
+                        Reject Candidate
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={remove.isPending}
+                        onClick={() => handleDelete(r.candidateId, r.fullName)}
+                      >
+                        Remove
+                      </Button>
+                    </>
+                  ) : null}
                 </td>
               </tr>
             ))}

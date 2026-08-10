@@ -10,6 +10,9 @@ from app.core.config import get_settings
 from app.core.exceptions import BusinessRuleViolation, ConflictError, EntityNotFound, ValidationFailed
 from app.ingestion.cv_intake import store_cv_upload, store_fetched_cv
 from app.ingestion.gmail_ingestor import fetch_gmail_submissions
+from app.ingestion.imap_ingestor import fetch_imap_submissions
+from app.ingestion.outlook_ingestor import fetch_outlook_submissions
+from app.ingestion.whatsapp_ingestor import fetch_whatsapp_submissions
 from app.ingestion.google_form_ingestor import fetch_form_submissions
 from app.integration.event_bus_stub import publish_event
 from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription
@@ -135,6 +138,34 @@ def update_candidate(
         after_state=data,
     )
     return cand
+
+
+def delete_candidate(db: Session, auth: AuthContext, candidate_id: int) -> None:
+    """Remove a candidate and related score/ranking rows (no FK cascade on SQLite/Postgres)."""
+    cand = get_candidate(db, candidate_id)
+    before = {
+        "full_name": cand.full_name,
+        "email": cand.email,
+        "job_description_id": cand.job_description_id,
+        "status": cand.status,
+        "source": cand.source,
+    }
+    db.query(CandidateScore).filter(CandidateScore.candidate_id == candidate_id).delete(
+        synchronize_session=False
+    )
+    db.query(CandidateRanking).filter(CandidateRanking.candidate_id == candidate_id).delete(
+        synchronize_session=False
+    )
+    db.delete(cand)
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="candidate.deleted",
+        entity_type="candidate",
+        entity_id=candidate_id,
+        before_state=before,
+    )
 
 
 def override_score(
@@ -351,10 +382,10 @@ def assign_candidate_to_job(
 
 
 def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
-    """Fetches new CVs from Gmail + Google Form, dedupes, stores them
-    unassigned, then AI-matches each against open job descriptions —
-    auto-assigning above the confidence threshold, leaving the rest in the
-    Unassigned pool for HR to route manually. FEATURE_CV_SCREENING.md §11."""
+    """Fetches new CVs from Outlook, WhatsApp, optional Gmail, and Google Form,
+    dedupes, stores them unassigned, then AI-matches each against open job
+    descriptions — auto-assigning above the confidence threshold, leaving the
+    rest in the Unassigned pool for HR to route manually. FEATURE_CV_SCREENING.md §11."""
     settings = get_settings()
 
     open_jobs = db.query(JobDescription).filter(JobDescription.status == "open").all()
@@ -369,6 +400,9 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     ]
 
     fetch_results = [
+        fetch_imap_submissions(settings),
+        fetch_outlook_submissions(settings),
+        fetch_whatsapp_submissions(db, settings),
         fetch_gmail_submissions(settings),
         fetch_form_submissions(settings),
     ]

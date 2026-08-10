@@ -1,24 +1,33 @@
 import { Link, useParams } from "react-router-dom";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
-import { useCandidates, useJobDescription, useUploadCandidates } from "../../hooks/useJobDescriptions";
+import {
+  useCandidates,
+  useDeleteCandidate,
+  useJobDescription,
+  useUploadCandidates,
+} from "../../hooks/useJobDescriptions";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
-import { useState } from "react";
+import { useAuth } from "../../hooks/useAuth";
 
 export function CandidateListPage() {
   const { id } = useParams();
   const jobId = Number(id);
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("cv_screening", "write");
   const job = useJobDescription(jobId);
   const candidates = useCandidates(jobId);
   const upload = useUploadCandidates(jobId);
+  const remove = useDeleteCandidate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -30,6 +39,22 @@ export function CandidateListPage() {
     }
   }
 
+  async function handleDelete(candidateId: number, name: string | null) {
+    const label = name?.trim() || `candidate #${candidateId}`;
+    if (!window.confirm(`Remove ${label} from this job posting? This cannot be undone.`)) {
+      return;
+    }
+    setError(null);
+    setDeletingId(candidateId);
+    try {
+      await remove.mutateAsync(candidateId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove candidate");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -37,9 +62,11 @@ export function CandidateListPage() {
         breadcrumb={`CV Screening / ${job.data?.title ?? "Job"} / Candidates`}
         actions={
           <>
-            <Button variant="secondary" onClick={() => inputRef.current?.click()} disabled={upload.isPending}>
-              Upload CV(s)
-            </Button>
+            {canWrite ? (
+              <Button variant="secondary" onClick={() => inputRef.current?.click()} disabled={upload.isPending}>
+                Upload CV(s)
+              </Button>
+            ) : null}
             <input
               ref={inputRef}
               type="file"
@@ -61,8 +88,8 @@ export function CandidateListPage() {
           <EmptyState
             title="No candidates yet"
             description="Upload a CV (PDF/DOCX/TXT) to start screening for this role. Parsing and scoring run automatically."
-            actionLabel="Upload CV(s)"
-            onAction={() => inputRef.current?.click()}
+            actionLabel={canWrite ? "Upload CV(s)" : undefined}
+            onAction={canWrite ? () => inputRef.current?.click() : undefined}
           />
         ) : null}
         {candidates.data && candidates.data.items.length > 0 ? (
@@ -76,8 +103,17 @@ export function CandidateListPage() {
                     {CANDIDATE_STATUS_LABELS[c.status as keyof typeof CANDIDATE_STATUS_LABELS] ?? c.status}
                   </StatusBadge>
                 </td>
-                <td>
+                <td style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
                   <Link to={`/candidates/${c.id}`}>Detail</Link>
+                  {canWrite ? (
+                    <Button
+                      variant="destructive"
+                      disabled={remove.isPending && deletingId === c.id}
+                      onClick={() => handleDelete(c.id, c.fullName)}
+                    >
+                      {deletingId === c.id ? "Removing…" : "Remove"}
+                    </Button>
+                  ) : null}
                 </td>
               </tr>
             ))}

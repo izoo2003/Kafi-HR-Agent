@@ -7,13 +7,22 @@ import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
-import { useJobDescriptions, useAssignCandidate, useUnassignedCandidates } from "../../hooks/useJobDescriptions";
+import {
+  useJobDescriptions,
+  useAssignCandidate,
+  useDeleteCandidate,
+  useUnassignedCandidates,
+} from "../../hooks/useJobDescriptions";
 import { usePagination } from "../../hooks/usePagination";
 import { ApiError } from "../../api/client";
+import { useAuth } from "../../hooks/useAuth";
 import type { Candidate } from "../../types/cvScreening";
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
+  webmail: "Webmail",
+  outlook: "Outlook",
+  whatsapp: "WhatsApp",
   gmail: "Gmail",
   google_form: "Google Form",
 };
@@ -38,35 +47,45 @@ function AssignControl({ candidate }: { candidate: Candidate }) {
     <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
       <select
         className="form-field__input"
-        style={{ minWidth: 180 }}
+        style={{ minWidth: 160 }}
         value={jobId}
         onChange={(e) => setJobId(e.target.value)}
       >
-        <option value="">Assign to job…</option>
+        <option value="">Select job…</option>
         {(openJobs.data?.items ?? []).map((j) => (
           <option key={j.id} value={j.id}>
             {j.title}
           </option>
         ))}
       </select>
-      <Button
-        type="button"
-        variant="primary"
-        disabled={!jobId || assign.isPending}
-        onClick={handleAssign}
-      >
+      <Button variant="primary" disabled={!jobId || assign.isPending} onClick={handleAssign}>
         Assign
       </Button>
-      {error ? <span style={{ color: "var(--color-status-critical)", fontSize: "var(--text-xs)" }}>{error}</span> : null}
+      {error ? (
+        <span style={{ color: "var(--color-status-critical)", fontSize: "var(--text-xs)" }}>{error}</span>
+      ) : null}
     </div>
   );
 }
 
-/** Candidates fetched automatically (Gmail / Google Form) that the AI matcher
- * couldn't confidently route to an open job — FEATURE_CV_SCREENING.md §11. */
 export function UnassignedCandidatesPage() {
   const { page, pageSize, setPage, params } = usePagination();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("cv_screening", "write");
   const unassigned = useUnassignedCandidates(params);
+  const remove = useDeleteCandidate();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete(candidate: Candidate) {
+    const label = candidate.fullName?.trim() || `candidate #${candidate.id}`;
+    if (!window.confirm(`Remove ${label}? This cannot be undone.`)) return;
+    setError(null);
+    try {
+      await remove.mutateAsync(candidate.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove candidate");
+    }
+  }
 
   return (
     <>
@@ -81,10 +100,11 @@ export function UnassignedCandidatesPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
-          CVs fetched from Gmail or the Google Form that could not be confidently matched to an
-          open job description. Assign each one to a role manually.
+          CVs fetched from Webmail, Outlook, WhatsApp, Gmail, or the Google Form that could not be confidently
+          matched to an open job description. Assign each one to a role manually.
         </p>
 
+        {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {unassigned.isLoading ? <Spinner label="Loading unassigned CVs" /> : null}
 
         {!unassigned.isLoading && (unassigned.data?.total ?? 0) === 0 ? (
@@ -100,7 +120,7 @@ export function UnassignedCandidatesPage() {
 
         {unassigned.data && unassigned.data.items.length > 0 ? (
           <>
-            <Table headers={["Candidate", "Source", "Submitted", "Best guess", "Assign"]}>
+            <Table headers={["Candidate", "Source", "Submitted", "Best guess", "Actions"]}>
               {unassigned.data.items.map((c) => (
                 <tr key={c.id} data-status="warning">
                   <td>
@@ -127,8 +147,24 @@ export function UnassignedCandidatesPage() {
                       "—"
                     )}
                   </td>
-                  <td>
-                    <AssignControl candidate={c} />
+                  <td
+                    style={{
+                      display: "flex",
+                      gap: "var(--space-2)",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    {canWrite ? <AssignControl candidate={c} /> : null}
+                    {canWrite ? (
+                      <Button
+                        variant="destructive"
+                        disabled={remove.isPending}
+                        onClick={() => handleDelete(c)}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

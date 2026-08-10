@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -9,6 +9,7 @@ import {
   useAssignCandidate,
   useCandidate,
   useCandidateEvaluation,
+  useDeleteCandidate,
   useJobDescriptions,
   usePatchCandidate,
 } from "../../hooks/useJobDescriptions";
@@ -25,6 +26,7 @@ function recommendationStatus(rec: string): string {
 
 export function CandidateDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const candidateId = Number(id);
   const { hasPermission } = useAuth();
   const canDecide = hasPermission("cv_screening", "write");
@@ -32,6 +34,7 @@ export function CandidateDetailPage() {
   const isAssigned = candidate.data?.jobDescriptionId != null;
   const evaluation = useCandidateEvaluation(candidateId, isAssigned);
   const patch = usePatchCandidate();
+  const remove = useDeleteCandidate();
   const assign = useAssignCandidate();
   const openJobs = useJobDescriptions({ page: 1, pageSize: 100, status: "open" });
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +64,23 @@ export function CandidateDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    const label = candidate.data?.fullName?.trim() || `candidate #${candidateId}`;
+    if (!window.confirm(`Remove ${label}? This cannot be undone.`)) return;
+    setError(null);
+    try {
+      const jobId = candidate.data?.jobDescriptionId;
+      await remove.mutateAsync(candidateId);
+      if (jobId) {
+        navigate(`/job-descriptions/${jobId}/candidates`);
+      } else {
+        navigate("/cv-screening/unassigned");
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove candidate");
+    }
+  }
+
   if (candidate.isLoading || (isAssigned && evaluation.isLoading)) {
     return (
       <div className="page">
@@ -82,11 +102,24 @@ export function CandidateDetailPage() {
         title={candidate.data.fullName ?? `Candidate #${candidate.data.id}`}
         breadcrumb="CV Screening / Candidate"
         actions={
-          <Link to={isAssigned ? `/job-descriptions/${candidate.data.jobDescriptionId}/candidates` : "/cv-screening/unassigned"}>
-            <Button variant="secondary">
-              {isAssigned ? "Back to candidates" : "Back to unassigned CVs"}
-            </Button>
-          </Link>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            {canDecide ? (
+              <Button variant="destructive" disabled={remove.isPending} onClick={handleDelete}>
+                {remove.isPending ? "Removing…" : "Remove Candidate"}
+              </Button>
+            ) : null}
+            <Link
+              to={
+                isAssigned
+                  ? `/job-descriptions/${candidate.data.jobDescriptionId}/candidates`
+                  : "/cv-screening/unassigned"
+              }
+            >
+              <Button variant="secondary">
+                {isAssigned ? "Back to candidates" : "Back to unassigned CVs"}
+              </Button>
+            </Link>
+          </div>
         }
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-4)" }}>
@@ -98,8 +131,17 @@ export function CandidateDetailPage() {
             <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
               <StatusBadge status="warning">Unassigned</StatusBadge>
               <span>
-                This CV was fetched via {candidate.data.source === "gmail" ? "Gmail" : "the Google Form"} and
-                hasn't been matched to a job yet.
+                This CV was fetched via{" "}
+                {candidate.data.source === "webmail"
+                  ? "Webmail"
+                  : candidate.data.source === "outlook"
+                    ? "Outlook"
+                    : candidate.data.source === "whatsapp"
+                      ? "WhatsApp"
+                      : candidate.data.source === "gmail"
+                        ? "Gmail"
+                        : "the Google Form"}{" "}
+                and hasn't been matched to a job yet.
               </span>
             </div>
             {candidate.data.matchReasoning ? (

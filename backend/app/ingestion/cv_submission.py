@@ -1,4 +1,4 @@
-"""Shared shape every automated CV source (Gmail, Google Form) produces.
+"""Shared shape every automated CV source (Outlook, WhatsApp, Gmail, Google Form) produces.
 
 Keeping this uniform means downstream code (dedupe, storage, matching,
 pipeline) never needs to know where a CV came from — see
@@ -10,7 +10,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Literal
 
-CvSource = Literal["gmail", "google_form"]
+CvSource = Literal["webmail", "outlook", "whatsapp", "gmail", "google_form"]
 
 
 @dataclass

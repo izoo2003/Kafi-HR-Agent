@@ -47,7 +47,14 @@ export function CvScreeningHubPage() {
       let msg = `Fetched ${result.totalFetched} — ${result.autoMatched} matched, ${result.unassigned} unassigned`;
       if (result.duplicatesSkipped > 0) msg += `, ${result.duplicatesSkipped} duplicates skipped`;
       if (notConfigured.length > 0) {
-        msg += `. Not connected: ${notConfigured.map((s) => (s.source === "gmail" ? "Gmail" : "Google Form")).join(", ")}.`;
+        const sourceLabel: Record<string, string> = {
+          webmail: "Webmail",
+          outlook: "Outlook",
+          whatsapp: "WhatsApp",
+          gmail: "Gmail",
+          google_form: "Google Form",
+        };
+        msg += `. Not connected: ${notConfigured.map((s) => sourceLabel[s.source] ?? s.source).join(", ")}.`;
       }
       setSyncMessage(msg);
     } catch (err) {

@@ -77,6 +77,27 @@ class Settings(BaseSettings):
     # If set, written to google_oauth_token_file on boot when that file is missing —
     # lets a token minted once locally survive an ephemeral-filesystem redeploy (Railway).
     google_oauth_token_json: str = ""
+    # HR webmail via IMAP (mail.kafi-group.com) — primary for hr@kafi-group.com
+    imap_host: str = "mail.kafi-group.com"
+    imap_port: int = 993
+    imap_user: str = "hr@kafi-group.com"
+    imap_password: str = ""
+    imap_ssl: bool = True
+    # Microsoft Graph / Outlook 365 — optional if Graph app is configured
+    outlook_mailbox: str = Field(
+        default="hr@kafi-group.com",
+        validation_alias=AliasChoices("OUTLOOK_MAILBOX", "outlook_mailbox"),
+    )
+    ms_graph_tenant_id: str = ""
+    ms_graph_client_id: str = ""
+    ms_graph_client_secret: str = ""
+    # Meta WhatsApp Cloud API (document CVs → pending queue → Sync)
+    whatsapp_display_number: str = "+923330313511"
+    whatsapp_phone_number_id: str = ""
+    whatsapp_access_token: str = ""
+    whatsapp_app_secret: str = ""
+    whatsapp_verify_token: str = ""
+    whatsapp_api_version: str = "v21.0"
     cv_auto_match_min_confidence: float = 0.55
 
     # --- Paths ---

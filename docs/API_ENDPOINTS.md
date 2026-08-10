@@ -90,7 +90,7 @@
 | GET | `/job-descriptions/{id}/ranking` | Get current ranked candidate list |
 | POST | `/candidates/{id}/score-override` | Manual override of a candidate's score, with required reason (audit-logged) |
 | GET | `/job-descriptions/{id}/report` | Export shortlist/ranking report (PDF/Excel) |
-| POST | `/cv-screening/sync` | Fetch new CVs from Gmail + Google Form, AI-match to open job descriptions, auto-assign or leave unassigned (see `FEATURE_CV_SCREENING.md` §11) |
+| POST | `/cv-screening/sync` | Fetch new CVs from Webmail IMAP + optional Outlook Graph + WhatsApp + Gmail + Google Form (CV filter applied), AI-match / unassigned pool (see `FEATURE_CV_SCREENING.md` §11) |
 | GET | `/candidates/unassigned` | List candidates fetched automatically that aren't yet matched/assigned to a job |
 | POST | `/candidates/{id}/assign` | Manually assign an unassigned (or misassigned) candidate to a job description, then re-runs the scoring pipeline |
 | GET | `/candidates/{id}/scores` | Per-criterion scores for a candidate |
@@ -180,8 +180,10 @@
 | GET | `/integration/health` | Liveness check for orchestrator |
 | GET | `/integration/capabilities` | Machine-readable list of this agent's modules/events (mirrors `INTEGRATION_CONTRACT.md`) |
 | POST | `/integration/events/subscribe` | Stub — future orchestrator event subscription |
+| GET | `/integrations/whatsapp/webhook` | Meta WhatsApp Cloud API verify challenge (`hub.verify_token`) — no JWT |
+| POST | `/integrations/whatsapp/webhook` | Meta WhatsApp webhook: queue inbound PDF/DOCX for Sync CVs (HMAC signature) |
 
-These routes exist so the orchestrator has something to call, but internally they must only ever call through `app/integration/interface.py` — never directly into module internals.
+Orchestrator-facing routes call through `app/integration/interface.py`. The WhatsApp webhook is Meta-facing: it only writes the inbound queue, then Sync CVs drains it.
 
 ---
 

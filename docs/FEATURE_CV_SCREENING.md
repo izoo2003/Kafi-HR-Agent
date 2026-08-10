@@ -190,14 +190,16 @@ uploaded → parsed → scored → (shortlisted | rejected) → hired
 Connects Job Descriptions and CV Screening end-to-end so HR doesn't manually upload every CV per role.
 
 ### Sources
-- **Gmail** (`hr@kafi-group.com`) — CV attachments (PDF/DOCX) on inbound email. Each processed message gets a Gmail label (`HR-Agent-Processed`) applied so a re-sync never re-downloads it; the primary dedupe key is still `(source, source_ref)` on `Candidate`.
-- **Google Form** — reads the form's linked response Sheet via the Sheets API, downloads the uploaded CV from Drive per row. New-row tracking uses a small local state file (`data/google_form_state.json`), so a re-sync only reads rows added since the last run.
-- WhatsApp intake stays out of scope — not touched by this feature.
+- **Webmail IMAP** (`hr@kafi-group.com` on `mail.kafi-group.com:993`) — primary email intake. Env: `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`. Sync pulls recent inbox messages with PDF/DOCX, runs the shared CV classifier, imports only real CVs (`source="webmail"`). Processed IMAP UIDs are tracked in `data/imap_processed_uids.json`.
+- **Outlook / Microsoft 365 Graph** (optional) — application auth (`MS_GRAPH_*`) when an Azure app is configured. Same CV classifier; categories `HR-Agent-Processed` / `HR-Agent-Skipped-NotCV`.
+- **WhatsApp** (Meta Cloud API, display number `+923330313511` / `03330313511`) — webhook queues PDF/DOCX; Sync downloads, classifies, imports (`source="whatsapp"`).
+- **Gmail** (optional) — Google Workspace only.
+- **Google Form** — Sheet + Drive upload rows.
 
-Both sources are wrapped so a missing/expired OAuth token, missing `GOOGLE_FORM_RESPONSES_SHEET_ID`, or any API error produces a clean per-source "not configured" / "fetch failed" result (`app/ingestion/cv_submission.py::SourceFetchResult`) — a sync never crashes because one source isn't set up yet.
+Each source is wrapped so missing credentials / API errors produce a clean per-source "not configured" / "fetch failed" result (`app/ingestion/cv_submission.py::SourceFetchResult`) — a sync never crashes because one source isn't set up yet.
 
 ### Trigger
-Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from both sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against all currently **open** job descriptions.
+Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from configured sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against all currently **open** job descriptions.
 
 ### AI Matching (`app/scoring/cv_job_matcher.py`)
 - Primary: Gemini reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every open job's title/description/requirements and returns `{job_description_id, confidence, reasoning}` as strict JSON.
@@ -215,7 +217,26 @@ Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`)
 - `candidate.matched_to_job` (automated) and `candidate.assigned_to_job` (manual) are logged per candidate with confidence/reasoning in `after_state`.
 
 ### Operational Setup (one-time, outside code)
+
+**Webmail IMAP — `hr@kafi-group.com` (primary)**
+1. Host `mail.kafi-group.com`, IMAP port `993` (SSL), username `hr@kafi-group.com`.
+2. Set `IMAP_PASSWORD` to the mailbox password (local `.env` + Railway).
+3. Restart backend → **Sync CVs**.
+
+**Outlook Graph (optional Microsoft 365 app auth)**
+1. Azure app registration with application permission `Mail.Read` + admin consent.
+2. Set `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`.
+
+**WhatsApp (Meta Cloud API) — number `03330313511` / `+923330313511`**
+1. Reuse the existing Meta app; copy **Phone number ID**, permanent **access token**, **App secret**.
+2. Set env: `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` (any strong string you choose), `WHATSAPP_API_VERSION`.
+3. In Meta Developer Console → WhatsApp → Configuration → Webhook: callback URL  
+   `https://kafi-hr-agent.up.railway.app/api/v1/integrations/whatsapp/webhook`  
+   Verify token = `WHATSAPP_VERIFY_TOKEN`. Subscribe to **messages**.
+4. Send a test PDF/DOCX to the business number; confirm a `pending` row appears; click **Sync CVs**.
+
+**Google Form / optional Gmail**
 1. Create a Google Cloud OAuth client (Desktop app type); place the downloaded JSON at `backend/credentials/google_oauth_client.json` (gitignored).
-2. Run a sync once locally to complete the interactive OAuth consent — this mints `credentials/gmail_token.json` / `credentials/form_token.json`.
+2. Run a sync once locally to complete interactive OAuth for Form/Gmail tokens if those sources are used.
 3. Set `GOOGLE_FORM_RESPONSES_SHEET_ID` to the form's linked Sheet ID.
-4. For cloud deploys with an ephemeral filesystem (Railway): paste the minted token file's contents into `GOOGLE_OAUTH_TOKEN_JSON`; on boot, `app/main.py` writes it back to `google_oauth_token_file` if that file doesn't already exist, so a redeploy doesn't require re-doing the interactive consent.
+4. For Gmail on Railway: paste minted token into `GOOGLE_OAUTH_TOKEN_JSON` (boot restore in `app/main.py`). Outlook Graph needs no token file — client secret in env is enough.

@@ -45,7 +45,7 @@ export interface ScoringCriteriaInput {
   scoringRules: Record<string, unknown>;
 }
 
-export type CvSource = "manual" | "gmail" | "google_form";
+export type CvSource = "manual" | "webmail" | "outlook" | "whatsapp" | "gmail" | "google_form";
 
 export interface Candidate {
   id: number;
@@ -102,7 +102,7 @@ export interface CandidateEvaluation {
 }
 
 export interface CvSourceResult {
-  source: "gmail" | "google_form";
+  source: "webmail" | "outlook" | "whatsapp" | "gmail" | "google_form";
   configured: boolean;
   fetched: number;
   message: string | null;

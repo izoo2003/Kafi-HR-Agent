@@ -119,11 +119,7 @@ def delete_candidate(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("cv_screening", "write"))],
 ) -> MessageResponse:
-    cand = cv_service.get_candidate(db, candidate_id)
-    db.delete(cand)
-    audit_service.log_from_auth(
-        db, auth, action="candidate.deleted", entity_type="candidate", entity_id=candidate_id
-    )
+    cv_service.delete_candidate(db, auth, candidate_id)
     return MessageResponse(message="Candidate removed")
 
 

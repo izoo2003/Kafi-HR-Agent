@@ -14,6 +14,7 @@ from app.api.routes import (
     kpi,
     payroll,
     users,
+    whatsapp_webhook,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -28,3 +29,4 @@ api_router.include_router(payroll.router)
 api_router.include_router(kpi.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(integration.router)
+api_router.include_router(whatsapp_webhook.router)

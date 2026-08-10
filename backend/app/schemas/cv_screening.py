@@ -113,7 +113,7 @@ class HireRequest(BaseModel):
 
 
 class CvSourceResult(BaseModel):
-    source: Literal["gmail", "google_form"]
+    source: Literal["webmail", "outlook", "whatsapp", "gmail", "google_form"]
     configured: bool
     fetched: int
     message: str | None = None

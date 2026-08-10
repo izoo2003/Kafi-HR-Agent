@@ -118,6 +118,20 @@ export function usePatchCandidate() {
   });
 }
 
+export function useDeleteCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => jdApi.deleteCandidate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      qc.invalidateQueries({ queryKey: ["ranking"] });
+      qc.invalidateQueries({ queryKey: ["unassigned-candidates"] });
+      qc.invalidateQueries({ queryKey: ["candidate"] });
+      qc.invalidateQueries({ queryKey: ["candidate-evaluation"] });
+    },
+  });
+}
+
 export function useSyncCvSources() {
   const qc = useQueryClient();
   return useMutation({

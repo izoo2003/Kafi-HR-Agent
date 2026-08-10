@@ -90,6 +90,10 @@ export async function patchCandidate(
   return apiRequest<Candidate>(`/candidates/${id}`, { method: "PATCH", body: payload });
 }
 
+export async function deleteCandidate(id: number): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>(`/candidates/${id}`, { method: "DELETE" });
+}
+
 export async function getRanking(jobId: number): Promise<RankingRow[]> {
   return apiRequest<RankingRow[]>(`/job-descriptions/${jobId}/ranking`);
 }
