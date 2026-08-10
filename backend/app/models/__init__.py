@@ -20,6 +20,7 @@ from app.models.identity import (
 from app.models.kpi import KpiDefinition, KpiEntry
 from app.models.payroll import Deduction, PayrollRun, PayrollStructure, Payslip, SalaryAdvance
 from app.models.system import IntegrationRegistry, SystemConfig
+from app.models.notification import AppNotification
 from app.models.whatsapp import WhatsAppInboundMessage
 
 __all__ = [
@@ -50,4 +51,5 @@ __all__ = [
     "IntegrationRegistry",
     "SystemConfig",
     "WhatsAppInboundMessage",
+    "AppNotification",
 ]

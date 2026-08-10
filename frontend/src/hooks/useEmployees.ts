@@ -15,10 +15,14 @@ export function useCreateDepartment() {
   });
 }
 
-export function useEmployees(params: PaginationParams & { departmentId?: number; status?: string }) {
+export function useEmployees(
+  params: PaginationParams & { departmentId?: number; status?: string; enabled?: boolean } = {},
+) {
+  const { enabled = true, ...filters } = params;
   return useQuery({
-    queryKey: ["employees", params],
-    queryFn: () => empApi.listEmployees(params),
+    queryKey: ["employees", filters],
+    queryFn: () => empApi.listEmployees(filters),
+    enabled,
   });
 }
 

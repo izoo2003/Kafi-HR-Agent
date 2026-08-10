@@ -1,0 +1,108 @@
+.notif-bell {
+  position: relative;
+}
+
+.notif-bell__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.notif-bell__btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.notif-bell__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-status-critical);
+  color: var(--color-text-inverse);
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.notif-bell__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(360px, 90vw);
+  max-height: 420px;
+  overflow: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  z-index: 40;
+}
+
+.notif-bell__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notif-bell__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notif-bell__empty {
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.notif-bell__item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notif-bell__item--unread {
+  background: var(--color-accent-subtle);
+}
+
+.notif-bell__item-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
+.notif-bell__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.notif-bell__body {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.notif-bell__time {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

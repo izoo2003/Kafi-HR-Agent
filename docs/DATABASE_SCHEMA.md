@@ -300,6 +300,20 @@ Actuals recorded per employee per period. Unique on `(kpi_definition_id, employe
 | recorded_by | INTEGER FK → users.id | |
 | notes | TEXT NULL | |
 
+### `app_notifications`
+In-app reminders (KPI incomplete / at-risk and future kinds). Not an email queue.
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| user_id | INTEGER FK → users.id | recipient (nullable reserved for future broadcast) |
+| title | TEXT NOT NULL | |
+| body | TEXT NOT NULL | |
+| kind | TEXT NOT NULL | e.g. `kpi_incomplete`, `kpi_at_risk` |
+| payload | JSON NULL | e.g. `{ department_id, period_start, period_end }` |
+| read_at | DATETIME NULL | null = unread |
+| created_at | DATETIME | |
+| updated_at | DATETIME | |
+
 ---
 
 ## 7. Audit Logging

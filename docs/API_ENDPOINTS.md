@@ -157,6 +157,19 @@
 | GET | `/employees/{id}/kpi-summary` | Employee's KPI scores across a period |
 | GET | `/departments/{id}/kpi-summary` | Department-level rollup |
 | POST | `/departments/{id}/kpi-period-reviewed` | Mark period reviewed; emits `hr_admin.kpi.period_closed` |
+| POST | `/departments/{id}/kpi-definitions/seed-defaults` | Idempotent default KPI pack (incl. Other / ad-hoc; weights sum to 1.0) |
+| POST | `/kpi/ai-suggest-entry` | Gemini maps free-text work → suggested `kpiDefinitionId` + `actualValue` (no write; user confirms Save) |
+
+### Notifications (in-app)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/notifications` | List current user's notifications (paginated; `unread_only` filter) |
+| GET | `/notifications/unread-count` | Unread badge count |
+| POST | `/notifications/{id}/read` | Mark one notification read |
+| POST | `/notifications/read-all` | Mark all unread notifications read |
+
+KPI reminder jobs (Asia/Karachi 18:00 incomplete / 18:20 at-risk) insert rows; no email.
 
 ---
 

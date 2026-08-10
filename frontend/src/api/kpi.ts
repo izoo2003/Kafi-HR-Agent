@@ -82,3 +82,23 @@ export function markKpiPeriodReviewed(
     body: { periodStart, periodEnd },
   });
 }
+
+export function seedKpiDefaults(departmentId: number): Promise<{
+  message: string;
+  created: KpiDefinition[];
+  skippedExisting: string[];
+}> {
+  return apiRequest(`/departments/${departmentId}/kpi-definitions/seed-defaults`, {
+    method: "POST",
+  });
+}
+
+export function aiSuggestKpiEntry(payload: {
+  departmentId: number;
+  employeeId: number;
+  periodStart: string;
+  periodEnd: string;
+  text: string;
+}): Promise<{ kpiDefinitionId: number; actualValue: number; reasoning: string }> {
+  return apiRequest("/kpi/ai-suggest-entry", { method: "POST", body: payload });
+}

@@ -62,9 +62,15 @@ async def lifespan(_app: FastAPI):
 
     result = interface.register_with_orchestrator()
     logger.info("Orchestrator registration: %s — %s", result.status, result.message)
+
+    from app.services.kpi_scheduler import start_kpi_reminder_scheduler, stop_kpi_reminder_scheduler
+
+    start_kpi_reminder_scheduler()
     print("[startup] Ready.", flush=True)
 
     yield
+
+    stop_kpi_reminder_scheduler()
 
 
 def create_app() -> FastAPI:

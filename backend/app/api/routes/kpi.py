@@ -13,6 +13,8 @@ from app.schemas.common import AuthContext, MessageResponse, PaginatedResponse
 from app.schemas.kpi import (
     DepartmentKpiSummary,
     EmployeeKpiSummary,
+    KpiAiSuggestRequest,
+    KpiAiSuggestResponse,
     KpiDefinitionCreate,
     KpiDefinitionRead,
     KpiDefinitionUpdate,
@@ -21,6 +23,7 @@ from app.schemas.kpi import (
     KpiEntryUpdate,
     MarkPeriodReviewedRequest,
     MarkPeriodReviewedResponse,
+    SeedDefaultsResponse,
 )
 from app.services import kpi_service as svc
 
@@ -69,6 +72,27 @@ def delete_kpi_definition(
 ) -> MessageResponse:
     svc.archive_definition(db, auth, definition_id)
     return MessageResponse(message="KPI definition archived")
+
+
+@router.post(
+    "/departments/{department_id}/kpi-definitions/seed-defaults",
+    response_model=SeedDefaultsResponse,
+)
+def seed_kpi_defaults(
+    department_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+) -> SeedDefaultsResponse:
+    return svc.seed_default_definitions(db, auth, department_id)
+
+
+@router.post("/kpi/ai-suggest-entry", response_model=KpiAiSuggestResponse)
+def kpi_ai_suggest_entry(
+    payload: KpiAiSuggestRequest,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+) -> KpiAiSuggestResponse:
+    return svc.ai_suggest_entry(db, auth, payload)
 
 
 @router.get("/kpi-entries", response_model=PaginatedResponse[KpiEntryRead])

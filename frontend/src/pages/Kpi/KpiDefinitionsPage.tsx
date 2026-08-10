@@ -13,6 +13,7 @@ import {
   useArchiveKpiDefinition,
   useCreateKpiDefinition,
   useKpiDefinitions,
+  useSeedKpiDefaults,
 } from "../../hooks/useKpi";
 import type { KpiReviewPeriod } from "../../types/kpi";
 
@@ -26,6 +27,7 @@ export function KpiDefinitionsPage() {
   );
   const createDef = useCreateKpiDefinition();
   const archiveDef = useArchiveKpiDefinition();
+  const seedDefaults = useSeedKpiDefaults();
 
   const [form, setForm] = useState({
     name: "",
@@ -36,6 +38,7 @@ export function KpiDefinitionsPage() {
     reviewPeriod: "monthly" as KpiReviewPeriod,
   });
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const weightSum = useMemo(
     () => (definitions.data ?? []).reduce((s, d) => s + Number(d.weight ?? 0), 0),
@@ -85,22 +88,51 @@ export function KpiDefinitionsPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+        {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
 
-        <label className="form-field" style={{ maxWidth: 280 }}>
-          <span className="form-field__label">Department</span>
-          <select
-            className="form-field__input"
-            value={departmentId}
-            onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : "")}
-          >
-            <option value="">All departments</option>
-            {(departments.data ?? []).map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", alignItems: "end" }}>
+          <label className="form-field" style={{ maxWidth: 280, flex: 1 }}>
+            <span className="form-field__label">Department</span>
+            <select
+              className="form-field__input"
+              value={departmentId}
+              onChange={(e) => {
+                setDepartmentId(e.target.value ? Number(e.target.value) : "");
+                setMessage(null);
+                setError(null);
+              }}
+            >
+              <option value="">All departments</option>
+              {(departments.data ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {canWrite && departmentId !== "" ? (
+            <Button
+              variant="primary"
+              disabled={seedDefaults.isPending}
+              onClick={async () => {
+                setError(null);
+                setMessage(null);
+                try {
+                  const res = await seedDefaults.mutateAsync(departmentId);
+                  setMessage(res.message);
+                } catch (err) {
+                  setError(err instanceof ApiError ? err.message : "Failed to seed default KPIs");
+                }
+              }}
+            >
+              {seedDefaults.isPending
+                ? "Seeding…"
+                : (definitions.data?.length ?? 0) === 0
+                  ? "Add department default KPIs"
+                  : "Add missing department defaults"}
+            </Button>
+          ) : null}
+        </div>
 
         {departmentId !== "" ? (
           <p className="font-data" style={{ margin: 0 }}>
@@ -118,7 +150,11 @@ export function KpiDefinitionsPage() {
         {!definitions.isLoading && (definitions.data?.length ?? 0) === 0 ? (
           <EmptyState
             title="No KPI definitions"
-            description="Create per-department targets and weights. Active weights must sum to 1.0."
+            description={
+              departmentId === ""
+                ? "Select a department, then load department-specific defaults or create your own. Active weights must sum to 1.0."
+                : "Load this department’s default KPIs (IT, Sales, HR, etc. each get a tailored pack), or create custom KPIs in the form below. Weights must sum to 1.0."
+            }
           />
         ) : (
           <Table
@@ -171,7 +207,11 @@ export function KpiDefinitionsPage() {
 
         {canWrite ? (
           <section className="card">
-            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Add KPI definition</h2>
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Add custom KPI</h2>
+            <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+              Defaults are a starting point. Add your own KPIs here anytime — keep the department&apos;s
+              active weights summing to 1.0 (archive an unused default if you need room).
+            </p>
             <form
               onSubmit={onCreate}
               style={{

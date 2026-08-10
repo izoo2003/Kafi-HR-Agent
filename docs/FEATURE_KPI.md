@@ -22,11 +22,33 @@
 - Scoped to a `department_id` — a KPI is always department-specific by design (per the in-scope spec: "KPI definitions per department"), not global or per-individual. If a specific employee needs an individual target different from their department's, that's a future extension (e.g. an optional `employee_id` override) — flag it if requested, don't build it speculatively now.
 - Fields: `name`, `description`, `measurement_unit` (`%`, `count`, `score_1_5`, or others as needed — keep as a free-text unit label rather than a rigid enum, since departments will have varied metrics), `target_value`, `weight` (contribution to an overall department/employee score, same weighting principle as CV scoring criteria — weights across a department's active KPIs should sum to 1.0; create/update reject sums over 1.0 so KPIs can be added incrementally, and recording actuals requires an exact 1.0 sum), `review_period` (`monthly`/`quarterly`/`annual`).
 
+### Default KPI packs (`POST /departments/{id}/kpi-definitions/seed-defaults`)
+
+Idempotent, **department-specific** seed. Matched by department name (case-insensitive); unknown/custom departments get a generic pack. Each pack weights sum to 1.0 and includes **Other / ad-hoc work** (0.10). Names that already exist are skipped; remaining weight budget must fit new rows.
+
+Examples:
+
+| Department | Sample KPIs |
+|---|---|
+| IT | Ticket resolution, uptime, SLAs, security |
+| Engineering | Feature delivery, code quality, sprint commitment |
+| HR | Hiring, engagement, policy compliance, training |
+| Sales | Quota attainment, new clients, pipeline, retention |
+| Accounting | Month-end close, collections, audit readiness |
+| Operations | On-time delivery, efficiency, quality, cost |
+| Digital Marketing | Leads/campaigns, content cadence, engagement |
+| Graphic Design | On-time delivery, quality, brand adherence |
+| Customer Support | Resolution rate, first response, CSAT |
+| General / other | Delivery, quality, SLAs, collaboration |
+
+UI: **Add department default KPIs** on Dashboard + Definitions. HR can always add custom KPIs via the Definitions create form (archive a default if weight room is needed).
+
 ---
 
 ## 3. Recording Actuals (`KpiEntry`)
 
 - One entry per `(kpi_definition_id, employee_id, period_start, period_end)` — recorded by a manager/HR (`recorded_by`), with an optional `notes` field for context (useful for review conversations later).
+- Department overall rises only when actuals are saved through this path (weighted scores) — never via silent AI rewriting of scores.
 - `score` is computed at entry time, not left for the frontend to derive:
 
 ```
@@ -41,6 +63,10 @@ score = normalized * 100   (expressed as a percentage of target achievement)
   - `70 <= score < 90` → `--status-kpi-at-risk`
   - `score < 70` → `--status-kpi-below-target`
   These thresholds live in `system_config` (`kpi.score_bands`), not hardcoded in frontend or backend, so they're adjustable without a redeploy.
+
+### Other / free-text + AI suggest (`POST /kpi/ai-suggest-entry`)
+
+On Record actual, HR can describe work in a **Work done** textarea (especially when **Other / ad-hoc work** is selected). **Analyze with AI** calls Gemini (`GEMINI_API_KEY`) with `{ departmentId, employeeId, period, text }` and returns `{ kpiDefinitionId, actualValue, reasoning }` to prefill the form. The user must click **Save entry** — no auto-write. Without Gemini configured, a deterministic fallback maps to Other / ad-hoc with a rough count.
 
 ---
 
@@ -75,12 +101,27 @@ Average of employee `overall_score` values across the department for the period,
 
 ## 6. Frontend Pages
 
-- `KpiDefinitionsPage` — per-department list, create/edit form with weight-sum validation (mirrors the CV scoring criteria builder pattern from `FEATURE_CV_SCREENING.md` §3 — reuse the same weight-validation component if practical).
-- `KpiDashboardPage` — department selector, employee-level score table (status rail + badge per `UI_DESIGN_SYSTEM.md`), drill-down to an individual employee's KPI breakdown, entry-recording form/modal, "mark period reviewed" action.
+- `KpiDefinitionsPage` — per-department list, create/edit form with weight-sum validation (mirrors the CV scoring criteria builder pattern from `FEATURE_CV_SCREENING.md` §3 — reuse the same weight-validation component if practical), **Add default KPIs** when empty.
+- `KpiDashboardPage` — department selector, employee-level score table (status rail + badge per `UI_DESIGN_SYSTEM.md`), drill-down to an individual employee's KPI breakdown, Record actual form (always visible when a department is selected, with empty states for missing employees/definitions), AI suggest + Save entry, "mark period reviewed" action.
+- App shell notification bell — polls unread in-app KPI reminders (~60s).
 
 ---
 
-## 7. Edge Cases & Rules
+## 7. In-app KPI reminders (no email)
+
+Scheduler (APScheduler, timezone **Asia/Karachi**) runs daily:
+
+| Time | Kind | When |
+|---|---|---|
+| 18:00 | `kpi_incomplete` | Active KPI definitions exist and period completeness &lt; 100% |
+| 18:20 | `kpi_at_risk` | Entries exist and department band is at-risk / below-target |
+
+Notifications are written to `app_notifications` for users with `kpi` module permission ≥ `read`. API: `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/{id}/read`, `POST /notifications/read-all`. Email/WhatsApp KPI alerts are out of scope.
+
+---
+
+## 8. Edge Cases & Rules
 
 - New employee mid-period: don't require a `KpiEntry` for a period they weren't present for the majority of — completeness calculation (§5) should account for `date_joined`/`date_exited` rather than expecting every active employee to have every period's entry regardless of tenure.
 - Editing a `KpiDefinition`'s `target_value` or `weight` after entries already exist for the current period: existing `KpiEntry.score` values are **not** silently recomputed (unlike CV scoring's re-score-on-criteria-change behavior) — KPI actuals represent a point-in-time record against the target that was live *then*; changing the definition should apply going forward, prompting HR with a clear notice rather than retroactively rewriting historical scores.
+- Record actual empty states: if the department has no active employees, instruct HR to assign Department on Employees; if no definitions, show **Add default KPIs**.

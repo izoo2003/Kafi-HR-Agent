@@ -41,3 +41,6 @@ google-auth-oauthlib==1.2.1
 # --- Microsoft Graph / Outlook CV intake ---
 msal==1.31.1
 requests>=2.33.0
+
+# --- In-app KPI reminder scheduler (Asia/Karachi) ---
+APScheduler==3.10.4

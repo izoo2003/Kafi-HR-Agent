@@ -5,10 +5,13 @@ import type { KpiDefinitionCreate, KpiDefinitionUpdate, KpiEntryCreate } from ".
 export function useKpiDefinitions(params?: {
   departmentId?: number;
   includeArchived?: boolean;
+  enabled?: boolean;
 }) {
+  const { enabled = true, ...filters } = params ?? {};
   return useQuery({
-    queryKey: ["kpi-definitions", params],
-    queryFn: () => api.listKpiDefinitions(params),
+    queryKey: ["kpi-definitions", filters],
+    queryFn: () => api.listKpiDefinitions(filters),
+    enabled,
   });
 }
 
@@ -79,5 +82,22 @@ export function useMarkKpiPeriodReviewed() {
     mutationFn: (args: { departmentId: number; periodStart: string; periodEnd: string }) =>
       api.markKpiPeriodReviewed(args.departmentId, args.periodStart, args.periodEnd),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] }),
+  });
+}
+
+export function useSeedKpiDefaults() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (departmentId: number) => api.seedKpiDefaults(departmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kpi-definitions"] });
+      qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
+    },
+  });
+}
+
+export function useAiSuggestKpiEntry() {
+  return useMutation({
+    mutationFn: api.aiSuggestKpiEntry,
   });
 }

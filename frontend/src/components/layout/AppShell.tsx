@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../ui/Button";
+import { NotificationBell } from "./NotificationBell";
 import "./AppShell.css";
 
 const NAV = [
@@ -92,6 +93,9 @@ export function AppShell() {
         </div>
       </aside>
       <div className="shell__main">
+        <div className="shell__utility">
+          <NotificationBell />
+        </div>
         <Outlet />
       </div>
     </div>

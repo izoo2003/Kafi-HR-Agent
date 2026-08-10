@@ -14,21 +14,130 @@ from app.models.employees import Department, Employee
 from app.models.kpi import KpiDefinition, KpiEntry
 from app.models.system import SystemConfig
 from app.schemas.common import AuthContext, PaginatedResponse
+from app.core.config import get_settings
 from app.schemas.kpi import (
     DepartmentKpiBreakdown,
     DepartmentKpiSummary,
     EmployeeKpiEntrySummary,
     EmployeeKpiSummary,
+    KpiAiSuggestRequest,
+    KpiAiSuggestResponse,
     KpiDefinitionCreate,
+    KpiDefinitionRead,
     KpiDefinitionUpdate,
     KpiEntryCreate,
     KpiEntryRead,
     KpiEntryUpdate,
     MarkPeriodReviewedResponse,
+    SeedDefaultsResponse,
 )
 from app.services import audit_service
 
 Band = Literal["on_target", "at_risk", "below_target"]
+
+OTHER_KPI_NAME = "Other / ad-hoc work"
+
+# (name, description, measurement_unit, target_value, weight) — each pack sums to 1.0
+KpiPackItem = tuple[str, str, str, Decimal, float]
+
+_OTHER: KpiPackItem = (
+    OTHER_KPI_NAME,
+    "Catch-all for typed ad-hoc work described in notes",
+    "count",
+    Decimal("10"),
+    0.10,
+)
+
+# Generic fallback when department name is unknown / custom.
+GENERIC_KPI_PACK: list[KpiPackItem] = [
+    ("Delivery / output", "Work delivered against plan", "count", Decimal("100"), 0.35),
+    ("Quality / accuracy", "Quality of deliverables", "%", Decimal("100"), 0.25),
+    ("Responsiveness / SLAs", "Timely responses and SLA adherence", "%", Decimal("100"), 0.20),
+    (
+        "Collaboration / process",
+        "Team collaboration and process adherence",
+        "score_1_5",
+        Decimal("5"),
+        0.10,
+    ),
+    _OTHER,
+]
+
+# Department-name → pack (matched case-insensitively). Custom depts fall back to GENERIC.
+DEPARTMENT_KPI_PACKS: dict[str, list[KpiPackItem]] = {
+    "it": [
+        ("Ticket / incident resolution", "Incidents and tickets closed in period", "count", Decimal("40"), 0.30),
+        ("System uptime / reliability", "Uptime or reliability against target", "%", Decimal("99"), 0.25),
+        ("Response time / SLAs", "SLA / first-response adherence", "%", Decimal("95"), 0.20),
+        ("Security & compliance", "Security tasks / compliance checks completed", "score_1_5", Decimal("5"), 0.15),
+        _OTHER,
+    ],
+    "engineering": [
+        ("Feature delivery", "Features / stories delivered", "count", Decimal("20"), 0.35),
+        ("Code quality / defects", "Quality score or defect-free delivery rate", "%", Decimal("95"), 0.25),
+        ("Sprint commitment met", "Committed work completed in sprint/period", "%", Decimal("90"), 0.20),
+        ("Code reviews / collaboration", "Review participation and teamwork", "score_1_5", Decimal("5"), 0.10),
+        _OTHER,
+    ],
+    "hr": [
+        ("Hiring / time-to-fill", "Open roles filled or hiring milestones hit", "count", Decimal("5"), 0.25),
+        ("Employee engagement", "Engagement / satisfaction pulse score", "score_1_5", Decimal("5"), 0.25),
+        ("Policy & compliance", "HR policy / compliance tasks completed", "%", Decimal("100"), 0.20),
+        ("Training completion", "Required training completed on time", "%", Decimal("95"), 0.20),
+        _OTHER,
+    ],
+    "sales": [
+        ("Quota / revenue attainment", "Revenue or quota achievement", "%", Decimal("100"), 0.40),
+        ("New clients acquired", "New customers closed", "count", Decimal("10"), 0.25),
+        ("Pipeline conversion", "Qualified leads converted", "%", Decimal("30"), 0.15),
+        ("Client retention", "Existing-client retention / renewals", "%", Decimal("90"), 0.10),
+        _OTHER,
+    ],
+    "accounting": [
+        ("Month-end close on time", "Close completed by target date (score)", "score_1_5", Decimal("5"), 0.30),
+        ("Collections / receivables", "Invoices collected vs due", "%", Decimal("95"), 0.25),
+        ("Audit readiness / accuracy", "Error-free books / audit readiness", "%", Decimal("100"), 0.20),
+        ("Reporting timeliness", "Reports delivered on schedule", "%", Decimal("100"), 0.15),
+        _OTHER,
+    ],
+    "operations": [
+        ("On-time delivery", "Jobs / orders delivered on time", "%", Decimal("95"), 0.30),
+        ("Process efficiency", "Efficiency / throughput vs plan", "%", Decimal("90"), 0.25),
+        ("Quality / error rate", "First-pass quality (higher is better)", "%", Decimal("98"), 0.20),
+        ("Cost control", "Operating within budget targets", "%", Decimal("100"), 0.15),
+        _OTHER,
+    ],
+    "digital marketing": [
+        ("Leads / campaign results", "Qualified leads or campaign outcomes", "count", Decimal("50"), 0.30),
+        ("Content publishing cadence", "Planned content pieces published", "count", Decimal("20"), 0.25),
+        ("Engagement / conversion", "Engagement or conversion rate", "%", Decimal("5"), 0.20),
+        ("Channel / brand growth", "Follower or reach growth vs target", "%", Decimal("10"), 0.15),
+        _OTHER,
+    ],
+    "graphic design": [
+        ("Designs delivered on time", "Assets delivered by deadline", "count", Decimal("25"), 0.35),
+        ("Revision / quality score", "Quality after review cycles", "score_1_5", Decimal("5"), 0.25),
+        ("Brand guideline adherence", "Work meeting brand standards", "%", Decimal("100"), 0.20),
+        ("Stakeholder satisfaction", "Requester satisfaction", "score_1_5", Decimal("5"), 0.10),
+        _OTHER,
+    ],
+    "customer support": [
+        ("Ticket resolution rate", "Tickets resolved in period", "%", Decimal("95"), 0.30),
+        ("First response time", "First-response SLA met", "%", Decimal("90"), 0.25),
+        ("CSAT / satisfaction", "Customer satisfaction score", "score_1_5", Decimal("5"), 0.25),
+        ("Escalation control", "Resolved without escalation", "%", Decimal("85"), 0.10),
+        _OTHER,
+    ],
+    "general": GENERIC_KPI_PACK,
+}
+
+# Back-compat alias used by tests / imports
+DEFAULT_KPI_PACK = GENERIC_KPI_PACK
+
+
+def _kpi_pack_for_department(department_name: str) -> list[KpiPackItem]:
+    key = (department_name or "").strip().lower()
+    return DEPARTMENT_KPI_PACKS.get(key, GENERIC_KPI_PACK)
 
 
 def _score_cap(db: Session) -> float:
@@ -221,6 +330,166 @@ def archive_definition(db: Session, auth: AuthContext, definition_id: int) -> Kp
         after_state={"is_archived": True},
     )
     return row
+
+
+def seed_default_definitions(
+    db: Session, auth: AuthContext, department_id: int
+) -> SeedDefaultsResponse:
+    """Idempotent department-specific pack. Skips names that already exist."""
+    dept = db.query(Department).filter(Department.id == department_id).one_or_none()
+    if dept is None:
+        raise EntityNotFound(f"Department {department_id} not found")
+
+    pack = _kpi_pack_for_department(dept.name)
+    existing = _active_definitions(db, department_id)
+    existing_names = {d.name.strip().lower() for d in existing}
+    created: list[KpiDefinition] = []
+    skipped: list[str] = []
+
+    # Only fill missing named defaults when they fit under remaining weight budget.
+    remaining = max(0.0, 1.0 - _weight_sum(db, department_id))
+
+    for name, description, unit, target, weight in pack:
+        if name.strip().lower() in existing_names:
+            skipped.append(name)
+            continue
+        if weight > remaining + 0.001:
+            skipped.append(name)
+            continue
+        row = KpiDefinition(
+            department_id=department_id,
+            name=name,
+            description=description,
+            measurement_unit=unit,
+            target_value=target,
+            weight=weight,
+            review_period="monthly",
+            is_archived=False,
+        )
+        db.add(row)
+        db.flush()
+        remaining -= weight
+        created.append(row)
+        audit_service.log_from_auth(
+            db,
+            auth,
+            action="kpi_definition.created",
+            entity_type="kpi_definition",
+            entity_id=row.id,
+            after_state={
+                "name": name,
+                "weight": weight,
+                "seeded": True,
+                "department": dept.name,
+            },
+        )
+
+    if not created and not existing:
+        raise ValidationFailed(f"Could not seed default KPIs for {dept.name}")
+
+    if not created:
+        msg = (
+            f"No new defaults added for {dept.name} — "
+            "existing KPIs already cover these names or the weight budget (1.0). "
+            "Add custom KPIs manually below, or archive some first."
+        )
+    else:
+        msg = (
+            f"Seeded {len(created)} {dept.name}-specific KPI(s)"
+            + (f"; skipped {len(skipped)} existing/over-budget" if skipped else "")
+            + ". You can still add custom KPIs manually."
+        )
+
+    return SeedDefaultsResponse(
+        message=msg,
+        created=[KpiDefinitionRead.model_validate(r) for r in created],
+        skipped_existing=skipped,
+    )
+
+
+def ai_suggest_entry(
+    db: Session, auth: AuthContext, payload: KpiAiSuggestRequest
+) -> KpiAiSuggestResponse:
+    """Gemini maps free-text work done → best KPI definition + suggested actual (no write)."""
+    _ = auth
+    defs = _active_definitions(db, payload.department_id)
+    if not defs:
+        raise ValidationFailed(
+            "No active KPI definitions for this department — seed defaults or create KPIs first"
+        )
+    emp = db.query(Employee).filter(Employee.id == payload.employee_id).one_or_none()
+    if emp is None or emp.department_id != payload.department_id:
+        raise ValidationFailed("Employee must belong to the selected department")
+
+    settings = get_settings()
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key or api_key.startswith("your_"):
+        # Deterministic fallback: Other KPI or first def; crude count of lines/sentences
+        other = next((d for d in defs if d.name == OTHER_KPI_NAME), defs[-1])
+        approx = float(min(max(payload.text.count("\n") + 1, 1), float(other.target_value or 10)))
+        return KpiAiSuggestResponse(
+            kpi_definition_id=other.id,
+            actual_value=approx,
+            reasoning="Gemini not configured — suggested Other / ad-hoc with a rough count from the text.",
+        )
+
+    import json
+    import re
+
+    import google.generativeai as genai
+
+    catalog = [
+        {
+            "id": d.id,
+            "name": d.name,
+            "unit": d.measurement_unit,
+            "target": float(d.target_value or 0),
+        }
+        for d in defs
+    ]
+    prompt = f"""You help HR map free-text work into one existing KPI definition and an actual_value.
+
+Department KPI catalog (JSON):
+{json.dumps(catalog)}
+
+Work description from employee:
+---
+{payload.text.strip()}
+---
+
+Period: {payload.period_start} to {payload.period_end}
+
+Respond with STRICT JSON only:
+{{"kpi_definition_id": <id from catalog>, "actual_value": <number>, "reasoning": "<short>"}}
+
+Rules:
+- kpi_definition_id MUST be one of the catalog ids.
+- Prefer a specific KPI over "Other / ad-hoc work" when the text clearly matches.
+- actual_value should be realistic vs that KPI's target/unit (e.g. % 0-150, score_1_5 1-5, counts >= 0).
+"""
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
+        response = model.generate_content(prompt)
+        raw = (response.text or "").strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        data = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001
+        raise ValidationFailed(f"AI suggest failed: {exc}") from exc
+
+    kid = int(data.get("kpi_definition_id") or 0)
+    if kid not in {d.id for d in defs}:
+        raise ValidationFailed("AI returned an unknown kpi_definition_id")
+    actual = float(data.get("actual_value") or 0)
+    if actual < 0:
+        actual = 0.0
+    return KpiAiSuggestResponse(
+        kpi_definition_id=kid,
+        actual_value=actual,
+        reasoning=str(data.get("reasoning") or "AI suggestion"),
+    )
 
 
 # --- Entries ---

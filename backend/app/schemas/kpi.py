@@ -123,3 +123,23 @@ class MarkPeriodReviewedResponse(BaseModel):
     department_id: int
     period_start: date
     period_end: date
+
+
+class KpiAiSuggestRequest(BaseModel):
+    department_id: int
+    employee_id: int
+    period_start: date
+    period_end: date
+    text: str = Field(min_length=3, max_length=4000)
+
+
+class KpiAiSuggestResponse(BaseModel):
+    kpi_definition_id: int
+    actual_value: float
+    reasoning: str
+
+
+class SeedDefaultsResponse(BaseModel):
+    message: str
+    created: list[KpiDefinitionRead]
+    skipped_existing: list[str]
