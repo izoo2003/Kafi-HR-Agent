@@ -92,6 +92,14 @@
   color: var(--color-text-muted);
 }
 
+.sidebar__credit {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
 .shell__main {
   min-width: 0;
   display: flex;
@@ -147,6 +155,7 @@
   .sidebar__brand div,
   .sidebar__link span,
   .sidebar__user,
+  .sidebar__credit,
   .sidebar__footer .btn span {
     display: none;
   }

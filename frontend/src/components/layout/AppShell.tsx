@@ -90,6 +90,9 @@ export function AppShell() {
           >
             <LogOut size={16} aria-hidden /> Sign out
           </Button>
+          <p className="sidebar__credit">
+            Made by Izaan Bin Mujeeb for Kafi Commodities
+          </p>
         </div>
       </aside>
       <div className="shell__main">
