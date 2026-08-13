@@ -43,19 +43,25 @@ export function CvScreeningHubPage() {
     setSyncMessage(null);
     try {
       const result = await sync.mutateAsync();
-      const notConfigured = result.sources.filter((s) => !s.configured);
+      const sourceLabel: Record<string, string> = {
+        webmail: "Webmail",
+        outlook: "Outlook",
+        whatsapp: "WhatsApp",
+        gmail: "Gmail",
+        google_form: "Google Form",
+      };
       let msg = `Fetched ${result.totalFetched} — ${result.autoMatched} matched, ${result.unassigned} unassigned`;
       if (result.duplicatesSkipped > 0) msg += `, ${result.duplicatesSkipped} duplicates skipped`;
+      const notConfigured = result.sources.filter((s) => !s.configured);
       if (notConfigured.length > 0) {
-        const sourceLabel: Record<string, string> = {
-          webmail: "Webmail",
-          outlook: "Outlook",
-          whatsapp: "WhatsApp",
-          gmail: "Gmail",
-          google_form: "Google Form",
-        };
         msg += `. Not connected: ${notConfigured.map((s) => sourceLabel[s.source] ?? s.source).join(", ")}.`;
       }
+      // Surface why (e.g. missing IMAP_PASSWORD on Railway) — not only the label list.
+      const details = result.sources
+        .filter((s) => s.message)
+        .map((s) => `${sourceLabel[s.source] ?? s.source}: ${s.message}`)
+        .join(" | ");
+      if (details) msg += ` — ${details}`;
       setSyncMessage(msg);
     } catch (err) {
       setSyncError(err instanceof ApiError ? err.message : "Sync failed");

@@ -17,12 +17,17 @@ class GoogleCredentialsNotConfigured(RuntimeError):
 
 
 def get_credentials(
-    client_secrets_file: Path, token_file: Path, scopes: list[str]
+    client_secrets_file: Path,
+    token_file: Path,
+    scopes: list[str],
+    *,
+    interactive: bool = False,
 ) -> Credentials:
-    """Returns valid OAuth credentials, running the interactive consent flow
-    the first time (local dev only) and refreshing silently afterwards. Token
-    is cached to `token_file` so this only needs a browser login once per
-    scope set — see the Railway restore step in app/main.py for cloud boots.
+    """Returns valid OAuth credentials.
+
+    By default (`interactive=False`) never opens a browser — Sync CVs must not
+    block on Google consent. Pass `interactive=True` only for a deliberate
+    local one-time auth CLI. Token is cached to `token_file`.
     """
     creds: Credentials | None = None
 
@@ -37,7 +42,14 @@ def get_credentials(
                 raise GoogleCredentialsNotConfigured(
                     f"Missing Google OAuth client secrets file at {client_secrets_file}. "
                     "Download it from Google Cloud Console (OAuth client ID, Desktop app) "
-                    "and place it there, then run a sync once locally to complete consent."
+                    "and place it there, then authorize once with interactive=True."
+                )
+            if not interactive:
+                raise GoogleCredentialsNotConfigured(
+                    f"Google OAuth token missing at {token_file}. "
+                    "Primary email intake is webmail IMAP (hr@kafi-group.com) — "
+                    "Gmail API is optional. Authorize Gmail separately if needed; "
+                    "Sync will not open a browser login."
                 )
             flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_file), scopes)
             creds = flow.run_local_server(port=0)

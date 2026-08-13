@@ -14,6 +14,8 @@ import imaplib
 import json
 import logging
 import re
+import socket
+import ssl
 from email.message import Message
 from pathlib import Path
 
@@ -26,6 +28,43 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGES_PER_RUN = 30
 LOOKBACK_DAYS = 30
 STATE_FILENAME = "imap_processed_uids.json"
+
+
+def _create_connection_ipv4(address: tuple[str, int], timeout: float | None) -> socket.socket:
+    """Prefer IPv4 — Railway/containers often have no IPv6 route (Errno 101)."""
+    host, port = address
+    errors: list[OSError] = []
+    for family, socktype, proto, _canon, sockaddr in socket.getaddrinfo(
+        host, port, socket.AF_INET, socket.SOCK_STREAM
+    ):
+        sock: socket.socket | None = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            if timeout is not None:
+                sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            errors.append(exc)
+            if sock is not None:
+                sock.close()
+    if errors:
+        raise errors[0]
+    raise OSError(f"No IPv4 address for {host}:{port}")
+
+
+class IMAP4_SSL_IPv4(imaplib.IMAP4_SSL):
+    """IMAP4_SSL that never tries AAAA / IPv6 first."""
+
+    def _create_socket(self, timeout):  # noqa: ANN001 — matches imaplib signature
+        sock = _create_connection_ipv4((self.host, self.port), timeout)
+        context = self.ssl_context if getattr(self, "ssl_context", None) else ssl.create_default_context()
+        return context.wrap_socket(sock, server_hostname=self.host)
+
+
+class IMAP4_IPv4(imaplib.IMAP4):
+    def _create_socket(self, timeout):  # noqa: ANN001
+        return _create_connection_ipv4((self.host, self.port), timeout)
 
 
 def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
@@ -49,6 +88,48 @@ def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
     try:
         submissions = _fetch(settings, host, port, user, password)
         return SourceFetchResult(source="webmail", configured=True, submissions=submissions)
+    except TimeoutError as exc:
+        logger.warning("IMAP connect timed out to %s:%s — %s", host, port, exc)
+        return SourceFetchResult(
+            source="webmail",
+            configured=True,
+            submissions=[],
+            message=(
+                f"Webmail IMAP timed out connecting to {host}:{port}. "
+                "This network is likely blocking outbound IMAP (common on local ISP/firewall). "
+                "Use Sync CVs on the deployed Railway backend (or allow TCP 993), "
+                "not from a blocked local machine."
+            ),
+        )
+    except OSError as exc:
+        # Connection refused / unreachable / no IPv6 route
+        err = str(exc).lower()
+        errno = getattr(exc, "errno", None)
+        if (
+            "timed out" in err
+            or "unreachable" in err
+            or errno in (101, 10060, 10061)
+            or "10060" in err
+            or "10061" in err
+        ):
+            logger.warning("IMAP network error to %s:%s — %s", host, port, exc)
+            return SourceFetchResult(
+                source="webmail",
+                configured=True,
+                submissions=[],
+                message=(
+                    f"Webmail IMAP cannot reach {host}:{port} ({exc}). "
+                    "If this is Railway: ensure mail DNS uses a direct (non-proxied) A record "
+                    "for IMAP, and IMAP_PASSWORD has no surrounding quotes."
+                ),
+            )
+        logger.exception("IMAP fetch failed")
+        return SourceFetchResult(
+            source="webmail",
+            configured=True,
+            submissions=[],
+            message=f"Webmail IMAP fetch failed: {exc}",
+        )
     except imaplib.IMAP4.error as exc:
         logger.warning("IMAP auth/fetch failed: %s", exc)
         return SourceFetchResult(
@@ -72,10 +153,12 @@ def _fetch(
 ) -> list[CvSubmission]:
     # Avoid hanging Sync for ~60s when the host blocks this network (common on local ISP/firewall).
     timeout_s = 20.0
+    # Force IPv4: mail.kafi-group.com has Cloudflare AAAA records; Railway often
+    # cannot route IPv6 → "[Errno 101] Network is unreachable".
     if settings.imap_ssl:
-        client: imaplib.IMAP4 = imaplib.IMAP4_SSL(host, port, timeout=timeout_s)
+        client: imaplib.IMAP4 = IMAP4_SSL_IPv4(host, port, timeout=timeout_s)
     else:
-        client = imaplib.IMAP4(host, port, timeout=timeout_s)
+        client = IMAP4_IPv4(host, port, timeout=timeout_s)
 
     try:
         client.login(user, password)

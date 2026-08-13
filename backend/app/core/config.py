@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # backend/
@@ -83,6 +83,18 @@ class Settings(BaseSettings):
     imap_user: str = "hr@kafi-group.com"
     imap_password: str = ""
     imap_ssl: bool = True
+
+    @field_validator("imap_password", mode="before")
+    @classmethod
+    def strip_imap_password_quotes(cls, value: object) -> object:
+        """Railway/.env pastes sometimes keep surrounding quotes; strip them."""
+        if not isinstance(value, str):
+            return value
+        v = value.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            return v[1:-1]
+        return v
+
     # Microsoft Graph / Outlook 365 — optional if Graph app is configured
     outlook_mailbox: str = Field(
         default="hr@kafi-group.com",
