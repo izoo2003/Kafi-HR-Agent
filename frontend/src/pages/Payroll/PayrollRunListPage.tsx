@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -109,11 +110,24 @@ export function PayrollRunListPage() {
 
   return (
     <>
-      <PageHeader title="Payroll" breadcrumb="Payroll" />
+      <PageHeader
+        title="Payroll"
+        breadcrumb="Payroll"
+        actions={
+          <>
+            <Link to="/payroll/compute">
+              <Button variant="primary">Salary calculation</Button>
+            </Link>
+            <Link to="/payroll/tax-slabs">
+              <Button variant="secondary">Tax slabs</Button>
+            </Link>
+          </>
+        }
+      />
       <div className="page" style={{ display: "grid", gap: "var(--space-4)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
-          Active employees and their current base salary. Edit a salary and save — changes update the
-          employee record used for future payroll runs.
+          Set each employee&apos;s base salary here. Net pay (attendance + tax) is on Salary
+          calculation; tax years/slabs (including 2026-27) are editable under Tax slabs.
         </p>
 
         {salaries.isLoading ? <Spinner label="Loading salaries" /> : null}

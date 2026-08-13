@@ -47,7 +47,12 @@ def list_candidates(
 ) -> PaginatedResponse[CandidateRead]:
     q = db.query(Candidate).filter(Candidate.job_description_id == job_id)
     total = q.count()
-    rows = q.order_by(Candidate.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    rows = (
+        q.order_by(Candidate.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return PaginatedResponse(
         items=[CandidateRead.model_validate(r) for r in rows],
         total=total,
@@ -338,7 +343,10 @@ def list_unassigned_candidates(
     q = db.query(Candidate).filter(Candidate.job_description_id.is_(None))
     total = q.count()
     rows = (
-        q.order_by(Candidate.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        q.order_by(Candidate.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
     )
     return PaginatedResponse(
         items=[CandidateRead.model_validate(r) for r in rows],

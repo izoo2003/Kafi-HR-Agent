@@ -41,14 +41,45 @@ export function JobDescriptionDetailPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-4)" }}>
         <Card status={job.data.status === "open" ? "positive" : "neutral"}>
-          <StatusBadge status={job.data.status === "open" ? "approved" : "draft"}>
-            {job.data.status}
-          </StatusBadge>
+          <div
+            style={{
+              display: "flex",
+              gap: "var(--space-3)",
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: "var(--space-3)",
+            }}
+          >
+            <StatusBadge status={job.data.status === "open" ? "approved" : "draft"}>
+              {job.data.status}
+            </StatusBadge>
+            <span style={{ fontFamily: "var(--font-data)", fontSize: "var(--text-sm)" }}>
+              Applicants: {job.data.applicantsCount ?? 0}
+            </span>
+          </div>
           <p style={{ whiteSpace: "pre-wrap" }}>{job.data.descriptionText}</p>
           {job.data.requirementsText ? (
             <>
               <h3>Requirements</h3>
               <p style={{ whiteSpace: "pre-wrap" }}>{job.data.requirementsText}</p>
+            </>
+          ) : null}
+          {job.data.applicationFormUrl ? (
+            <>
+              <h3>Apply via Google Form</h3>
+              <p style={{ wordBreak: "break-all" }}>
+                <a
+                  href={job.data.applicationFormUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "var(--color-accent)" }}
+                >
+                  {job.data.applicationFormUrl}
+                </a>
+              </p>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                Candidates submit their details and CV through this form.
+              </p>
             </>
           ) : null}
         </Card>

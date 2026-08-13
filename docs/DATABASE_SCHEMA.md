@@ -75,15 +75,67 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 | user_id | INTEGER FK → users.id NULL | linked login account, nullable until employee gets system access |
 | employee_code | TEXT UNIQUE NOT NULL | internal ID |
 | full_name | TEXT NOT NULL | |
-| department_id | INTEGER FK → departments.id | |
-| role_title | TEXT NOT NULL | job title, not RBAC role |
+| department_id | INTEGER FK → departments.id | Role assignment in UI — departments act as selectable roles |
+| role_title | TEXT NOT NULL | synced from department name when role is assigned |
 | job_description_text | TEXT NULL | duties/requirements for this employee (internal JD — not a hiring job posting) |
 | employment_type | TEXT | `full_time`, `part_time`, `contract` |
 | date_joined | DATE | |
 | date_exited | DATE NULL | |
 | status | TEXT | `active`, `on_leave`, `terminated` |
-| base_salary | DECIMAL | current base salary, feeds payroll |
+| base_salary | DECIMAL | net/base salary shown in Salary details; feeds payroll |
 | manager_id | INTEGER FK → employees.id NULL | self-referential reporting line |
+| cnic | TEXT NULL | national ID |
+| email | TEXT NULL | personal email |
+| personal_mobile | TEXT NULL | |
+| alternate_mobile | TEXT NULL | |
+| father_name | TEXT NULL | |
+| date_of_birth | DATE NULL | |
+| gender | TEXT NULL | |
+| marital_status | TEXT NULL | |
+| current_address | TEXT NULL | |
+| permanent_address | TEXT NULL | |
+| city | TEXT NULL | |
+| nationality | TEXT NULL | |
+| bank_name | TEXT NULL | |
+| account_title | TEXT NULL | |
+| account_number | TEXT NULL | |
+| iban | TEXT NULL | |
+| branch_name | TEXT NULL | |
+| branch_code | TEXT NULL | |
+
+### `employee_documents`
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| category | TEXT NOT NULL | `cnic`, `education`, `photo`, `other` |
+| title | TEXT NULL | optional label |
+| file_path | TEXT NOT NULL | stored under `data/uploads/employees/` |
+| original_filename | TEXT NOT NULL | |
+| mime_type | TEXT NULL | |
+| created_at / updated_at | DATETIME | |
+
+### `employee_references` (Client Referrals in UI)
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| full_name | TEXT NOT NULL | reference name |
+| relation | TEXT NOT NULL | relation to the employee |
+| phone | TEXT NULL | phone number |
+| cnic | TEXT NULL | |
+| notes | TEXT NULL | |
+| created_at / updated_at | DATETIME | |
+
+### `employee_reference_documents`
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| reference_id | INTEGER FK → employee_references.id | |
+| file_path | TEXT NOT NULL | PDF or image |
+| original_filename | TEXT NOT NULL | |
+| mime_type | TEXT NULL | |
+| created_at / updated_at | DATETIME | |
 
 ---
 

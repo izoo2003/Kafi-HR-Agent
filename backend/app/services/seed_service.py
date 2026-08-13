@@ -298,8 +298,10 @@ def run_all_seeds(db: Session) -> None:
     seed_demo_org(db)
     from app.services.attendance_service import ensure_attendance_config, ensure_default_rule
     from app.services.kpi_service import ensure_kpi_config
+    from app.services.tax_service import ensure_default_tax_year
 
     ensure_default_rule(db)
     ensure_attendance_config(db)
     ensure_kpi_config(db)
+    ensure_default_tax_year(db)
     db.commit()

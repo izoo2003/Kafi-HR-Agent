@@ -1,10 +1,10 @@
-"""Gemini draft generator for job posting description + requirements from title & department."""
+"""Gemini draft generator for job posting description, requirements, and skills."""
 from __future__ import annotations
 
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.config import Settings
 from app.core.exceptions import BusinessRuleViolation
@@ -13,9 +13,38 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class DraftSkill:
+    name: str
+    level: int  # 1–10
+
+
+@dataclass
 class JobPostingDraft:
     description_text: str
     requirements_text: str
+    skills: list[DraftSkill] = field(default_factory=list)
+
+
+def application_cta_block(form_url: str) -> str:
+    url = (form_url or "").strip()
+    if not url:
+        return ""
+    return (
+        "\n\nHow to apply\n"
+        "Submit your details and CV via this Google Form:\n"
+        f"{url}"
+    )
+
+
+def append_application_link(description: str, form_url: str) -> str:
+    """Ensure the Google Form apply CTA is present at the end of the description."""
+    text = (description or "").rstrip()
+    url = (form_url or "").strip()
+    if not url:
+        return text
+    if url in text:
+        return text
+    return text + application_cta_block(url)
 
 
 def generate_job_posting_draft(
@@ -51,8 +80,11 @@ Write a clear, professional job posting for:
 
 Respond with STRICT JSON only (no markdown fences), exact shape:
 {{
-  "description_text": "<2-4 short paragraphs: role overview, day-to-day responsibilities, how the role fits the department. Plain text, use newlines between paragraphs.>",
-  "requirements_text": "<bullet-style plain text of requirements: education, experience, skills, soft skills. Use lines starting with '- '. Keep it realistic for this title and department.>"
+  "description_text": "<2-4 short paragraphs: role overview, day-to-day responsibilities, how the role fits the department. Plain text, use newlines between paragraphs. Do NOT include application instructions or any form URLs — those are added by the system.>",
+  "requirements_text": "<bullet-style plain text of requirements: education, experience, soft skills. Use lines starting with '- '. Keep it realistic for this title and department.>",
+  "skills": [
+    {{"name": "<specific skill name>", "level": <integer 1-10>}}
+  ]
 }}
 
 Rules:
@@ -60,6 +92,9 @@ Rules:
 - Keep language precise and suitable for an internal HR tool (not marketing fluff).
 - Do not include salary, equal-opportunity boilerplate, or application instructions.
 - description_text must be at least 2 sentences; requirements_text must list at least 5 concrete requirements.
+- skills: return 5–10 concrete, scorable skills for this title (tools, languages, frameworks, domain skills).
+- level: required proficiency from 1 (very low / nice-to-have) to 10 (expert / must-have core skill).
+- Prefer specific skill names (e.g. "Python", "React", "Financial modeling") over vague ones ("hard work").
 """
 
     try:
@@ -74,7 +109,41 @@ Rules:
     if not description or not requirements:
         raise BusinessRuleViolation("AI Analyzer returned an incomplete draft — try again")
 
-    return JobPostingDraft(description_text=description, requirements_text=requirements)
+    skills = _parse_skills(data.get("skills"))
+    if not skills:
+        raise BusinessRuleViolation("AI Analyzer returned no skills — try again")
+
+    description = append_application_link(description, settings.google_form_url)
+
+    return JobPostingDraft(
+        description_text=description,
+        requirements_text=requirements,
+        skills=skills,
+    )
+
+
+def _parse_skills(raw: object) -> list[DraftSkill]:
+    if not isinstance(raw, list):
+        return []
+    out: list[DraftSkill] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("skill") or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            level = int(round(float(item.get("level", 5))))
+        except (TypeError, ValueError):
+            level = 5
+        level = max(1, min(10, level))
+        out.append(DraftSkill(name=name, level=level))
+    return out
 
 
 def _parse_json_response(raw_text: str) -> dict:

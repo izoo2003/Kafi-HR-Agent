@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as payrollApi from "../api/payroll";
-import type { PayrollSalaryUpdate } from "../types/payroll";
+import type { PayrollSalaryUpdate, TaxSlabInput, TaxYearCreate } from "../types/payroll";
 import type { PaginationParams } from "../types/common";
 
 export function usePayrollSalaries(params: PaginationParams = {}) {
@@ -24,5 +24,50 @@ export function useUpdatePayrollSalary() {
       qc.invalidateQueries({ queryKey: ["payroll-salaries"] });
       qc.invalidateQueries({ queryKey: ["employees"] });
     },
+  });
+}
+
+export function useTaxYears() {
+  return useQuery({
+    queryKey: ["tax-years"],
+    queryFn: () => payrollApi.listTaxYears(),
+  });
+}
+
+export function useCreateTaxYear() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TaxYearCreate) => payrollApi.createTaxYear(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tax-years"] }),
+  });
+}
+
+export function useUpdateTaxYear() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Partial<TaxYearCreate> }) =>
+      payrollApi.updateTaxYear(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tax-years"] }),
+  });
+}
+
+export function useReplaceTaxSlabs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, slabs }: { id: number; slabs: TaxSlabInput[] }) =>
+      payrollApi.replaceTaxSlabs(id, slabs),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tax-years"] }),
+  });
+}
+
+export function usePayrollCompute(params: {
+  periodMonth: number;
+  periodYear: number;
+  taxYearId: number;
+} | null) {
+  return useQuery({
+    queryKey: ["payroll-compute", params],
+    queryFn: () => payrollApi.computePayroll(params!),
+    enabled: Boolean(params?.taxYearId && params.periodMonth && params.periodYear),
   });
 }

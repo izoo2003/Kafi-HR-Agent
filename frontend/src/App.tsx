@@ -11,13 +11,17 @@ import { RankingPage } from "./pages/CvScreening/RankingPage";
 import { CvScreeningHubPage } from "./pages/CvScreening/CvScreeningHubPage";
 import { UnassignedCandidatesPage } from "./pages/CvScreening/UnassignedCandidatesPage";
 import { EmployeeListPage } from "./pages/Employees/EmployeeListPage";
+import { EmployeeFormPage } from "./pages/Employees/EmployeeFormPage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
 import { AttendanceRecordsPage } from "./pages/Attendance/AttendanceRecordsPage";
+import { AttendancePeriodReportPage } from "./pages/Attendance/AttendancePeriodReportPage";
 import { LeaveRequestsPage } from "./pages/Attendance/LeaveRequestsPage";
 import { PayrollRunListPage } from "./pages/Payroll/PayrollRunListPage";
 import { PayrollRunDetailPage } from "./pages/Payroll/PayrollRunDetailPage";
 import { PayslipDetailPage } from "./pages/Payroll/PayslipDetailPage";
 import { SalaryAdvancesPage } from "./pages/Payroll/SalaryAdvancesPage";
+import { TaxSlabsPage } from "./pages/Payroll/TaxSlabsPage";
+import { SalaryComputePage } from "./pages/Payroll/SalaryComputePage";
 import { KpiDefinitionsPage } from "./pages/Kpi/KpiDefinitionsPage";
 import { KpiDashboardPage } from "./pages/Kpi/KpiDashboardPage";
 import {
@@ -39,6 +43,8 @@ export default function App() {
 
           <Route element={<RequirePermission module="employees" />}>
             <Route path="/employees" element={<EmployeeListPage />} />
+            <Route path="/employees/new" element={<EmployeeFormPage />} />
+            <Route path="/employees/:id" element={<EmployeeFormPage />} />
             <Route path="/departments" element={<EmployeeListPage />} />
           </Route>
 
@@ -61,11 +67,14 @@ export default function App() {
           <Route element={<RequirePermission module="attendance" />}>
             <Route path="/attendance" element={<AttendanceOverviewPage />} />
             <Route path="/attendance/records" element={<AttendanceRecordsPage />} />
+            <Route path="/attendance/period-report" element={<AttendancePeriodReportPage />} />
             <Route path="/attendance/leave-requests" element={<LeaveRequestsPage />} />
           </Route>
 
           <Route element={<RequirePermission module="payroll" />}>
             <Route path="/payroll/runs" element={<PayrollRunListPage />} />
+            <Route path="/payroll/compute" element={<SalaryComputePage />} />
+            <Route path="/payroll/tax-slabs" element={<TaxSlabsPage />} />
             <Route path="/payroll/runs/:id" element={<PayrollRunDetailPage />} />
             <Route path="/payroll/payslips/:id" element={<PayslipDetailPage />} />
             <Route path="/payroll/advances" element={<SalaryAdvancesPage />} />

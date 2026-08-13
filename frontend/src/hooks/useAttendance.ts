@@ -37,6 +37,17 @@ export function useImportAttendance() {
   });
 }
 
+export function useAttendancePeriodReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadAttendancePeriodReport(file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["attendance-summary"] });
+    },
+  });
+}
+
 export function useLeaveRequests(
   params: PaginationParams & { employeeId?: number; status?: string; departmentId?: number },
 ) {

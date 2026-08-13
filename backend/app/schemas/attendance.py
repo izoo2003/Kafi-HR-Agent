@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -123,3 +124,55 @@ class AttendanceImportResult(BaseModel):
 class BiometricSyncResult(BaseModel):
     message: str
     punches_fetched: int = 0
+
+
+class LateEvent(BaseModel):
+    date: date
+    check_in_time: str
+
+
+class DayClassification(BaseModel):
+    date: date
+    day_type: str
+    weekday: str
+
+
+class PeriodEmployeeReport(BaseModel):
+    employee_id: int | None = None
+    employee_code: str | None = None
+    full_name: str
+    matched_employee: bool = False
+    base_salary: Decimal | None = None
+    tenure_months: int = 0
+    leave_allowance: int = 0
+    leave_used: int = 0
+    days_present: int = 0
+    days_late: int = 0
+    days_half_day: int = 0
+    days_absent: int = 0
+    absents_after_leave: int = 0
+    late_off_days: int = 0
+    overtime_bonus_days: int = 0
+    deduction_days: float = 0
+    per_day_rate: float = 0
+    estimated_deduction_amount: float = 0
+    estimated_overtime_amount: float = 0
+    estimated_net_salary: float = 0
+    late_events: list[LateEvent] = []
+    half_day_dates: list[date] = []
+    absent_dates: list[date] = []
+    overtime_dates: list[date] = []
+
+
+class AttendancePeriodReport(BaseModel):
+    period_start: date
+    period_end: date
+    month_days: int = 30
+    majority_absent_threshold: float = 0.8
+    late_after: str = "09:40"
+    half_day_after: str = "11:30"
+    lates_per_off: int = 3
+    imported_rows: int = 0
+    errors: list[ImportErrorRow] = []
+    non_working_days: list[DayClassification] = []
+    employees: list[PeriodEmployeeReport] = []

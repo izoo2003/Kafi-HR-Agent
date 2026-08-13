@@ -555,11 +555,25 @@ def import_attendance_csv(
     if not reader.fieldnames:
         raise ValidationFailed("CSV has no header row")
     # normalize headers
-    field_map = {h.strip().lower(): h for h in reader.fieldnames}
-    required = ["employee_code", "date", "check_in", "check_out"]
-    for req in required:
-        if req not in field_map:
-            raise ValidationFailed(f"Missing required column: {req}")
+    field_map = {h.strip().lower().replace(" ", "_"): h for h in reader.fieldnames}
+    date_key = next((k for k in ("date", "attendance_date") if k in field_map), None)
+    in_key = next(
+        (k for k in ("check_in", "checkin", "time_in", "time", "in") if k in field_map), None
+    )
+    out_key = next(
+        (k for k in ("check_out", "checkout", "time_out", "out") if k in field_map), None
+    )
+    code_key = next(
+        (k for k in ("employee_code", "emp_code", "code") if k in field_map), None
+    )
+    name_key = next(
+        (k for k in ("name", "employee_name", "full_name", "employee") if k in field_map),
+        None,
+    )
+    if date_key is None or in_key is None:
+        raise ValidationFailed("Missing required columns: date and check_in/time")
+    if code_key is None and name_key is None:
+        raise ValidationFailed("Missing employee_code or name column")
 
     tz = _company_tz(db)
     imported = 0
@@ -568,13 +582,33 @@ def import_attendance_csv(
     for raw in reader:
         row_num += 1
         try:
-            code = (raw[field_map["employee_code"]] or "").strip()
-            emp = db.query(Employee).filter(Employee.employee_code == code).one_or_none()
+            emp = None
+            if code_key:
+                code = (raw[field_map[code_key]] or "").strip()
+                if code:
+                    emp = db.query(Employee).filter(Employee.employee_code == code).one_or_none()
+            if emp is None and name_key:
+                nm = " ".join((raw[field_map[name_key]] or "").strip().lower().split())
+                candidates = (
+                    db.query(Employee).filter(Employee.status != "terminated").all()
+                )
+                emp = next(
+                    (
+                        e
+                        for e in candidates
+                        if " ".join(e.full_name.strip().lower().split()) == nm
+                    ),
+                    None,
+                )
             if emp is None or emp.status == "terminated":
-                raise ValueError(f"Unknown or terminated employee_code: {code}")
-            on_date = date.fromisoformat((raw[field_map["date"]] or "").strip())
-            cin = _parse_dt(raw[field_map["check_in"]], on_date, tz)
-            cout = _parse_dt(raw[field_map["check_out"]], on_date, tz)
+                raise ValueError("Unknown or terminated employee (check name / employee_code)")
+            on_date = date.fromisoformat((raw[field_map[date_key]] or "").strip()[:10])
+            cin = _parse_dt(raw[field_map[in_key]], on_date, tz)
+            cout = (
+                _parse_dt(raw[field_map[out_key]], on_date, tz)
+                if out_key and raw.get(field_map[out_key])
+                else None
+            )
             existing = (
                 db.query(AttendanceRecord)
                 .filter(AttendanceRecord.employee_id == emp.id, AttendanceRecord.date == on_date)
@@ -628,11 +662,24 @@ def ensure_default_rule(db: Session) -> None:
                 name="standard_9to6",
                 shift_start=time(9, 0),
                 shift_end=time(18, 0),
-                grace_period_minutes=15,
+                # 09:00 + 40 min grace → late after 09:40
+                grace_period_minutes=40,
                 half_day_threshold_minutes=240,
                 applies_to_department_id=None,
             )
         )
+    else:
+        # Align legacy default rule with 09:40 late cutoff when still on old 15-min grace.
+        rule = (
+            db.query(AttendanceRule)
+            .filter(
+                AttendanceRule.name == "standard_9to6",
+                AttendanceRule.applies_to_department_id.is_(None),
+            )
+            .first()
+        )
+        if rule and rule.grace_period_minutes == 15:
+            rule.grace_period_minutes = 40
 
 
 def ensure_attendance_config(db: Session) -> None:
@@ -640,3 +687,6 @@ def ensure_attendance_config(db: Session) -> None:
         db.add(SystemConfig(key="attendance.timezone", value={"tz": "Asia/Karachi"}))
     if db.query(SystemConfig).filter_by(key="attendance.holidays").one_or_none() is None:
         db.add(SystemConfig(key="attendance.holidays", value=[]))
+    from app.services.attendance_period_report import ensure_office_policy_config
+
+    ensure_office_policy_config(db)

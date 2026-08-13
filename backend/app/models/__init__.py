@@ -8,7 +8,13 @@ from app.models.cv_screening import (
     JobDescription,
     ScoringCriteria,
 )
-from app.models.employees import Department, Employee
+from app.models.employees import (
+    Department,
+    Employee,
+    EmployeeDocument,
+    EmployeeReference,
+    EmployeeReferenceDocument,
+)
 from app.models.identity import (
     AgentAccessMatrix,
     Permission,
@@ -18,7 +24,15 @@ from app.models.identity import (
     UserRole,
 )
 from app.models.kpi import KpiDefinition, KpiEntry
-from app.models.payroll import Deduction, PayrollRun, PayrollStructure, Payslip, SalaryAdvance
+from app.models.payroll import (
+    Deduction,
+    PayrollRun,
+    PayrollStructure,
+    Payslip,
+    SalaryAdvance,
+    TaxSlab,
+    TaxYear,
+)
 from app.models.system import IntegrationRegistry, SystemConfig
 from app.models.notification import AppNotification
 from app.models.whatsapp import WhatsAppInboundMessage
@@ -32,6 +46,9 @@ __all__ = [
     "RolePermission",
     "Department",
     "Employee",
+    "EmployeeDocument",
+    "EmployeeReference",
+    "EmployeeReferenceDocument",
     "JobDescription",
     "ScoringCriteria",
     "Candidate",
@@ -45,6 +62,8 @@ __all__ = [
     "Payslip",
     "Deduction",
     "SalaryAdvance",
+    "TaxYear",
+    "TaxSlab",
     "KpiDefinition",
     "KpiEntry",
     "AuditLog",

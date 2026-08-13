@@ -11,6 +11,7 @@ from app.core.db import get_db
 from app.core.deps import require_permission
 from app.schemas.attendance import (
     AttendanceImportResult,
+    AttendancePeriodReport,
     AttendanceRecordCreate,
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -25,6 +26,7 @@ from app.schemas.attendance import (
 )
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.services import attendance_service as svc
+from app.services.attendance_period_report import analyze_period_file
 
 router = APIRouter(tags=["attendance"])
 
@@ -126,6 +128,22 @@ async def import_attendance(
         content = buf.getvalue().encode("utf-8")
         name = name.rsplit(".", 1)[0] + ".csv"
     return svc.import_attendance_csv(db, auth, content, filename=name)
+
+
+@router.post("/attendance/period-report", response_model=AttendancePeriodReport)
+async def attendance_period_report(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
+    file: UploadFile = File(...),
+) -> AttendancePeriodReport:
+    """Upload biometric Excel/CSV (name + date + time) and return full office policy report.
+
+    Applies late/half-day/Saturday-off/auto-holiday/3-lates=1-off/OT/leave rules,
+    persists derived attendance rows, and returns per-employee breakdown.
+    """
+    content = await file.read()
+    name = file.filename or "attendance.xlsx"
+    return analyze_period_file(db, auth, content, name, persist=True)
 
 
 @router.post("/attendance/sync-biometric", response_model=BiometricSyncResult)

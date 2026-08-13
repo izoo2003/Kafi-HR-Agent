@@ -41,6 +41,7 @@ def _restore_google_oauth_token(settings) -> None:
 async def lifespan(_app: FastAPI):
     settings = get_settings()
     settings.uploads_cvs_dir.mkdir(parents=True, exist_ok=True)
+    settings.uploads_employees_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.cv_files_dir.mkdir(parents=True, exist_ok=True)
     settings.credentials_dir.mkdir(parents=True, exist_ok=True)

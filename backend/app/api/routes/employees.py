@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -14,7 +15,13 @@ from app.schemas.employees import (
     DepartmentRead,
     DepartmentUpdate,
     EmployeeCreate,
+    EmployeeDetailRead,
+    EmployeeDocumentRead,
     EmployeeRead,
+    EmployeeReferenceCreate,
+    EmployeeReferenceDocumentRead,
+    EmployeeReferenceRead,
+    EmployeeReferenceUpdate,
     EmployeeUpdate,
 )
 from app.services import department_service, employee_service
@@ -74,25 +81,24 @@ def create_employee(
     return EmployeeRead.model_validate(employee_service.create_employee(db, auth, payload))
 
 
-@router.get("/employees/{employee_id}", response_model=EmployeeRead)
+@router.get("/employees/{employee_id}", response_model=EmployeeDetailRead)
 def get_employee(
     employee_id: int,
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
-) -> EmployeeRead:
-    return EmployeeRead.model_validate(employee_service.get_employee(db, employee_id))
+) -> EmployeeDetailRead:
+    return employee_service.get_employee_detail(db, employee_id)
 
 
-@router.patch("/employees/{employee_id}", response_model=EmployeeRead)
+@router.patch("/employees/{employee_id}", response_model=EmployeeDetailRead)
 def patch_employee(
     employee_id: int,
     payload: EmployeeUpdate,
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
-) -> EmployeeRead:
-    return EmployeeRead.model_validate(
-        employee_service.update_employee(db, auth, employee_id, payload)
-    )
+) -> EmployeeDetailRead:
+    employee_service.update_employee(db, auth, employee_id, payload)
+    return employee_service.get_employee_detail(db, employee_id)
 
 
 @router.delete("/employees/{employee_id}", response_model=EmployeeRead)
@@ -102,3 +108,167 @@ def delete_employee(
     auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
 ) -> EmployeeRead:
     return EmployeeRead.model_validate(employee_service.exit_employee(db, auth, employee_id))
+
+
+# --- Documents -----------------------------------------------------------------
+
+
+@router.post(
+    "/employees/{employee_id}/documents",
+    response_model=list[EmployeeDocumentRead],
+    status_code=201,
+)
+async def upload_employee_documents(
+    employee_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+    category: Annotated[str, Form(...)],
+    files: Annotated[list[UploadFile], File(...)],
+    title: Annotated[str | None, Form()] = None,
+) -> list[EmployeeDocumentRead]:
+    payloads: list[tuple[str, bytes]] = []
+    for f in files:
+        content = await f.read()
+        payloads.append((f.filename or "upload.bin", content))
+    docs = employee_service.add_employee_documents(
+        db, auth, employee_id, category=category, title=title, files=payloads
+    )
+    return [EmployeeDocumentRead.model_validate(d) for d in docs]
+
+
+@router.get("/employees/{employee_id}/documents/{document_id}/file")
+def download_employee_document(
+    employee_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
+) -> FileResponse:
+    doc = employee_service.get_employee_document(db, employee_id, document_id)
+    path = employee_service.resolve_file_path(doc.file_path)
+    return FileResponse(
+        path,
+        filename=doc.original_filename,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
+
+
+@router.delete(
+    "/employees/{employee_id}/documents/{document_id}",
+    status_code=204,
+    response_class=Response,
+)
+def delete_employee_document(
+    employee_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    employee_service.delete_employee_document(db, auth, employee_id, document_id)
+    return Response(status_code=204)
+
+
+# --- References ----------------------------------------------------------------
+
+
+@router.post(
+    "/employees/{employee_id}/references",
+    response_model=EmployeeReferenceRead,
+    status_code=201,
+)
+def create_reference(
+    employee_id: int,
+    payload: EmployeeReferenceCreate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> EmployeeReferenceRead:
+    ref = employee_service.create_reference(db, auth, employee_id, payload)
+    return EmployeeReferenceRead.model_validate(ref)
+
+
+@router.patch(
+    "/employees/{employee_id}/references/{reference_id}",
+    response_model=EmployeeReferenceRead,
+)
+def patch_reference(
+    employee_id: int,
+    reference_id: int,
+    payload: EmployeeReferenceUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> EmployeeReferenceRead:
+    ref = employee_service.update_reference(db, auth, employee_id, reference_id, payload)
+    return EmployeeReferenceRead.model_validate(ref)
+
+
+@router.delete(
+    "/employees/{employee_id}/references/{reference_id}",
+    status_code=204,
+    response_class=Response,
+)
+def delete_reference(
+    employee_id: int,
+    reference_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    employee_service.delete_reference(db, auth, employee_id, reference_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/employees/{employee_id}/references/{reference_id}/documents",
+    response_model=list[EmployeeReferenceDocumentRead],
+    status_code=201,
+)
+async def upload_reference_documents(
+    employee_id: int,
+    reference_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+    files: Annotated[list[UploadFile], File(...)],
+) -> list[EmployeeReferenceDocumentRead]:
+    payloads: list[tuple[str, bytes]] = []
+    for f in files:
+        content = await f.read()
+        payloads.append((f.filename or "upload.bin", content))
+    docs = employee_service.add_reference_documents(
+        db, auth, employee_id, reference_id, payloads
+    )
+    return [EmployeeReferenceDocumentRead.model_validate(d) for d in docs]
+
+
+@router.get(
+    "/employees/{employee_id}/references/{reference_id}/documents/{document_id}/file"
+)
+def download_reference_document(
+    employee_id: int,
+    reference_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
+) -> FileResponse:
+    doc = employee_service.get_reference_document(db, employee_id, reference_id, document_id)
+    path = employee_service.resolve_file_path(doc.file_path)
+    return FileResponse(
+        path,
+        filename=doc.original_filename,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
+
+
+@router.delete(
+    "/employees/{employee_id}/references/{reference_id}/documents/{document_id}",
+    status_code=204,
+    response_class=Response,
+)
+def delete_reference_document(
+    employee_id: int,
+    reference_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    employee_service.delete_reference_document(
+        db, auth, employee_id, reference_id, document_id
+    )
+    return Response(status_code=204)

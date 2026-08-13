@@ -50,10 +50,19 @@
 | POST | `/departments` | Create department |
 | PATCH | `/departments/{id}` | Update department |
 | GET | `/employees` | List employees (filter by department, status) |
-| POST | `/employees` | Create employee record |
-| GET | `/employees/{id}` | Employee detail |
-| PATCH | `/employees/{id}` | Update employee |
+| POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
+| GET | `/employees/{id}` | Employee detail incl. documents + references |
+| PATCH | `/employees/{id}` | Update employee profile fields |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |
+| POST | `/employees/{id}/documents` | Upload document(s) (multipart: `category`, optional `title`, `files[]`) — PDF/images |
+| GET | `/employees/{id}/documents/{document_id}/file` | Download an employee document |
+| DELETE | `/employees/{id}/documents/{document_id}` | Remove an employee document |
+| POST | `/employees/{id}/references` | Add a client referral (name, CNIC, relation, phone) |
+| PATCH | `/employees/{id}/references/{reference_id}` | Update a client referral |
+| DELETE | `/employees/{id}/references/{reference_id}` | Remove a client referral (and its files) |
+| POST | `/employees/{id}/references/{reference_id}/documents` | Upload referral CNIC/related files (multipart `files[]`) |
+| GET | `/employees/{id}/references/{reference_id}/documents/{document_id}/file` | Download a reference document |
+| DELETE | `/employees/{id}/references/{reference_id}/documents/{document_id}` | Remove a reference document |
 
 ---
 
@@ -61,10 +70,11 @@
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/job-descriptions` | List job descriptions (filter by department, status) |
-| POST | `/job-descriptions` | Create job description |
-| POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description + requirements from title + department (Gemini) |
-| GET | `/job-descriptions/{id}` | Detail |
+| GET | `/job-descriptions` | List job descriptions (filter by department, status); includes `applicants_count` |
+| POST | `/job-descriptions` | Create job description (auto-appends Google Form apply link if missing) |
+| GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
+| POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description + requirements + skills from title + department; appends Google Form link |
+| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count` + `application_form_url`) |
 | PATCH | `/job-descriptions/{id}` | Update |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
 | GET | `/job-descriptions/{id}/export` | Export as Word/PDF |
@@ -109,7 +119,8 @@
 | GET | `/attendance` | List attendance records (filter by employee, department, date range) |
 | POST | `/attendance` | Manually create/correct a record |
 | PATCH | `/attendance/{id}` | Edit a record (requires reason, audit-logged) |
-| POST | `/attendance/import` | Bulk import from biometric device export (Excel/CSV) |
+| POST | `/attendance/import` | Bulk import from biometric device export (Excel/CSV; `name` or `employee_code` + date + check_in) |
+| POST | `/attendance/period-report` | Upload Excel/CSV → apply office policy (9:40 late, 11:30 half-day, Sat/holiday majority, 3 lates=1 off, OT, leave) and return per-employee report |
 | POST | `/attendance/sync-biometric` | Pull latest data from biometric device integration (stubbed until device access confirmed) |
 | GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period — feeds payroll |
 | GET | `/leave-requests` | List leave requests (filter by employee, status) |
@@ -124,6 +135,12 @@
 |---|---|---|
 | GET | `/payroll/salaries` | List active employees with current `base_salary` (paginated) |
 | PATCH | `/payroll/salaries/{employee_id}` | Update an active employee's `base_salary` (audit-logged; requires payroll write) |
+| GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`) |
+| GET | `/payroll/tax-years` | List tax years with progressive slabs |
+| POST | `/payroll/tax-years` | Create a tax year (optional initial slabs) |
+| GET | `/payroll/tax-years/{id}` | Tax year detail |
+| PATCH | `/payroll/tax-years/{id}` | Update tax year metadata |
+| PUT | `/payroll/tax-years/{id}/slabs` | Replace all slabs for a tax year (editable for future FY changes) |
 | GET | `/payroll-structures` | List pay structures (filter by employee) |
 | POST | `/payroll-structures` | Create pay structure for an employee |
 | PATCH | `/payroll-structures/{id}` | Update (e.g. salary revision, closes old with `effective_to`) |

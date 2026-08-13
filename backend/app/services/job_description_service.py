@@ -1,10 +1,11 @@
 """Job description & scoring criteria service."""
 from __future__ import annotations
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import BusinessRuleViolation, EntityNotFound, ValidationFailed
-from app.models.cv_screening import JobDescription, ScoringCriteria
+from app.core.exceptions import EntityNotFound, ValidationFailed
+from app.models.cv_screening import Candidate, JobDescription, ScoringCriteria
 from app.models.employees import Department
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.core.config import get_settings
@@ -14,25 +15,58 @@ from app.schemas.job_descriptions import (
     JobDescriptionUpdate,
     JobPostingAiDraftRequest,
     JobPostingAiDraftResult,
+    JobPostingAiDraftSkill,
     ScoringCriteriaCreate,
     ScoringCriteriaReplace,
 )
-from app.scoring.job_posting_generator import generate_job_posting_draft
+from app.scoring.job_posting_generator import append_application_link, generate_job_posting_draft
 from app.services import audit_service
+
+
+def _application_form_url() -> str | None:
+    url = (get_settings().google_form_url or "").strip()
+    return url or None
+
+
+def _to_read(job: JobDescription, applicants_count: int = 0) -> JobDescriptionRead:
+    data = JobDescriptionRead.model_validate(job)
+    return data.model_copy(
+        update={
+            "applicants_count": applicants_count,
+            "application_form_url": _application_form_url(),
+        }
+    )
+
+
+def _applicants_counts(db: Session, job_ids: list[int]) -> dict[int, int]:
+    if not job_ids:
+        return {}
+    rows = (
+        db.query(Candidate.job_description_id, func.count(Candidate.id))
+        .filter(Candidate.job_description_id.in_(job_ids))
+        .group_by(Candidate.job_description_id)
+        .all()
+    )
+    return {int(job_id): int(count) for job_id, count in rows if job_id is not None}
 
 
 def generate_ai_draft(db: Session, payload: JobPostingAiDraftRequest) -> JobPostingAiDraftResult:
     dept = db.query(Department).filter(Department.id == payload.department_id).one_or_none()
     if dept is None:
         raise ValidationFailed("department_id does not exist")
+    settings = get_settings()
     draft = generate_job_posting_draft(
         title=payload.title,
         department_name=dept.name,
-        settings=get_settings(),
+        settings=settings,
     )
     return JobPostingAiDraftResult(
         description_text=draft.description_text,
         requirements_text=draft.requirements_text,
+        skills=[
+            JobPostingAiDraftSkill(name=s.name, level=s.level) for s in draft.skills
+        ],
+        application_form_url=_application_form_url(),
     )
 
 
@@ -81,8 +115,9 @@ def list_job_descriptions(
         q = q.filter(JobDescription.status == status)
     total = q.count()
     rows = q.order_by(JobDescription.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    counts = _applicants_counts(db, [r.id for r in rows])
     return PaginatedResponse(
-        items=[JobDescriptionRead.model_validate(r) for r in rows],
+        items=[_to_read(r, counts.get(r.id, 0)) for r in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -96,12 +131,22 @@ def get_job_description(db: Session, job_id: int) -> JobDescription:
     return job
 
 
+def get_job_description_read(db: Session, job_id: int) -> JobDescriptionRead:
+    job = get_job_description(db, job_id)
+    counts = _applicants_counts(db, [job.id])
+    return _to_read(job, counts.get(job.id, 0))
+
+
 def create_job_description(
     db: Session, auth: AuthContext, payload: JobDescriptionCreate
 ) -> JobDescription:
     if db.query(Department).filter(Department.id == payload.department_id).one_or_none() is None:
         raise ValidationFailed("department_id does not exist")
-    job = JobDescription(**payload.model_dump(), created_by=auth.user_id)
+    data = payload.model_dump()
+    data["description_text"] = append_application_link(
+        data["description_text"], get_settings().google_form_url
+    )
+    job = JobDescription(**data, created_by=auth.user_id)
     db.add(job)
     db.flush()
     audit_service.log_from_auth(
@@ -121,6 +166,10 @@ def update_job_description(
     job = get_job_description(db, job_id)
     before = {"title": job.title, "status": job.status}
     data = payload.model_dump(exclude_unset=True)
+    if "description_text" in data and data["description_text"] is not None:
+        data["description_text"] = append_application_link(
+            data["description_text"], get_settings().google_form_url
+        )
     if "status" in data and data["status"] == "closed":
         action = "job_description.closed"
     else:

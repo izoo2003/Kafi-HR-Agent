@@ -74,6 +74,9 @@ export function AttendanceOverviewPage() {
         breadcrumb="Attendance"
         actions={
           <>
+            <Link to="/attendance/period-report">
+              <Button variant="primary">Excel period report</Button>
+            </Link>
             <Link to="/attendance/records">
               <Button variant="secondary">Records & Import</Button>
             </Link>

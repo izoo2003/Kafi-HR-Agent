@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -64,3 +64,29 @@ class SalaryAdvance(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
     amount_recovered: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class TaxYear(Base, TimestampMixin):
+    """Named tax year (e.g. 2026-27) with editable progressive slabs."""
+
+    __tablename__ = "tax_years"
+
+    label: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class TaxSlab(Base, TimestampMixin):
+    __tablename__ = "tax_slabs"
+
+    tax_year_id: Mapped[int] = mapped_column(ForeignKey("tax_years.id"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Annual taxable income band (PKR). max_amount NULL = no upper cap.
+    min_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    max_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    fixed_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    rate_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0, nullable=False)
+    # Taxable excess is measured above this threshold (usually = min_amount for band start).
+    excess_over: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)

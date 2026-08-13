@@ -9,6 +9,8 @@ export interface JobDescription {
   createdBy: number;
   createdAt: string;
   updatedAt: string;
+  applicantsCount: number;
+  applicationFormUrl: string | null;
 }
 
 export interface JobDescriptionCreate {
@@ -24,9 +26,16 @@ export interface JobPostingAiDraftRequest {
   departmentId: number;
 }
 
+export interface JobPostingAiDraftSkill {
+  name: string;
+  level: number;
+}
+
 export interface JobPostingAiDraftResult {
   descriptionText: string;
   requirementsText: string;
+  skills: JobPostingAiDraftSkill[];
+  applicationFormUrl: string | null;
 }
 
 export interface ScoringCriteria {

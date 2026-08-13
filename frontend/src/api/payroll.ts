@@ -1,6 +1,13 @@
 import { apiRequest } from "./client";
-import type { MessageResponse, PaginatedResponse, PaginationParams } from "../types/common";
-import type { PayrollSalaryRow, PayrollSalaryUpdate } from "../types/payroll";
+import type { PaginatedResponse, PaginationParams } from "../types/common";
+import type {
+  PayrollComputeResult,
+  PayrollSalaryRow,
+  PayrollSalaryUpdate,
+  TaxSlabInput,
+  TaxYear,
+  TaxYearCreate,
+} from "../types/payroll";
 
 export async function listPayrollSalaries(
   params: PaginationParams = {},
@@ -18,6 +25,36 @@ export async function updatePayrollSalary(
   });
 }
 
-export async function listPayrollRuns(): Promise<MessageResponse> {
-  return apiRequest<MessageResponse>("/payroll-runs");
+export async function computePayroll(params: {
+  periodMonth: number;
+  periodYear: number;
+  taxYearId: number;
+}): Promise<PayrollComputeResult> {
+  return apiRequest<PayrollComputeResult>("/payroll/compute", { params });
+}
+
+export async function listTaxYears(): Promise<TaxYear[]> {
+  return apiRequest<TaxYear[]>("/payroll/tax-years");
+}
+
+export async function getTaxYear(id: number): Promise<TaxYear> {
+  return apiRequest<TaxYear>(`/payroll/tax-years/${id}`);
+}
+
+export async function createTaxYear(payload: TaxYearCreate): Promise<TaxYear> {
+  return apiRequest<TaxYear>("/payroll/tax-years", { method: "POST", body: payload });
+}
+
+export async function updateTaxYear(
+  id: number,
+  payload: Partial<TaxYearCreate>,
+): Promise<TaxYear> {
+  return apiRequest<TaxYear>(`/payroll/tax-years/${id}`, { method: "PATCH", body: payload });
+}
+
+export async function replaceTaxSlabs(id: number, slabs: TaxSlabInput[]): Promise<TaxYear> {
+  return apiRequest<TaxYear>(`/payroll/tax-years/${id}/slabs`, {
+    method: "PUT",
+    body: { slabs },
+  });
 }

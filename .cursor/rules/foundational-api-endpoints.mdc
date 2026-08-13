@@ -55,10 +55,19 @@ alwaysApply: true
 | POST | `/departments` | Create department |
 | PATCH | `/departments/{id}` | Update department |
 | GET | `/employees` | List employees (filter by department, status) |
-| POST | `/employees` | Create employee record |
-| GET | `/employees/{id}` | Employee detail |
+| POST | `/employees` | Create employee record (personal, role/department, bank, salary) |
+| GET | `/employees/{id}` | Employee detail incl. documents + references |
 | PATCH | `/employees/{id}` | Update employee |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |
+| POST | `/employees/{id}/documents` | Upload document(s) (multipart) |
+| GET | `/employees/{id}/documents/{document_id}/file` | Download document |
+| DELETE | `/employees/{id}/documents/{document_id}` | Remove document |
+| POST | `/employees/{id}/references` | Add reference |
+| PATCH | `/employees/{id}/references/{reference_id}` | Update reference |
+| DELETE | `/employees/{id}/references/{reference_id}` | Remove reference |
+| POST | `/employees/{id}/references/{reference_id}/documents` | Upload reference files |
+| GET | `/employees/{id}/references/{reference_id}/documents/{document_id}/file` | Download reference file |
+| DELETE | `/employees/{id}/references/{reference_id}/documents/{document_id}` | Remove reference file |
 
 ---
 
@@ -66,9 +75,11 @@ alwaysApply: true
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/job-descriptions` | List job descriptions (filter by department, status) |
-| POST | `/job-descriptions` | Create job description |
-| GET | `/job-descriptions/{id}` | Detail |
+| GET | `/job-descriptions` | List job descriptions (filter by department, status); includes `applicants_count` |
+| POST | `/job-descriptions` | Create job description (auto-appends Google Form apply link if missing) |
+| GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
+| POST | `/job-descriptions/ai-draft` | AI: description + requirements + skills; appends Google Form link |
+| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count` + `application_form_url`) |
 | PATCH | `/job-descriptions/{id}` | Update |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
 | GET | `/job-descriptions/{id}/export` | Export as Word/PDF |

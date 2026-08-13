@@ -63,3 +63,55 @@ export interface AttendanceImportResult {
   imported: number;
   errors: { row: number; message: string }[];
 }
+
+export interface LateEvent {
+  date: string;
+  checkInTime: string;
+}
+
+export interface DayClassification {
+  date: string;
+  dayType: string;
+  weekday: string;
+}
+
+export interface PeriodEmployeeReport {
+  employeeId: number | null;
+  employeeCode: string | null;
+  fullName: string;
+  matchedEmployee: boolean;
+  baseSalary: string | number | null;
+  tenureMonths: number;
+  leaveAllowance: number;
+  leaveUsed: number;
+  daysPresent: number;
+  daysLate: number;
+  daysHalfDay: number;
+  daysAbsent: number;
+  absentsAfterLeave: number;
+  lateOffDays: number;
+  overtimeBonusDays: number;
+  deductionDays: number;
+  perDayRate: number;
+  estimatedDeductionAmount: number;
+  estimatedOvertimeAmount: number;
+  estimatedNetSalary: number;
+  lateEvents: LateEvent[];
+  halfDayDates: string[];
+  absentDates: string[];
+  overtimeDates: string[];
+}
+
+export interface AttendancePeriodReport {
+  periodStart: string;
+  periodEnd: string;
+  monthDays: number;
+  majorityAbsentThreshold: number;
+  lateAfter: string;
+  halfDayAfter: string;
+  latesPerOff: number;
+  importedRows: number;
+  errors: { row: number; message: string }[];
+  nonWorkingDays: DayClassification[];
+  employees: PeriodEmployeeReport[];
+}

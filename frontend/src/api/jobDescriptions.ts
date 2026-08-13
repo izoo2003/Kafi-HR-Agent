@@ -32,6 +32,10 @@ export async function generateJobPostingAiDraft(
   });
 }
 
+export async function getApplicationFormUrl(): Promise<{ applicationFormUrl: string | null }> {
+  return apiRequest<{ applicationFormUrl: string | null }>("/job-descriptions/application-form");
+}
+
 export async function getJobDescription(id: number): Promise<JobDescription> {
   return apiRequest<JobDescription>(`/job-descriptions/${id}`);
 }

@@ -150,6 +150,9 @@ export function AttendanceRecordsPage() {
         </section>
 
         <section className="card" style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+          <Link to="/attendance/period-report">
+            <Button variant="primary">Excel period report</Button>
+          </Link>
           <Button variant="secondary" onClick={() => fileRef.current?.click()}>
             Import CSV/Excel
           </Button>

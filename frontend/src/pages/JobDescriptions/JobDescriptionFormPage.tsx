@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { useDepartments } from "../../hooks/useEmployees";
 import {
+  useApplicationFormUrl,
   useCreateJobDescription,
   useCriteria,
   useGenerateJobPostingAiDraft,
@@ -49,6 +50,7 @@ export function JobDescriptionFormPage() {
   const createJob = useCreateJobDescription();
   const updateJob = useUpdateJobDescription(jobId);
   const aiDraft = useGenerateJobPostingAiDraft();
+  const applicationForm = useApplicationFormUrl();
   const criteriaQ = useCriteria(jobId);
 
   const [title, setTitle] = useState("");
@@ -56,12 +58,14 @@ export function JobDescriptionFormPage() {
   const [descriptionText, setDescriptionText] = useState("");
   const [requirementsText, setRequirementsText] = useState("");
   const [status, setStatus] = useState<"draft" | "open" | "closed">("draft");
-  const [skills, setSkills] = useState<ScoringCriteriaInput[]>([
-    skillRow("Python", 8),
-    skillRow("Communication", 5),
-  ]);
+  const [skills, setSkills] = useState<ScoringCriteriaInput[]>([skillRow("", 5)]);
   const [error, setError] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+
+  const formUrl =
+    applicationForm.data?.applicationFormUrl ||
+    existing.data?.applicationFormUrl ||
+    null;
 
   async function onGenerateAiDraft() {
     setError(null);
@@ -70,10 +74,13 @@ export function JobDescriptionFormPage() {
       setError("Enter a title and select a department before running AI Analyzer");
       return;
     }
-    const hasExisting = descriptionText.trim().length > 0 || requirementsText.trim().length > 0;
+    const hasExisting =
+      descriptionText.trim().length > 0 ||
+      requirementsText.trim().length > 0 ||
+      skills.some((s) => s.criterionName.trim().length > 0);
     if (hasExisting) {
       const ok = window.confirm(
-        "AI Analyzer will replace the current Description and Requirements. Continue?",
+        "AI Analyzer will replace Description, Requirements, and Skills. Continue?",
       );
       if (!ok) return;
     }
@@ -84,7 +91,12 @@ export function JobDescriptionFormPage() {
       });
       setDescriptionText(draft.descriptionText);
       setRequirementsText(draft.requirementsText);
-      setAiMessage("AI Analyzer filled Description and Requirements — review and edit before saving.");
+      if (draft.skills?.length) {
+        setSkills(draft.skills.map((s) => skillRow(s.name, toRating(s.level))));
+      }
+      setAiMessage(
+        "AI Analyzer filled Description, Requirements, and Skills (with Google Form apply link) — review before saving.",
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI Analyzer failed");
     }
@@ -188,8 +200,8 @@ export function JobDescriptionFormPage() {
             <div style={{ flex: "1 1 220px" }}>
               <strong style={{ display: "block", marginBottom: 4 }}>AI Analyzer</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                After title and department are set, generate an appropriate description and
-                requirements for this posting.
+                Generates description, responsibilities/requirements, and skills for this title —
+                and appends the Google Form apply link to the description.
               </span>
             </div>
             <Button
@@ -204,6 +216,34 @@ export function JobDescriptionFormPage() {
           {aiMessage ? (
             <p style={{ color: "var(--color-status-info)", margin: 0 }}>{aiMessage}</p>
           ) : null}
+
+          <div
+            className="card"
+            style={{
+              padding: "var(--space-4)",
+              background: "var(--color-surface-alt)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "var(--space-2)", fontSize: "var(--text-base)" }}>
+              Google Form — submit details &amp; CV
+            </h3>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+              Candidates should submit their details and CV through this form. The link is also added
+              into the job description when you use AI Analyzer (and on save if missing).
+            </p>
+            {formUrl ? (
+              <p style={{ margin: "var(--space-3) 0 0", wordBreak: "break-all" }}>
+                <a href={formUrl} target="_blank" rel="noreferrer" style={{ color: "var(--color-accent)" }}>
+                  {formUrl}
+                </a>
+              </p>
+            ) : (
+              <p style={{ margin: "var(--space-3) 0 0", color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+                Form URL not configured yet (`GOOGLE_FORM_URL`).
+              </p>
+            )}
+          </div>
 
           <label className="form-field">
             <span className="form-field__label">Description</span>

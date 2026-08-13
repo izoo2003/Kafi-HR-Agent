@@ -20,9 +20,16 @@ class JobPostingAiDraftRequest(BaseModel):
     department_id: int
 
 
+class JobPostingAiDraftSkill(BaseModel):
+    name: str
+    level: int = Field(ge=1, le=10)
+
+
 class JobPostingAiDraftResult(BaseModel):
     description_text: str
     requirements_text: str
+    skills: list[JobPostingAiDraftSkill] = []
+    application_form_url: str | None = None
 
 
 class JobDescriptionUpdate(BaseModel):
@@ -47,6 +54,8 @@ class JobDescriptionRead(BaseModel):
     created_by: int
     created_at: datetime
     updated_at: datetime
+    applicants_count: int = 0
+    application_form_url: str | None = None
 
 
 class ScoringCriteriaCreate(BaseModel):

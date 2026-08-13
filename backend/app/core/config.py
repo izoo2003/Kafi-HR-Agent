@@ -73,6 +73,14 @@ class Settings(BaseSettings):
             "GOOGLE_FORM_SHEET_ID",
         ),
     )
+    # Public apply URL pasted into job posting descriptions (candidates submit details + CV here).
+    google_form_url: str = Field(
+        default=(
+            "https://docs.google.com/forms/d/e/"
+            "1FAIpQLSeUDm87ou1gbO90VPMyrRJYORgHatluwM6xmmUdJgqSZobWmQ/viewform?usp=sharing"
+        ),
+        validation_alias=AliasChoices("GOOGLE_FORM_URL", "google_form_url"),
+    )
     google_form_token_file: str = "credentials/form_token.json"
     # If set, written to google_oauth_token_file on boot when that file is missing —
     # lets a token minted once locally survive an ephemeral-filesystem redeploy (Railway).
@@ -117,6 +125,9 @@ class Settings(BaseSettings):
     config_dir: Path = Field(default_factory=lambda: BASE_DIR / "config")
     data_dir: Path = Field(default_factory=lambda: BASE_DIR / "data")
     uploads_cvs_dir: Path = Field(default_factory=lambda: BASE_DIR / "data" / "uploads" / "cvs")
+    uploads_employees_dir: Path = Field(
+        default_factory=lambda: BASE_DIR / "data" / "uploads" / "employees"
+    )
     cv_files_dir: Path = Field(default_factory=lambda: BASE_DIR / "data" / "cv_files")
 
     def resolved_path(self, relative_or_absolute: str) -> Path:

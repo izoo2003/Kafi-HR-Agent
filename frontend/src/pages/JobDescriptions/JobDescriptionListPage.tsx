@@ -168,7 +168,7 @@ function JobPostingsView() {
 
   return (
     <>
-      <Table headers={["Title", "Department", "Status", "Actions"]}>
+      <Table headers={["Title", "Department", "Status", "Applicants", "Actions"]}>
         {(jobs.data?.items ?? []).map((j) => (
           <tr
             key={j.id}
@@ -183,6 +183,7 @@ function JobPostingsView() {
                 {JD_STATUS[j.status] ?? j.status}
               </StatusBadge>
             </td>
+            <td className="num">{j.applicantsCount ?? 0}</td>
             <td>
               <Link to={`/job-descriptions/${j.id}`}>View</Link>
               {" · "}

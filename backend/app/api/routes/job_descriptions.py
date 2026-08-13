@@ -49,7 +49,17 @@ def create_job(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
 ) -> JobDescriptionRead:
-    return JobDescriptionRead.model_validate(jd_service.create_job_description(db, auth, payload))
+    job = jd_service.create_job_description(db, auth, payload)
+    return jd_service.get_job_description_read(db, job.id)
+
+
+@router.get("/job-descriptions/application-form")
+def get_application_form(
+    _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "read"))],
+) -> dict[str, str | None]:
+    """Public Google Form URL used on job postings for CV / details submission."""
+    url = (get_settings().google_form_url or "").strip() or None
+    return {"application_form_url": url}
 
 
 @router.post("/job-descriptions/ai-draft", response_model=JobPostingAiDraftResult)
@@ -58,7 +68,7 @@ def ai_draft_job_posting(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
 ) -> JobPostingAiDraftResult:
-    """AI Analyzer — generate description + requirements from title and department."""
+    """AI Analyzer — generate description, requirements, and skills from title and department."""
     return jd_service.generate_ai_draft(db, payload)
 
 
@@ -68,7 +78,7 @@ def get_job(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "read"))],
 ) -> JobDescriptionRead:
-    return JobDescriptionRead.model_validate(jd_service.get_job_description(db, job_id))
+    return jd_service.get_job_description_read(db, job_id)
 
 
 @router.patch("/job-descriptions/{job_id}", response_model=JobDescriptionRead)
@@ -78,9 +88,8 @@ def patch_job(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
 ) -> JobDescriptionRead:
-    return JobDescriptionRead.model_validate(
-        jd_service.update_job_description(db, auth, job_id, payload)
-    )
+    jd_service.update_job_description(db, auth, job_id, payload)
+    return jd_service.get_job_description_read(db, job_id)
 
 
 @router.delete("/job-descriptions/{job_id}", response_model=JobDescriptionRead)
@@ -89,7 +98,8 @@ def close_job(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
 ) -> JobDescriptionRead:
-    return JobDescriptionRead.model_validate(jd_service.archive_job_description(db, auth, job_id))
+    job = jd_service.archive_job_description(db, auth, job_id)
+    return jd_service.get_job_description_read(db, job.id)
 
 
 @router.get("/job-descriptions/{job_id}/export")

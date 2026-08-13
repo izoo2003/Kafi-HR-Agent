@@ -2,6 +2,7 @@ import { apiRequest, getAccessToken } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type {
   AttendanceImportResult,
+  AttendancePeriodReport,
   AttendanceRecord,
   AttendanceRecordCreate,
   AttendanceRule,
@@ -58,6 +59,15 @@ export async function importAttendance(file: File): Promise<AttendanceImportResu
   return apiRequest<AttendanceImportResult>("/attendance/import", { method: "POST", formData: form });
 }
 
+export async function uploadAttendancePeriodReport(file: File): Promise<AttendancePeriodReport> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<AttendancePeriodReport>("/attendance/period-report", {
+    method: "POST",
+    formData: form,
+  });
+}
+
 export async function syncBiometric(): Promise<{ message: string; punchesFetched: number }> {
   return apiRequest("/attendance/sync-biometric", { method: "POST" });
 }
@@ -89,7 +99,11 @@ export async function updateLeaveRequest(
 
 /** Helper for template download (client-side only). */
 export function attendanceImportTemplateCsv(): string {
-  return "employee_code,date,check_in,check_out\nE001,2026-07-01,09:00,18:00\n";
+  return (
+    "name,date,check_in,check_out\n" +
+    "Ali Khan,2026-07-01,09:35,18:00\n" +
+    "Ali Khan,2026-07-02,09:45,18:05\n"
+  );
 }
 
 void getAccessToken;

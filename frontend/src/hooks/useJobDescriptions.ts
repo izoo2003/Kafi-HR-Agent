@@ -34,6 +34,13 @@ export function useGenerateJobPostingAiDraft() {
   });
 }
 
+export function useApplicationFormUrl() {
+  return useQuery({
+    queryKey: ["job-descriptions", "application-form"],
+    queryFn: () => jdApi.getApplicationFormUrl(),
+  });
+}
+
 export function useUpdateJobDescription(id: number) {
   const qc = useQueryClient();
   return useMutation({
