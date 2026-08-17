@@ -25,6 +25,7 @@ import {
   useUploadReferenceDocuments,
 } from "../../hooks/useEmployees";
 import type {
+  EmployeeCreate,
   EmployeeDocumentCategory,
   EmployeeReferenceCreate,
   EmployeeUpdate,
@@ -201,12 +202,12 @@ export function EmployeeFormPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function buildPayload(): EmployeeUpdate & { employeeCode?: string } {
+  function buildPayload(): EmployeeUpdate {
     return {
       fullName: form.fullName.trim(),
       departmentId: Number(form.departmentId),
       roleTitle: selectedDeptName || undefined,
-      employmentType: form.employmentType || null,
+      employmentType: form.employmentType.trim() || undefined,
       dateJoined: emptyToNull(form.dateJoined),
       baseSalary: form.baseSalary ? Number(form.baseSalary) : null,
       cnic: emptyToNull(form.cnic),
@@ -230,6 +231,18 @@ export function EmployeeFormPage() {
     };
   }
 
+  function buildCreatePayload(): EmployeeCreate {
+    const update = buildPayload();
+    return {
+      ...update,
+      employeeCode: form.employeeCode.trim(),
+      fullName: form.fullName.trim(),
+      departmentId: Number(form.departmentId),
+      dateJoined: form.dateJoined.trim() || undefined,
+      baseSalary: form.baseSalary ? Number(form.baseSalary) : undefined,
+    };
+  }
+
   async function onSaveProfile(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -240,11 +253,7 @@ export function EmployeeFormPage() {
     }
     try {
       if (isNew) {
-        const created = await createEmp.mutateAsync({
-          employeeCode: form.employeeCode.trim(),
-          ...buildPayload(),
-          baseSalary: form.baseSalary ? Number(form.baseSalary) : undefined,
-        });
+        const created = await createEmp.mutateAsync(buildCreatePayload());
         let refsSaved = 0;
         for (const draft of pendingReferrals) {
           const payload: EmployeeReferenceCreate = {
