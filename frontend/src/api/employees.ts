@@ -14,6 +14,7 @@ import type {
   EmployeeReferenceUpdate,
   EmployeeUpdate,
 } from "../types/employees";
+import type { CnicVerificationResult } from "../types/cnic";
 
 function apiBase(): string {
   const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
@@ -50,6 +51,25 @@ export async function listEmployees(
 
 export async function createEmployee(payload: EmployeeCreate): Promise<Employee> {
   return apiRequest<Employee>("/employees", { method: "POST", body: payload });
+}
+
+/** CNIC document consistency check (format + image OCR). Not NADRA. Images only. */
+export async function verifyCnic(
+  typedCnic: string,
+  images?: { front?: File | null; back?: File | null } | File | null,
+): Promise<CnicVerificationResult> {
+  const form = new FormData();
+  form.append("typed_cnic", typedCnic);
+  if (images && typeof images === "object" && !(images instanceof File)) {
+    if (images.front) form.append("front_image", images.front);
+    if (images.back) form.append("back_image", images.back);
+  } else if (images instanceof File) {
+    form.append("front_image", images);
+  }
+  return apiRequest<CnicVerificationResult>("/cnic/verify", {
+    method: "POST",
+    formData: form,
+  });
 }
 
 export async function updateEmployee(id: number, payload: EmployeeUpdate): Promise<EmployeeDetail> {

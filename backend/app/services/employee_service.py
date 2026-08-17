@@ -19,6 +19,7 @@ from app.models.employees import (
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.employees import (
     DOCUMENT_CATEGORIES,
+    IMAGE_ONLY_DOCUMENT_CATEGORIES,
     EmployeeCreate,
     EmployeeDetailRead,
     EmployeeDocumentRead,
@@ -172,10 +173,15 @@ def add_employee_documents(
     if not files:
         raise ValidationFailed("At least one file is required")
 
+    images_only = cat in IMAGE_ONLY_DOCUMENT_CATEGORIES
     created: list[EmployeeDocument] = []
     for filename, content in files:
         path, mime = store_employee_file(
-            employee_id=emp.id, filename=filename, content=content, subdir="documents"
+            employee_id=emp.id,
+            filename=filename,
+            content=content,
+            subdir="documents",
+            images_only=images_only,
         )
         doc = EmployeeDocument(
             employee_id=emp.id,

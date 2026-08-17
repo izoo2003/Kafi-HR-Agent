@@ -135,7 +135,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     const err =
       parsed && typeof parsed === "object" && "error" in (parsed as object)
         ? new ApiError(response.status, keysToCamel<ApiErrorResponse>(parsed))
-        : new ApiError(response.status, typeof parsed === "string" ? parsed : "Request failed");
+        : new ApiError(
+            response.status,
+            typeof parsed === "string" && parsed.trim()
+              ? parsed
+              : `Request failed (${response.status})`,
+          );
     if (err.code === "unauthorized" || response.status === 401) {
       onUnauthorized?.();
     }

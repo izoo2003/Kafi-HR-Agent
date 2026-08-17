@@ -7,6 +7,7 @@ from app.api.routes import (
     attendance,
     audit_log,
     auth,
+    cnic,
     cv_screening,
     employees,
     integration,
@@ -22,6 +23,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
+api_router.include_router(cnic.router)
 api_router.include_router(employees.router)
 api_router.include_router(job_descriptions.router)
 api_router.include_router(cv_screening.router)

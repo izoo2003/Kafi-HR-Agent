@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # CV screening / matching / evaluation
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
+    # CNIC image verification (falls back to gemini_api_key)
+    gemini_cnic_api_key: str = ""
+    gemini_cnic_model: str = "gemini-flash-latest"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
     gemini_job_posting_model: str = "gemini-flash-latest"

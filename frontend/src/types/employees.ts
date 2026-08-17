@@ -11,7 +11,14 @@ export interface DepartmentCreate {
   headEmployeeId?: number | null;
 }
 
-export type EmployeeDocumentCategory = "cnic" | "education" | "other" | "photo";
+export type EmployeeDocumentCategory =
+  | "cnic"
+  | "cnic_front"
+  | "cnic_back"
+  | "education"
+  | "other"
+  | "photo"
+  | "client";
 
 export interface EmployeeDocument {
   id: number;

@@ -12,6 +12,7 @@ import { CvScreeningHubPage } from "./pages/CvScreening/CvScreeningHubPage";
 import { UnassignedCandidatesPage } from "./pages/CvScreening/UnassignedCandidatesPage";
 import { EmployeeListPage } from "./pages/Employees/EmployeeListPage";
 import { EmployeeFormPage } from "./pages/Employees/EmployeeFormPage";
+import { VerifyCnicPage } from "./pages/Employees/VerifyCnicPage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
 import { AttendanceRecordsPage } from "./pages/Attendance/AttendanceRecordsPage";
 import { AttendancePeriodReportPage } from "./pages/Attendance/AttendancePeriodReportPage";
@@ -44,6 +45,7 @@ export default function App() {
           <Route element={<RequirePermission module="employees" />}>
             <Route path="/employees" element={<EmployeeListPage />} />
             <Route path="/employees/new" element={<EmployeeFormPage />} />
+            <Route path="/employees/verify-cnic" element={<VerifyCnicPage />} />
             <Route path="/employees/:id" element={<EmployeeFormPage />} />
             <Route path="/departments" element={<EmployeeListPage />} />
           </Route>

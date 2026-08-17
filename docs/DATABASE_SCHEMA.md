@@ -108,7 +108,7 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 |---|---|---|
 | id | INTEGER PK | |
 | employee_id | INTEGER FK → employees.id | |
-| category | TEXT NOT NULL | `cnic`, `education`, `photo`, `other` |
+| category | TEXT NOT NULL | `cnic_front`, `cnic_back`, `cnic` (legacy), `education`, `photo`, `other`, `client` — CNIC front/back are images only (no PDF) |
 | title | TEXT NULL | optional label |
 | file_path | TEXT NOT NULL | stored under `data/uploads/employees/` |
 | original_filename | TEXT NOT NULL | |

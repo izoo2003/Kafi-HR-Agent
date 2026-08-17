@@ -51,6 +51,8 @@
 | PATCH | `/departments/{id}` | Update department |
 | GET | `/employees` | List employees (filter by department, status) |
 | POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
+| POST | `/cnic/verify` | Verify typed CNIC + front/back card images (format + OCR match; images only, not NADRA). Prefer this path. |
+| POST | `/employees/cnic/verify` | Deprecated alias of `/cnic/verify` |
 | GET | `/employees/{id}` | Employee detail incl. documents + references |
 | PATCH | `/employees/{id}` | Update employee profile fields |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |

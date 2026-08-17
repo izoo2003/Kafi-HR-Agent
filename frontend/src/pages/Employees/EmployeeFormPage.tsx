@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -10,6 +10,7 @@ import {
   createEmployeeReference,
   downloadEmployeeDocument,
   downloadReferenceDocument,
+  uploadReferenceDocuments,
 } from "../../api/employees";
 import { useAuth } from "../../hooks/useAuth";
 import {
@@ -21,12 +22,14 @@ import {
   useDepartments,
   useEmployee,
   useUpdateEmployee,
+  useUpdateEmployeeReference,
   useUploadEmployeeDocuments,
   useUploadReferenceDocuments,
 } from "../../hooks/useEmployees";
 import type {
   EmployeeCreate,
   EmployeeDocumentCategory,
+  EmployeeReference,
   EmployeeReferenceCreate,
   EmployeeUpdate,
 } from "../../types/employees";
@@ -36,6 +39,7 @@ type ClientReferralDraft = {
   cnic: string;
   relation: string;
   phone: string;
+  files: File[];
 };
 
 type FormState = {
@@ -93,11 +97,24 @@ const emptyForm: FormState = {
 };
 
 const DOC_CATEGORIES: { value: EmployeeDocumentCategory; label: string; hint: string }[] = [
-  { value: "cnic", label: "CNIC", hint: "CNIC scan (PDF or images — front/back)" },
-  { value: "photo", label: "Photo", hint: "Profile / passport photo" },
-  { value: "education", label: "Educational documents", hint: "Degrees, transcripts (multiple OK)" },
-  { value: "other", label: "Other", hint: "Contracts, certificates, misc." },
+  { value: "photo", label: "Photo", hint: "Profile / passport photo (image only)" },
+  { value: "education", label: "Educational documents", hint: "Degrees, transcripts (PDF or images)" },
+  { value: "other", label: "Other", hint: "Contracts, certificates, misc. (PDF or images)" },
 ];
+
+const CNIC_CATEGORY_LABELS: Record<string, string> = {
+  cnic_front: "CNIC front",
+  cnic_back: "CNIC back",
+  cnic: "CNIC",
+};
+
+const emptyReferralDraft = (): ClientReferralDraft => ({
+  fullName: "",
+  cnic: "",
+  relation: "",
+  phone: "",
+  files: [],
+});
 
 function sectionStyle(): CSSProperties {
   return { display: "grid", gap: "var(--space-3)" };
@@ -127,6 +144,8 @@ async function openBlob(blob: Blob, filename: string) {
 
 export function EmployeeFormPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const viewOnly = searchParams.get("mode") === "view";
   const isNew = id === undefined || id === "new";
   const employeeId = isNew ? undefined : Number(id);
   const navigate = useNavigate();
@@ -141,6 +160,7 @@ export function EmployeeFormPage() {
   const uploadDocs = useUploadEmployeeDocuments(employeeId ?? 0);
   const deleteDoc = useDeleteEmployeeDocument(employeeId ?? 0);
   const createRef = useCreateEmployeeReference(employeeId ?? 0);
+  const updateRef = useUpdateEmployeeReference(employeeId ?? 0);
   const deleteRef = useDeleteEmployeeReference(employeeId ?? 0);
   const uploadRefDocs = useUploadReferenceDocuments(employeeId ?? 0);
   const deleteRefDoc = useDeleteReferenceDocument(employeeId ?? 0);
@@ -149,18 +169,24 @@ export function EmployeeFormPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [docCategory, setDocCategory] = useState<EmployeeDocumentCategory>("cnic");
+  const [docCategory, setDocCategory] = useState<EmployeeDocumentCategory>("education");
   const [docTitle, setDocTitle] = useState("");
   const [docFiles, setDocFiles] = useState<FileList | null>(null);
+  const [cnicFrontFile, setCnicFrontFile] = useState<File | null>(null);
+  const [cnicBackFile, setCnicBackFile] = useState<File | null>(null);
+  const [clientDocTitle, setClientDocTitle] = useState("");
+  const [clientDocFiles, setClientDocFiles] = useState<FileList | null>(null);
 
-  const [refForm, setRefForm] = useState<ClientReferralDraft>({
+  const [refForm, setRefForm] = useState<ClientReferralDraft>(emptyReferralDraft);
+  /** Drafts collected on Add employee before the profile exists in the API. */
+  const [pendingReferrals, setPendingReferrals] = useState<ClientReferralDraft[]>([]);
+  const [editingRefId, setEditingRefId] = useState<number | null>(null);
+  const [editRefForm, setEditRefForm] = useState({
     fullName: "",
     cnic: "",
     relation: "",
     phone: "",
   });
-  /** Drafts collected on Add employee before the profile exists in the API. */
-  const [pendingReferrals, setPendingReferrals] = useState<ClientReferralDraft[]>([]);
 
   useEffect(() => {
     if (!employee.data) return;
@@ -255,6 +281,7 @@ export function EmployeeFormPage() {
       if (isNew) {
         const created = await createEmp.mutateAsync(buildCreatePayload());
         let refsSaved = 0;
+        let filesSaved = 0;
         for (const draft of pendingReferrals) {
           const payload: EmployeeReferenceCreate = {
             fullName: draft.fullName.trim(),
@@ -262,13 +289,19 @@ export function EmployeeFormPage() {
             phone: emptyToNull(draft.phone),
             cnic: emptyToNull(draft.cnic),
           };
-          await createEmployeeReference(created.id, payload);
+          const ref = await createEmployeeReference(created.id, payload);
           refsSaved += 1;
+          if (draft.files.length > 0) {
+            await uploadReferenceDocuments(created.id, ref.id, draft.files);
+            filesSaved += draft.files.length;
+          }
         }
         setPendingReferrals([]);
         setMessage(
           refsSaved > 0
-            ? `Employee created with ${refsSaved} client referral(s). You can add documents next.`
+            ? `Employee created with ${refsSaved} client referral(s)${
+                filesSaved > 0 ? ` and ${filesSaved} attached file(s)` : ""
+              }. You can add more documents next.`
             : "Employee created — you can now add documents and client referrals.",
         );
         navigate(`/employees/${created.id}`, { replace: true });
@@ -294,14 +327,60 @@ export function EmployeeFormPage() {
       });
       setDocFiles(null);
       setDocTitle("");
-      setMessage("Documents uploaded");
+      setMessage("Employee documents submitted");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Document upload failed");
     }
   }
 
+  async function onUploadCnicSide(side: "cnic_front" | "cnic_back") {
+    if (!employeeId) return;
+    const file = side === "cnic_front" ? cnicFrontFile : cnicBackFile;
+    if (!file) {
+      setError(`Select the ${side === "cnic_front" ? "front" : "back"} CNIC image first.`);
+      return;
+    }
+    if (!file.type.startsWith("image/") && !/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(file.name)) {
+      setError("CNIC must be an image file (PNG, JPG, WEBP, GIF, HEIC) — PDF is not allowed.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    try {
+      await uploadDocs.mutateAsync({
+        category: side,
+        title: side === "cnic_front" ? "CNIC front" : "CNIC back",
+        files: [file],
+      });
+      if (side === "cnic_front") setCnicFrontFile(null);
+      else setCnicBackFile(null);
+      setMessage(`${side === "cnic_front" ? "Front" : "Back"} CNIC image uploaded`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "CNIC image upload failed");
+    }
+  }
+
+  async function onUploadClientDocs(e: FormEvent) {
+    e.preventDefault();
+    if (!employeeId || !clientDocFiles?.length) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await uploadDocs.mutateAsync({
+        category: "client",
+        title: clientDocTitle.trim() || "Client document submission",
+        files: Array.from(clientDocFiles),
+      });
+      setClientDocFiles(null);
+      setClientDocTitle("");
+      setMessage("Client documents uploaded");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Client document upload failed");
+    }
+  }
+
   function resetRefForm() {
-    setRefForm({ fullName: "", cnic: "", relation: "", phone: "" });
+    setRefForm(emptyReferralDraft());
   }
 
   function onAddReferralDraft(e: FormEvent) {
@@ -318,6 +397,7 @@ export function EmployeeFormPage() {
         cnic: refForm.cnic.trim(),
         relation: refForm.relation.trim(),
         phone: refForm.phone.trim(),
+        files: refForm.files,
       },
     ]);
     resetRefForm();
@@ -334,14 +414,25 @@ export function EmployeeFormPage() {
       return;
     }
     try {
-      await createRef.mutateAsync({
+      const filesToUpload = refForm.files;
+      const created = await createRef.mutateAsync({
         fullName: refForm.fullName.trim(),
         relation: refForm.relation.trim(),
         phone: emptyToNull(refForm.phone),
         cnic: emptyToNull(refForm.cnic),
       });
+      if (filesToUpload.length > 0) {
+        await uploadRefDocs.mutateAsync({
+          referenceId: created.id,
+          files: filesToUpload,
+        });
+      }
       resetRefForm();
-      setMessage("Client referral added");
+      setMessage(
+        filesToUpload.length > 0
+          ? "Client referral added with CNIC / PDF attachments"
+          : "Client referral added",
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add client referral");
     }
@@ -365,8 +456,53 @@ export function EmployeeFormPage() {
   }
 
   const docs = employee.data?.documents ?? [];
+  const employeeDocs = docs.filter((d) => d.category !== "client");
+  const cnicDocs = employeeDocs.filter((d) =>
+    ["cnic_front", "cnic_back", "cnic"].includes(String(d.category)),
+  );
+  const otherEmployeeDocs = employeeDocs.filter(
+    (d) => !["cnic_front", "cnic_back", "cnic"].includes(String(d.category)),
+  );
+  const clientDocs = docs.filter((d) => d.category === "client");
   const refs = employee.data?.references ?? [];
-  const readOnly = !canWrite || employee.data?.status === "terminated";
+  const readOnly =
+    viewOnly || !canWrite || employee.data?.status === "terminated";
+
+  function startEditReferral(ref: EmployeeReference) {
+    setEditingRefId(ref.id);
+    setEditRefForm({
+      fullName: ref.fullName,
+      cnic: ref.cnic ?? "",
+      relation: ref.relation,
+      phone: ref.phone ?? "",
+    });
+  }
+
+  async function onSaveReferralEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editingRefId) return;
+    setError(null);
+    setMessage(null);
+    if (!editRefForm.fullName.trim() || !editRefForm.relation.trim() || !editRefForm.phone.trim()) {
+      setError("Client referral needs reference name, relation, and phone number.");
+      return;
+    }
+    try {
+      await updateRef.mutateAsync({
+        referenceId: editingRefId,
+        payload: {
+          fullName: editRefForm.fullName.trim(),
+          relation: editRefForm.relation.trim(),
+          phone: emptyToNull(editRefForm.phone),
+          cnic: emptyToNull(editRefForm.cnic),
+        },
+      });
+      setEditingRefId(null);
+      setMessage("Client referral updated");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update client referral");
+    }
+  }
 
   function referralFormFields(onSubmit: (e: FormEvent) => void, submitLabel: string) {
     return (
@@ -402,6 +538,26 @@ export function EmployeeFormPage() {
             disabled={readOnly}
           />
         </div>
+        <label className="form-field">
+          <span className="form-field__label">Insert client CNIC image / PDF</span>
+          <input
+            className="form-field__input"
+            type="file"
+            accept=".pdf,image/*"
+            multiple
+            disabled={readOnly}
+            onChange={(e) =>
+              setRefForm({
+                ...refForm,
+                files: e.target.files ? Array.from(e.target.files) : [],
+              })
+            }
+          />
+          <span className="form-field__hint">
+            Attach client CNIC scans or related PDFs with this referral
+            {refForm.files.length > 0 ? ` (${refForm.files.length} selected)` : ""}.
+          </span>
+        </label>
         {canWrite && !readOnly ? (
           <div>
             <Button type="submit" variant="secondary" disabled={createRef.isPending}>
@@ -430,6 +586,20 @@ export function EmployeeFormPage() {
               Back to list
             </Button>
           </Link>
+          {!isNew && viewOnly && canWrite && employee.data?.status !== "terminated" ? (
+            <Link to={`/employees/${employeeId}`}>
+              <Button type="button" variant="primary">
+                Edit employee
+              </Button>
+            </Link>
+          ) : null}
+          {!isNew && !viewOnly && canWrite ? (
+            <Link to={`/employees/${employeeId}?mode=view`}>
+              <Button type="button" variant="secondary">
+                View only
+              </Button>
+            </Link>
+          ) : null}
         </div>
 
         {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
@@ -674,7 +844,8 @@ export function EmployeeFormPage() {
               <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Client Referrals</h2>
               <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
                 Add client / personal referrals for this employee: reference name, CNIC, relation to
-                employee, and phone number. You can add more than one before creating the employee.
+                employee, and phone number. Optionally insert CNIC images/PDFs for each referral before
+                create.
               </p>
               {referralFormFields(onAddReferralDraft, "Add client referral")}
               {pendingReferrals.length === 0 ? (
@@ -702,6 +873,9 @@ export function EmployeeFormPage() {
                           {ref.relation}
                           {ref.phone ? ` · ${ref.phone}` : ""}
                           {ref.cnic ? ` · CNIC ${ref.cnic}` : ""}
+                          {ref.files.length > 0
+                            ? ` · ${ref.files.length} file(s): ${ref.files.map((f) => f.name).join(", ")}`
+                            : ""}
                         </div>
                       </div>
                       <Button
@@ -738,10 +912,136 @@ export function EmployeeFormPage() {
           <>
             <Card>
               <div style={sectionStyle()}>
-                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Documents</h2>
+                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>CNIC images</h2>
                 <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                  Upload CNIC, educational certificates, photos, and other files (PDF or images). Multiple
-                  files allowed per upload.
+                  Upload the front and back of the employee CNIC as images only (PNG, JPG, WEBP, GIF,
+                  HEIC). PDF is not accepted here.
+                </p>
+
+                {canWrite && !readOnly ? (
+                  <div style={gridStyle()}>
+                    <label className="form-field">
+                      <span className="form-field__label">Front CNIC image</span>
+                      <input
+                        className="form-field__input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
+                        onChange={(e) => setCnicFrontFile(e.target.files?.[0] ?? null)}
+                      />
+                      <span className="form-field__hint">
+                        {cnicFrontFile ? cnicFrontFile.name : "Choose front side image"}
+                      </span>
+                      <div style={{ marginTop: "var(--space-2)" }}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={uploadDocs.isPending || !cnicFrontFile}
+                          onClick={() => onUploadCnicSide("cnic_front")}
+                        >
+                          Upload front CNIC
+                        </Button>
+                      </div>
+                    </label>
+                    <label className="form-field">
+                      <span className="form-field__label">Back CNIC image</span>
+                      <input
+                        className="form-field__input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
+                        onChange={(e) => setCnicBackFile(e.target.files?.[0] ?? null)}
+                      />
+                      <span className="form-field__hint">
+                        {cnicBackFile ? cnicBackFile.name : "Choose back side image"}
+                      </span>
+                      <div style={{ marginTop: "var(--space-2)" }}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={uploadDocs.isPending || !cnicBackFile}
+                          onClick={() => onUploadCnicSide("cnic_back")}
+                        >
+                          Upload back CNIC
+                        </Button>
+                      </div>
+                    </label>
+                  </div>
+                ) : null}
+
+                {cnicDocs.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+                    No CNIC images uploaded yet.
+                  </p>
+                ) : (
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
+                    {cnicDocs.map((d) => (
+                      <li
+                        key={d.id}
+                        style={{
+                          display: "flex",
+                          gap: "var(--space-3)",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          borderBottom: "1px solid var(--color-border)",
+                          paddingBottom: "var(--space-2)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            fontWeight: "var(--weight-medium)",
+                            textTransform: "uppercase",
+                            color: "var(--color-text-secondary)",
+                            minWidth: 100,
+                          }}
+                        >
+                          {CNIC_CATEGORY_LABELS[String(d.category)] ?? d.category}
+                        </span>
+                        <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={async () => {
+                            try {
+                              const blob = await downloadEmployeeDocument(employeeId, d.id);
+                              await openBlob(blob, d.originalFilename);
+                            } catch {
+                              setError("Could not download file");
+                            }
+                          }}
+                        >
+                          Download
+                        </Button>
+                        {canWrite && !readOnly ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${d.originalFilename}?`)) return;
+                              try {
+                                await deleteDoc.mutateAsync(d.id);
+                              } catch (err) {
+                                setError(
+                                  err instanceof ApiError ? err.message : "Failed to delete document",
+                                );
+                              }
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <div style={sectionStyle()}>
+                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Other employee documents</h2>
+                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                  Education, photo, or other files (PDF or images). CNIC front/back are uploaded in the
+                  section above.
                 </p>
 
                 {canWrite && !readOnly ? (
@@ -767,14 +1067,16 @@ export function EmployeeFormPage() {
                         label="Title (optional)"
                         value={docTitle}
                         onChange={(e) => setDocTitle(e.target.value)}
-                        placeholder="e.g. CNIC front, BSC transcript"
+                        placeholder="e.g. BSC transcript"
                       />
                       <label className="form-field">
-                        <span className="form-field__label">Files (PDF / images)</span>
+                        <span className="form-field__label">
+                          Files {docCategory === "photo" ? "(images only)" : "(PDF / images)"}
+                        </span>
                         <input
                           className="form-field__input"
                           type="file"
-                          accept=".pdf,image/*"
+                          accept={docCategory === "photo" ? "image/*" : ".pdf,image/*"}
                           multiple
                           onChange={(e) => setDocFiles(e.target.files)}
                         />
@@ -784,20 +1086,24 @@ export function EmployeeFormPage() {
                       </label>
                     </div>
                     <div>
-                      <Button type="submit" variant="secondary" disabled={uploadDocs.isPending || !docFiles?.length}>
-                        Upload documents
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        disabled={uploadDocs.isPending || !docFiles?.length}
+                      >
+                        Submit documents
                       </Button>
                     </div>
                   </form>
                 ) : null}
 
-                {docs.length === 0 ? (
+                {otherEmployeeDocs.length === 0 ? (
                   <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    No documents uploaded yet.
+                    No other documents uploaded yet.
                   </p>
                 ) : (
                   <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
-                    {docs.map((d) => (
+                    {otherEmployeeDocs.map((d) => (
                       <li
                         key={d.id}
                         style={{
@@ -862,10 +1168,111 @@ export function EmployeeFormPage() {
 
             <Card>
               <div style={sectionStyle()}>
+                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Client Document Submission</h2>
+                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                  Upload client-related PDFs or multiple images (client CNIC packs, visit photos, etc.)
+                  for this employee&apos;s file. Separate from individual referral attachments below.
+                </p>
+
+                {canWrite && !readOnly ? (
+                  <form onSubmit={onUploadClientDocs} style={{ display: "grid", gap: "var(--space-3)" }}>
+                    <div style={gridStyle()}>
+                      <FormField
+                        label="Title (optional)"
+                        value={clientDocTitle}
+                        onChange={(e) => setClientDocTitle(e.target.value)}
+                        placeholder="e.g. Client pack — March visit"
+                      />
+                      <label className="form-field">
+                        <span className="form-field__label">PDF / images</span>
+                        <input
+                          className="form-field__input"
+                          type="file"
+                          accept=".pdf,image/*"
+                          multiple
+                          onChange={(e) => setClientDocFiles(e.target.files)}
+                        />
+                        <span className="form-field__hint">
+                          Select one PDF or multiple images in a single upload.
+                        </span>
+                      </label>
+                    </div>
+                    <div>
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        disabled={uploadDocs.isPending || !clientDocFiles?.length}
+                      >
+                        Upload client documents
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {clientDocs.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+                    No client documents submitted yet.
+                  </p>
+                ) : (
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
+                    {clientDocs.map((d) => (
+                      <li
+                        key={d.id}
+                        style={{
+                          display: "flex",
+                          gap: "var(--space-3)",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          borderBottom: "1px solid var(--color-border)",
+                          paddingBottom: "var(--space-2)",
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={async () => {
+                            try {
+                              const blob = await downloadEmployeeDocument(employeeId, d.id);
+                              await openBlob(blob, d.originalFilename);
+                            } catch {
+                              setError("Could not download file");
+                            }
+                          }}
+                        >
+                          Download
+                        </Button>
+                        {canWrite && !readOnly ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${d.originalFilename}?`)) return;
+                              try {
+                                await deleteDoc.mutateAsync(d.id);
+                              } catch (err) {
+                                setError(
+                                  err instanceof ApiError ? err.message : "Failed to delete document",
+                                );
+                              }
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <div style={sectionStyle()}>
                 <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Client Referrals</h2>
                 <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                  Client / personal referrals: reference name, CNIC, relation to employee, and phone
-                  number. You can attach supporting PDF or images per referral.
+                  Client / personal referrals: reference name, CNIC, relation, and phone. Insert client
+                  CNIC image/PDF when adding a referral, or attach files beside any existing referral.
                 </p>
 
                 {canWrite && !readOnly
@@ -909,26 +1316,94 @@ export function EmployeeFormPage() {
                             ) : null}
                           </div>
                           {canWrite && !readOnly ? (
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              onClick={async () => {
-                                if (!window.confirm(`Remove client referral ${ref.fullName}?`)) return;
-                                try {
-                                  await deleteRef.mutateAsync(ref.id);
-                                } catch (err) {
-                                  setError(
-                                    err instanceof ApiError
-                                      ? err.message
-                                      : "Failed to delete client referral",
-                                  );
-                                }
-                              }}
-                            >
-                              Remove referral
-                            </Button>
+                            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => startEditReferral(ref)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={async () => {
+                                  if (!window.confirm(`Remove client referral ${ref.fullName}?`)) return;
+                                  try {
+                                    await deleteRef.mutateAsync(ref.id);
+                                  } catch (err) {
+                                    setError(
+                                      err instanceof ApiError
+                                        ? err.message
+                                        : "Failed to delete client referral",
+                                    );
+                                  }
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           ) : null}
                         </div>
+
+                        {editingRefId === ref.id && canWrite && !readOnly ? (
+                          <form
+                            onSubmit={onSaveReferralEdit}
+                            style={{
+                              display: "grid",
+                              gap: "var(--space-3)",
+                              padding: "var(--space-3)",
+                              background: "var(--color-surface-alt)",
+                              borderRadius: "var(--radius-md)",
+                            }}
+                          >
+                            <div style={gridStyle()}>
+                              <FormField
+                                label="Reference name"
+                                value={editRefForm.fullName}
+                                onChange={(e) =>
+                                  setEditRefForm({ ...editRefForm, fullName: e.target.value })
+                                }
+                                required
+                              />
+                              <FormField
+                                label="CNIC"
+                                value={editRefForm.cnic}
+                                onChange={(e) =>
+                                  setEditRefForm({ ...editRefForm, cnic: e.target.value })
+                                }
+                              />
+                              <FormField
+                                label="Relation to employee"
+                                value={editRefForm.relation}
+                                onChange={(e) =>
+                                  setEditRefForm({ ...editRefForm, relation: e.target.value })
+                                }
+                                required
+                              />
+                              <FormField
+                                label="Phone number"
+                                value={editRefForm.phone}
+                                onChange={(e) =>
+                                  setEditRefForm({ ...editRefForm, phone: e.target.value })
+                                }
+                                required
+                              />
+                            </div>
+                            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                              <Button type="submit" variant="primary" disabled={updateRef.isPending}>
+                                Save referral
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setEditingRefId(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        ) : null}
 
                         <div>
                           <div
@@ -940,11 +1415,11 @@ export function EmployeeFormPage() {
                               marginBottom: "var(--space-2)",
                             }}
                           >
-                            Reference documents
+                            Client CNIC / referral files
                           </div>
                           {(ref.documents ?? []).length === 0 ? (
                             <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
-                              No files attached.
+                              No CNIC image or PDF attached yet.
                             </p>
                           ) : (
                             <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
@@ -1013,7 +1488,7 @@ export function EmployeeFormPage() {
                           )}
                           {canWrite && !readOnly ? (
                             <label className="form-field" style={{ marginTop: "var(--space-3)" }}>
-                              <span className="form-field__label">Attach PDF / images</span>
+                              <span className="form-field__label">Insert image / PDF (client CNIC)</span>
                               <input
                                 className="form-field__input"
                                 type="file"
@@ -1028,12 +1503,12 @@ export function EmployeeFormPage() {
                                       referenceId: ref.id,
                                       files: Array.from(files),
                                     });
-                                    setMessage(`Files attached for ${ref.fullName}`);
+                                    setMessage(`CNIC / PDF attached for ${ref.fullName}`);
                                   } catch (err) {
                                     setError(
                                       err instanceof ApiError
                                         ? err.message
-                                        : "Reference file upload failed",
+                                        : "Referral file upload failed",
                                     );
                                   }
                                   e.target.value = "";
@@ -1052,8 +1527,10 @@ export function EmployeeFormPage() {
         ) : (
           <Card>
             <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-              After creating the employee, you can upload documents on their profile. Client referrals
-              can be added above before create, or anytime on the profile.
+              After creating the employee, you can upload documents on their profile. Use{" "}
+              <Link to="/employees/verify-cnic">Verify my CNIC</Link> to check a card image against a
+              typed number. Client referrals can be added above before create, or anytime on the
+              profile.
             </p>
           </Card>
         )}

@@ -1,6 +1,7 @@
 """Employee & department routes — API_ENDPOINTS.md §3."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
+from app.core.exceptions import ValidationFailed
+from app.schemas.cnic import CnicVerificationResult
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.employees import (
     DepartmentCreate,
@@ -81,6 +84,28 @@ def create_employee(
     return EmployeeRead.model_validate(employee_service.create_employee(db, auth, payload))
 
 
+@router.post("/employees/cnic/verify", response_model=CnicVerificationResult, deprecated=True)
+async def verify_employee_cnic_legacy(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+    typed_cnic: Annotated[str, Form(...)],
+    front_image: Annotated[UploadFile | None, File()] = None,
+    back_image: Annotated[UploadFile | None, File()] = None,
+    image: Annotated[UploadFile | None, File()] = None,
+) -> CnicVerificationResult:
+    """Deprecated alias — prefer POST /cnic/verify."""
+    from app.api.routes.cnic import verify_cnic_endpoint
+
+    return await verify_cnic_endpoint(
+        db=db,
+        auth=auth,
+        typed_cnic=typed_cnic,
+        front_image=front_image,
+        back_image=back_image,
+        image=image,
+    )
+
+
 @router.get("/employees/{employee_id}", response_model=EmployeeDetailRead)
 def get_employee(
     employee_id: int,
@@ -129,7 +154,17 @@ async def upload_employee_documents(
     payloads: list[tuple[str, bytes]] = []
     for f in files:
         content = await f.read()
-        payloads.append((f.filename or "upload.bin", content))
+        name = f.filename or "upload.bin"
+        # Prefer filename extension; if missing, map from content-type for images.
+        if not Path(name).suffix and f.content_type and f.content_type.startswith("image/"):
+            subtype = f.content_type.split("/", 1)[-1].split(";")[0].strip().lower()
+            ext = {"jpeg": ".jpg", "jpg": ".jpg", "png": ".png", "webp": ".webp", "gif": ".gif", "heic": ".heic"}.get(
+                subtype, ".jpg"
+            )
+            name = f"upload{ext}"
+        payloads.append((name, content))
+    if not payloads:
+        raise ValidationFailed("At least one file is required")
     docs = employee_service.add_employee_documents(
         db, auth, employee_id, category=category, title=title, files=payloads
     )

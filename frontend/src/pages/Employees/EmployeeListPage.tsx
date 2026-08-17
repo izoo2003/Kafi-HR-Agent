@@ -91,11 +91,18 @@ export function EmployeeListPage() {
           >
             <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Departments (roles)</h2>
             {canWrite ? (
-              <Link to="/employees/new">
-                <Button type="button" variant="primary">
-                  Add Employee
-                </Button>
-              </Link>
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                <Link to="/employees/verify-cnic">
+                  <Button type="button" variant="secondary">
+                    Verify my CNIC
+                  </Button>
+                </Link>
+                <Link to="/employees/new">
+                  <Button type="button" variant="primary">
+                    Add Employee
+                  </Button>
+                </Link>
+              </div>
             ) : null}
           </div>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
@@ -177,7 +184,7 @@ export function EmployeeListPage() {
               headers={
                 canWrite
                   ? ["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]
-                  : ["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary"]
+                  : ["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]
               }
             >
               {employees.data.items.map((e) => (
@@ -200,9 +207,14 @@ export function EmployeeListPage() {
                   {canWrite ? (
                     <td>
                       <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                        <Link to={`/employees/${e.id}`}>
+                        <Link to={`/employees/${e.id}?mode=view`}>
                           <Button type="button" variant="secondary">
-                            Open
+                            View
+                          </Button>
+                        </Link>
+                        <Link to={`/employees/${e.id}`}>
+                          <Button type="button" variant="primary" disabled={e.status === "terminated"}>
+                            Edit
                           </Button>
                         </Link>
                         <Button
@@ -215,7 +227,15 @@ export function EmployeeListPage() {
                         </Button>
                       </div>
                     </td>
-                  ) : null}
+                  ) : (
+                    <td>
+                      <Link to={`/employees/${e.id}?mode=view`}>
+                        <Button type="button" variant="secondary">
+                          View
+                        </Button>
+                      </Link>
+                    </td>
+                  )}
                 </tr>
               ))}
             </Table>

@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Numeric(12, 2) → at most 10 digits before the decimal (max 9_999_999_999.99)
 _MAX_BASE_SALARY = Decimal("9999999999.99")
 
-DOCUMENT_CATEGORIES = frozenset({"cnic", "education", "other", "photo"})
+DOCUMENT_CATEGORIES = frozenset(
+    {"cnic", "cnic_front", "cnic_back", "education", "other", "photo", "client"}
+)
+CNIC_IMAGE_CATEGORIES = frozenset({"cnic_front", "cnic_back", "cnic"})
+IMAGE_ONLY_DOCUMENT_CATEGORIES = CNIC_IMAGE_CATEGORIES | frozenset({"photo"})
 
 
 class DepartmentCreate(BaseModel):
