@@ -47,6 +47,20 @@ async def lifespan(_app: FastAPI):
     settings.credentials_dir.mkdir(parents=True, exist_ok=True)
     _restore_google_oauth_token(settings)
 
+    try:
+        from app.core import supabase_storage
+
+        if supabase_storage.storage_configured(settings):
+            bucket = supabase_storage.ensure_employee_documents_bucket(settings)
+            print(f"[startup] Supabase Storage ready (bucket={bucket})", flush=True)
+        else:
+            print(
+                "[startup] Supabase Storage not configured — employee files stay on local disk",
+                flush=True,
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] Supabase Storage setup skipped: {exc}", flush=True)
+
     db_kind = "Supabase Postgres" if settings.database_url.startswith("postgresql") else "SQLite"
     print(f"[startup] Connecting to {db_kind}…", flush=True)
     engine = get_engine()

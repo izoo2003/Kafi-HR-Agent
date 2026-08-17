@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from urllib.parse import quote
 
 from app.core.db import get_db
 from app.core.deps import require_permission
@@ -177,13 +177,16 @@ def download_employee_document(
     document_id: int,
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
-) -> FileResponse:
+) -> Response:
     doc = employee_service.get_employee_document(db, employee_id, document_id)
-    path = employee_service.resolve_file_path(doc.file_path)
-    return FileResponse(
-        path,
-        filename=doc.original_filename,
+    data = employee_service.read_document_bytes(doc.file_path)
+    filename = doc.original_filename or "document"
+    return Response(
+        content=data,
         media_type=doc.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        },
     )
 
 
@@ -281,13 +284,16 @@ def download_reference_document(
     document_id: int,
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
-) -> FileResponse:
+) -> Response:
     doc = employee_service.get_reference_document(db, employee_id, reference_id, document_id)
-    path = employee_service.resolve_file_path(doc.file_path)
-    return FileResponse(
-        path,
-        filename=doc.original_filename,
+    data = employee_service.read_document_bytes(doc.file_path)
+    filename = doc.original_filename or "document"
+    return Response(
+        content=data,
         media_type=doc.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        },
     )
 
 

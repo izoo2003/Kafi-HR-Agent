@@ -21,6 +21,7 @@ alembic==1.14.0
 
 # --- Postgres (Supabase) ---
 psycopg2-binary==2.9.10
+# Storage uses requests (already listed) against Supabase Storage HTTP API
 
 # --- CV / reports (feature modules) ---
 pdfplumber==0.11.4

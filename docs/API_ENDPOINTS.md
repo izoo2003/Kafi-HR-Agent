@@ -56,8 +56,8 @@
 | GET | `/employees/{id}` | Employee detail incl. documents + references |
 | PATCH | `/employees/{id}` | Update employee profile fields |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |
-| POST | `/employees/{id}/documents` | Upload document(s) (multipart: `category`, optional `title`, `files[]`) — PDF/images |
-| GET | `/employees/{id}/documents/{document_id}/file` | Download an employee document |
+| POST | `/employees/{id}/documents` | Upload document(s) (multipart: `category`, optional `title`, `files[]`) — PDF/images; binaries go to Supabase Storage when configured |
+| GET | `/employees/{id}/documents/{document_id}/file` | Download an employee document (from Supabase Storage or legacy local path) |
 | DELETE | `/employees/{id}/documents/{document_id}` | Remove an employee document |
 | POST | `/employees/{id}/references` | Add a client referral (name, CNIC, relation, phone) |
 | PATCH | `/employees/{id}/references/{reference_id}` | Update a client referral |

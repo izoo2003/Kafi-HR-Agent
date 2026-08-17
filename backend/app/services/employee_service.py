@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, EntityNotFound, ValidationFailed
-from app.ingestion.employee_docs import delete_stored_file, store_employee_file
+from app.ingestion.employee_docs import delete_stored_file, read_stored_file, store_employee_file
 from app.models.employees import (
     Department,
     Employee,
@@ -395,10 +395,18 @@ def delete_reference_document(
 
 
 def resolve_file_path(file_path: str) -> Path:
+    """Legacy helper — local disk only. Prefer read_document_bytes for downloads."""
+    if file_path.startswith("supabase://"):
+        raise EntityNotFound("File is stored in Supabase Storage — use read_document_bytes")
     path = Path(file_path)
     if not path.is_file():
         raise EntityNotFound("File not found on disk")
     return path
+
+
+def read_document_bytes(file_path: str) -> bytes:
+    """Load document bytes from Supabase Storage or local disk."""
+    return read_stored_file(file_path)
 
 
 # Re-export read helpers used by routes
@@ -420,6 +428,7 @@ __all__ = [
     "get_reference_document",
     "delete_reference_document",
     "resolve_file_path",
+    "read_document_bytes",
     "EmployeeDocumentRead",
     "EmployeeReferenceRead",
     "EmployeeReferenceDocumentRead",

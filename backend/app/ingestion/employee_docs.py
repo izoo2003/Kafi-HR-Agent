@@ -1,4 +1,4 @@
-"""Employee document file intake (PDF / images)."""
+"""Employee document file intake (PDF / images) — Supabase Storage when configured."""
 from __future__ import annotations
 
 import mimetypes
@@ -6,7 +6,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.config import get_settings
-from app.core.exceptions import ValidationFailed
+from app.core.exceptions import EntityNotFound, ValidationFailed
+from app.core import supabase_storage
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif"}
 PDF_SUFFIXES = {".pdf"}
@@ -26,11 +27,14 @@ def store_employee_file(
     subdir: str = "documents",
     images_only: bool = False,
 ) -> tuple[str, str | None]:
-    """Persist an uploaded file; returns (absolute_path, mime_type)."""
+    """Persist an uploaded file; returns (storage_uri_or_path, mime_type).
+
+    Prefer Supabase Storage when SUPABASE_URL + SUPABASE_SECRET_KEY are set.
+    Falls back to local disk only when Storage is not configured.
+    """
     raw_name = (filename or "").strip() or "upload.bin"
     suffix = Path(raw_name).suffix.lower()
 
-    # Some mobile browsers omit the extension — infer from MIME later via name guess.
     if not suffix and images_only:
         suffix = ".jpg"
         raw_name = f"{raw_name}.jpg"
@@ -47,27 +51,54 @@ def store_employee_file(
     if len(content) > MAX_BYTES:
         raise ValidationFailed("File exceeds 15MB limit")
 
+    mime, _ = mimetypes.guess_type(raw_name)
+    if images_only and not mime:
+        mime = "image/jpeg"
+
     settings = get_settings()
+    safe = _safe_name(raw_name)
+    object_name = f"{uuid4().hex[:10]}_{safe}"
+    relative = f"emp_{employee_id}/{subdir.strip('/')}/{object_name}"
+
+    if supabase_storage.storage_configured(settings):
+        uri = supabase_storage.upload_bytes(
+            object_path=relative,
+            content=content,
+            content_type=mime,
+            settings=settings,
+        )
+        return uri, mime
+
     dest_dir = settings.uploads_employees_dir / f"emp_{employee_id}" / subdir
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        safe = _safe_name(raw_name)
-        dest = dest_dir / f"{uuid4().hex[:10]}_{safe}"
+        dest = dest_dir / object_name
         dest.write_bytes(content)
     except OSError as exc:
         raise ValidationFailed(
             f"Could not store file on server disk ({exc}). "
-            "On Railway, ensure the service volume/path for data/uploads is writable."
+            "Configure SUPABASE_URL + SUPABASE_SECRET_KEY for cloud Storage, "
+            "or ensure data/uploads is writable."
         ) from exc
 
-    mime, _ = mimetypes.guess_type(raw_name)
-    if images_only and not mime:
-        mime = "image/jpeg"
     return str(dest), mime
+
+
+def read_stored_file(file_path: str) -> bytes:
+    """Load file bytes from Supabase Storage URI or local disk path."""
+    if supabase_storage.is_supabase_uri(file_path):
+        return supabase_storage.download_bytes(file_path)
+    path = Path(file_path)
+    if not path.is_file():
+        raise EntityNotFound("File not found on disk")
+    return path.read_bytes()
 
 
 def delete_stored_file(file_path: str | None) -> None:
     if not file_path:
+        return
+    if supabase_storage.is_supabase_uri(file_path):
+        supabase_storage.delete_object(file_path)
         return
     path = Path(file_path)
     try:

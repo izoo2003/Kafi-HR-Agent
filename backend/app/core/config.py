@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     supabase_secret_key: str = ""
     supabase_jwks_url: str = ""
     supabase_project_ref: str = ""
+    # Private Storage bucket for employee + referral document binaries
+    supabase_storage_bucket: str = "employee-documents"
 
     # --- JWT / Auth ---
     jwt_secret_key: str = "CHANGE_ME_dev_only_hr_admin_agent"
