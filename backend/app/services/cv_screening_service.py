@@ -3,13 +3,19 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import BusinessRuleViolation, ConflictError, EntityNotFound, ValidationFailed
-from app.ingestion.cv_intake import store_cv_upload, store_fetched_cv
+from app.ingestion.cv_intake import (
+    cv_mime_for,
+    read_cv_bytes,
+    store_cv_upload,
+    store_fetched_cv,
+    stored_cv_filename,
+)
+from app.ingestion.employee_docs import delete_stored_file
 from app.ingestion.gmail_ingestor import fetch_gmail_submissions
 from app.ingestion.imap_ingestor import fetch_imap_submissions
 from app.ingestion.outlook_ingestor import fetch_outlook_submissions
@@ -69,38 +75,16 @@ def get_candidate(db: Session, candidate_id: int) -> Candidate:
     return cand
 
 
-_CV_MIME = {
-    ".pdf": "application/pdf",
-    ".txt": "text/plain; charset=utf-8",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".doc": "application/msword",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-    ".tif": "image/tiff",
-    ".tiff": "image/tiff",
-    ".bmp": "image/bmp",
-    ".heic": "image/heic",
-    ".heif": "image/heif",
-}
-
-
-def get_candidate_cv_file(db: Session, candidate_id: int) -> tuple[Path, str, str]:
-    """Returns (absolute path, mime type, download filename) for the stored CV."""
+def get_candidate_cv_file(db: Session, candidate_id: int) -> tuple[bytes, str, str]:
+    """Returns (file bytes, mime type, download filename) for the stored CV."""
     cand = get_candidate(db, candidate_id)
     raw = (cand.cv_file_path or "").strip()
     if not raw:
         raise EntityNotFound(f"Candidate {candidate_id} has no CV file")
-    path = Path(raw)
-    if not path.is_file():
-        path = get_settings().resolved_path(raw)
-    if not path.is_file():
-        raise EntityNotFound(f"CV file for candidate {candidate_id} is missing on disk")
-    suffix = path.suffix.lower()
-    mime = _CV_MIME.get(suffix, "application/octet-stream")
-    return path, mime, path.name
+    data = read_cv_bytes(raw)
+    filename = stored_cv_filename(raw)
+    mime = cv_mime_for(filename)
+    return data, mime, filename
 
 
 def upload_candidates(
@@ -183,6 +167,7 @@ def update_candidate(
 def delete_candidate(db: Session, auth: AuthContext, candidate_id: int) -> None:
     """Remove a candidate and related score/ranking rows (no FK cascade on SQLite/Postgres)."""
     cand = get_candidate(db, candidate_id)
+    stored_path = cand.cv_file_path
     before = {
         "full_name": cand.full_name,
         "email": cand.email,
@@ -198,6 +183,7 @@ def delete_candidate(db: Session, auth: AuthContext, candidate_id: int) -> None:
     )
     db.delete(cand)
     db.flush()
+    delete_stored_file(stored_path)
     audit_service.log_from_auth(
         db,
         auth,

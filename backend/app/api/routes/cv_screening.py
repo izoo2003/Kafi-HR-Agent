@@ -109,12 +109,13 @@ def download_candidate_cv(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("cv_screening", "read"))],
 ) -> Response:
-    path, mime, filename = cv_service.get_candidate_cv_file(db, candidate_id)
-    inline = mime.startswith("image/") or mime.startswith("text/") or mime == "application/pdf"
+    data, mime, filename = cv_service.get_candidate_cv_file(db, candidate_id)
+    media = mime.split(";")[0]
+    inline = media.startswith("image/") or media.startswith("text/") or media == "application/pdf"
     disposition = "inline" if inline else "attachment"
-    return FileResponse(
-        path,
-        media_type=mime.split(";")[0],
+    return Response(
+        content=data,
+        media_type=media,
         headers={
             "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(filename)}",
             "Cache-Control": "private, max-age=60",

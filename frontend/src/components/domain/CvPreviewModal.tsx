@@ -37,7 +37,7 @@ export function CvPreviewModal({ candidateId, candidateName, parsedText, onClose
     downloadCandidateCv(candidateId)
       .then(async (blob) => {
         if (cancelled) return;
-        const nextKind = previewKind(blob, blob.type);
+        const nextKind = previewKind(blob, candidateName);
         setKind(nextKind);
         if (nextKind === "text") {
           setText(await blob.text());
@@ -112,7 +112,32 @@ export function CvPreviewModal({ candidateId, candidateName, parsedText, onClose
             </div>
           ) : null}
           {error ? (
-            <p style={{ color: "var(--color-status-critical)", padding: "var(--space-4)" }}>{error}</p>
+            <div style={{ padding: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
+              <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p>
+              {parsedText ? (
+                <>
+                  <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                    Original file could not be loaded. Showing text extracted when this CV was parsed.
+                  </p>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: "var(--space-3)",
+                      whiteSpace: "pre-wrap",
+                      fontFamily: "var(--font-data)",
+                      fontSize: "var(--text-sm)",
+                      background: "var(--color-surface)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      maxHeight: "50vh",
+                      overflow: "auto",
+                    }}
+                  >
+                    {parsedText}
+                  </pre>
+                </>
+              ) : null}
+            </div>
           ) : null}
           {!loading && !error && kind === "pdf" && url ? (
             <iframe title="CV preview" src={url} style={{ width: "100%", height: "70vh", border: 0 }} />

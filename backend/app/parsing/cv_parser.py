@@ -110,22 +110,44 @@ def _guess_education_level(text: str) -> str | None:
     return None
 
 
-def parse_cv(file_path: str | Path) -> dict[str, Any]:
-    path = Path(file_path)
-    if not path.exists():
-        return {
-            "full_name": None,
-            "email": None,
-            "phone": None,
-            "education": [],
-            "experience": [],
-            "years_experience": 0.0,
-            "skills": [],
-            "raw_text": "",
-            "education_level": None,
-        }
+def _empty_parsed() -> dict[str, Any]:
+    return {
+        "full_name": None,
+        "email": None,
+        "phone": None,
+        "education": [],
+        "experience": [],
+        "years_experience": 0.0,
+        "skills": [],
+        "raw_text": "",
+        "education_level": None,
+    }
 
-    raw = _extract_text(path)
+
+def parse_cv(file_path: str | Path) -> dict[str, Any]:
+    import tempfile
+
+    from app.ingestion.cv_intake import read_cv_bytes, stored_cv_filename
+
+    raw_ref = str(file_path)
+    try:
+        data = read_cv_bytes(raw_ref)
+    except Exception:
+        return _empty_parsed()
+
+    suffix = Path(stored_cv_filename(raw_ref)).suffix.lower() or Path(raw_ref).suffix.lower() or ".bin"
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
+        raw = _extract_text(tmp_path)
+    except Exception:
+        return _empty_parsed()
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
     email = _first_email(raw)
     phone = _first_phone(raw)
     name = _guess_name(raw, email)

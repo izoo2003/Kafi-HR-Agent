@@ -163,7 +163,16 @@ export async function fetchBlob(path: string, options: RequestOptions = {}): Pro
   });
   if (!response.ok) {
     if (response.status === 401) onUnauthorized?.();
-    throw new ApiError(response.status, `File download failed (${response.status})`);
+    let message = `File download failed (${response.status})`;
+    try {
+      const parsed = (await response.json()) as { error?: { message?: string } };
+      if (typeof parsed?.error?.message === "string" && parsed.error.message.trim()) {
+        message = parsed.error.message;
+      }
+    } catch {
+      // keep generic message
+    }
+    throw new ApiError(response.status, message);
   }
   return response.blob();
 }

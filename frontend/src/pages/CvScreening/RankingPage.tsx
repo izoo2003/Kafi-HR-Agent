@@ -6,6 +6,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
+import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 import { useDeleteCandidate, usePatchCandidate, useRanking } from "../../hooks/useJobDescriptions";
 import { downloadReport, rerank } from "../../api/jobDescriptions";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
@@ -23,6 +24,7 @@ export function RankingPage() {
   const remove = useDeleteCandidate();
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ candidateId: number; fullName: string | null } | null>(null);
 
   async function handleDelete(candidateId: number, name: string | null) {
     const label = name?.trim() || `candidate #${candidateId}`;
@@ -96,6 +98,9 @@ export function RankingPage() {
                   </StatusBadge>
                 </td>
                 <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button variant="secondary" onClick={() => setPreview(r)}>
+                    View CV
+                  </Button>
                   {canWrite ? (
                     <>
                       <Button
@@ -125,6 +130,13 @@ export function RankingPage() {
           </Table>
         ) : null}
       </div>
+      {preview ? (
+        <CvPreviewModal
+          candidateId={preview.candidateId}
+          candidateName={preview.fullName ?? `Candidate #${preview.candidateId}`}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </>
   );
 }
