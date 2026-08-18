@@ -68,6 +68,8 @@ class AttendanceRecordRead(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+    employee_name: str | None = None
+    employee_code: str | None = None
 
 
 class LeaveRequestCreate(BaseModel):

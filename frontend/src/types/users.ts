@@ -9,6 +9,7 @@ export interface User {
   departmentName: string | null;
   linkedEmployeeId: number | null;
   isSelfRegistered: boolean;
+  loginIdentifier: string | null;
   lastLoginAt: string | null;
   createdAt: string | null;
 }

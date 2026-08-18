@@ -148,6 +148,7 @@ export interface EmployeeCreate {
 }
 
 export interface EmployeeUpdate {
+  employeeCode?: string;
   fullName?: string;
   departmentId?: number;
   roleTitle?: string | null;

@@ -108,26 +108,6 @@ async def import_attendance(
 ) -> AttendanceImportResult:
     content = await file.read()
     name = file.filename or "import.csv"
-    if name.lower().endswith((".xlsx", ".xls")):
-        # Excel: convert first sheet to CSV-like via openpyxl
-        from openpyxl import load_workbook
-        import io
-
-        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
-            from app.core.exceptions import ValidationFailed
-
-            raise ValidationFailed("Excel file is empty")
-        buf = io.StringIO()
-        import csv
-
-        writer = csv.writer(buf)
-        for row in rows:
-            writer.writerow(["" if c is None else c for c in row])
-        content = buf.getvalue().encode("utf-8")
-        name = name.rsplit(".", 1)[0] + ".csv"
     return svc.import_attendance_csv(db, auth, content, filename=name)
 
 

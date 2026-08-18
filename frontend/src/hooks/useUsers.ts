@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as usersApi from "../api/users";
 import type { PaginationParams } from "../types/common";
 
@@ -16,5 +16,14 @@ export function useRoles() {
   return useQuery({
     queryKey: ["roles"],
     queryFn: () => usersApi.listRoles(),
+  });
+}
+
+export function useSetUserPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, password }: { userId: number; password: string }) =>
+      usersApi.setUserPassword(userId, password),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });
 }

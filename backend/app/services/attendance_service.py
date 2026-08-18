@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -35,6 +36,92 @@ from app.schemas.attendance import (
 )
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.services import audit_service
+
+
+def _norm_person_name(name: str) -> str:
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
+
+def _code_variants(raw: str) -> set[str]:
+    s = (raw or "").strip().lower()
+    if not s:
+        return set()
+    out = {s}
+    if re.fullmatch(r"\d+\.0+", s):
+        s = s.split(".", 1)[0]
+        out.add(s)
+    if s.isdigit():
+        out.add(s.lstrip("0") or "0")
+    return {v for v in out if v}
+
+
+def build_employee_indexes(
+    db: Session,
+) -> tuple[dict[str, Employee], dict[str, Employee], dict[str, Employee], dict[str, list[Employee]]]:
+    """Indexes for Excel/CSV → Employee matching (code, name, email, first name)."""
+    emps = db.query(Employee).filter(Employee.status != "terminated").all()
+    by_code: dict[str, Employee] = {}
+    by_name: dict[str, Employee] = {}
+    by_email: dict[str, Employee] = {}
+    by_first: dict[str, list[Employee]] = {}
+    for emp in emps:
+        for variant in _code_variants(emp.employee_code or ""):
+            by_code.setdefault(variant, emp)
+        n = _norm_person_name(emp.full_name)
+        if n:
+            by_name[n] = emp
+            first = n.split(" ", 1)[0]
+            by_first.setdefault(first, []).append(emp)
+        if emp.email:
+            by_email[emp.email.strip().lower()] = emp
+    return by_code, by_name, by_email, by_first
+
+
+def match_employee(
+    *,
+    code: str | None,
+    name: str | None,
+    email: str | None,
+    indexes: tuple[
+        dict[str, Employee],
+        dict[str, Employee],
+        dict[str, Employee],
+        dict[str, list[Employee]],
+    ],
+) -> Employee | None:
+    by_code, by_name, by_email, by_first = indexes
+    if code:
+        for variant in _code_variants(code):
+            emp = by_code.get(variant)
+            if emp is not None:
+                return emp
+    if email:
+        emp = by_email.get(email.strip().lower())
+        if emp is not None:
+            return emp
+    n = _norm_person_name(name or "")
+    if n:
+        emp = by_name.get(n)
+        if emp is not None:
+            return emp
+        first = n.split(" ", 1)[0]
+        first_hits = by_first.get(first, [])
+        if len(first_hits) == 1:
+            return first_hits[0]
+        contains = [
+            e
+            for e in by_name.values()
+            if n in _norm_person_name(e.full_name) or _norm_person_name(e.full_name) in n
+        ]
+        unique: list[Employee] = []
+        seen: set[int] = set()
+        for e in contains:
+            if e.id not in seen:
+                unique.append(e)
+                seen.add(e.id)
+        if len(unique) == 1:
+            return unique[0]
+    return None
 
 
 def _company_tz(db: Session) -> ZoneInfo:
@@ -247,8 +334,20 @@ def list_records(
         .limit(page_size)
         .all()
     )
+    emp_ids = {r.employee_id for r in rows}
+    names = {
+        e.id: (e.full_name, e.employee_code)
+        for e in db.query(Employee).filter(Employee.id.in_(emp_ids)).all()
+    } if emp_ids else {}
+    items: list[AttendanceRecordRead] = []
+    for r in rows:
+        item = AttendanceRecordRead.model_validate(r)
+        name, code = names.get(r.employee_id, (None, None))
+        item.employee_name = name
+        item.employee_code = code
+        items.append(item)
     return PaginatedResponse(
-        items=[AttendanceRecordRead.model_validate(r) for r in rows],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -563,63 +662,62 @@ def _parse_dt(value: str, on_date: date, tz: ZoneInfo) -> datetime | None:
 def import_attendance_csv(
     db: Session, auth: AuthContext, content: bytes, filename: str = "import.csv"
 ) -> AttendanceImportResult:
-    text = content.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        raise ValidationFailed("CSV has no header row")
-    # normalize headers
-    field_map = {h.strip().lower().replace(" ", "_"): h for h in reader.fieldnames}
-    date_key = next((k for k in ("date", "attendance_date") if k in field_map), None)
-    in_key = next(
-        (k for k in ("check_in", "checkin", "time_in", "time", "in") if k in field_map), None
+    from app.services.attendance_period_report import (
+        CODE_ALIASES,
+        DATE_ALIASES,
+        EMAIL_ALIASES,
+        IN_ALIASES,
+        LAST_NAME_ALIASES,
+        NAME_ALIASES,
+        OUT_ALIASES,
+        _find_col,
+        _norm_header,
+        _parse_date_value,
+        _parse_excel_or_csv,
     )
-    out_key = next(
-        (k for k in ("check_out", "checkout", "time_out", "out") if k in field_map), None
-    )
-    code_key = next(
-        (k for k in ("employee_code", "emp_code", "code") if k in field_map), None
-    )
-    name_key = next(
-        (k for k in ("name", "employee_name", "full_name", "employee") if k in field_map),
-        None,
-    )
-    if date_key is None or in_key is None:
-        raise ValidationFailed("Missing required columns: date and check_in/time")
-    if code_key is None and name_key is None:
+
+    rows = _parse_excel_or_csv(content, filename)
+    if not rows:
+        raise ValidationFailed("No data rows found in file")
+    headers = list(rows[0].keys())
+    field_map = {_norm_header(h): h for h in headers}
+    date_col = _find_col(field_map, DATE_ALIASES)
+    in_col = _find_col(field_map, IN_ALIASES)
+    out_col = _find_col(field_map, OUT_ALIASES)
+    code_col = _find_col(field_map, CODE_ALIASES)
+    name_col = _find_col(field_map, NAME_ALIASES)
+    last_col = _find_col(field_map, LAST_NAME_ALIASES)
+    email_col = _find_col(field_map, EMAIL_ALIASES)
+    if date_col is None or in_col is None:
+        raise ValidationFailed("Missing required columns: date and check_in / First Punch")
+    if code_col is None and name_col is None:
         raise ValidationFailed("Missing employee_code or name column")
 
     tz = _company_tz(db)
+    indexes = build_employee_indexes(db)
     imported = 0
     errors: list[ImportErrorRow] = []
-    row_num = 1  # header is row 1
-    for raw in reader:
-        row_num += 1
+    for row_num, raw in enumerate(rows, start=2):
         try:
-            emp = None
-            if code_key:
-                code = (raw[field_map[code_key]] or "").strip()
-                if code:
-                    emp = db.query(Employee).filter(Employee.employee_code == code).one_or_none()
-            if emp is None and name_key:
-                nm = " ".join((raw[field_map[name_key]] or "").strip().lower().split())
-                candidates = (
-                    db.query(Employee).filter(Employee.status != "terminated").all()
-                )
-                emp = next(
-                    (
-                        e
-                        for e in candidates
-                        if " ".join(e.full_name.strip().lower().split()) == nm
-                    ),
-                    None,
-                )
+            first = (raw.get(name_col) or "").strip() if name_col else ""
+            last = (raw.get(last_col) or "").strip() if last_col else ""
+            display = " ".join(p for p in (first, last) if p)
+            emp = match_employee(
+                code=(raw.get(code_col) or "").strip() if code_col else None,
+                name=display or None,
+                email=(raw.get(email_col) or "").strip() if email_col else None,
+                indexes=indexes,
+            )
             if emp is None or emp.status == "terminated":
-                raise ValueError("Unknown or terminated employee (check name / employee_code)")
-            on_date = date.fromisoformat((raw[field_map[date_key]] or "").strip()[:10])
-            cin = _parse_dt(raw[field_map[in_key]], on_date, tz)
+                raise ValueError(
+                    "Unknown employee — no match in the agent for this name/code. "
+                    "Use the employee code or full name already saved on Employees."
+                )
+            on_date = _parse_date_value(raw.get(date_col) or "", tz)
+            cin = _parse_dt(raw.get(in_col) or "", on_date, tz)
             cout = (
-                _parse_dt(raw[field_map[out_key]], on_date, tz)
-                if out_key and raw.get(field_map[out_key])
+                _parse_dt(raw.get(out_col) or "", on_date, tz)
+                if out_col and (raw.get(out_col) or "").strip()
                 else None
             )
             existing = (

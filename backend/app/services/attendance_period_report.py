@@ -45,7 +45,13 @@ from app.schemas.attendance import (
 )
 from app.schemas.common import AuthContext
 from app.services import audit_service
-from app.services.attendance_service import _company_tz, _holiday_dates, _parse_dt
+from app.services.attendance_service import (
+    _company_tz,
+    _holiday_dates,
+    _parse_dt,
+    build_employee_indexes,
+    match_employee,
+)
 
 LATE_AFTER = time(9, 40)
 HALF_DAY_AFTER = time(11, 30)
@@ -65,7 +71,18 @@ NAME_ALIASES = (
     "first & last",
     "first and last",
 )
-CODE_ALIASES = ("employee_code", "emp_code", "code", "employee id", "emp_id")
+CODE_ALIASES = (
+    "employee_code",
+    "emp_code",
+    "code",
+    "employee id",
+    "emp_id",
+    "emp id",
+    "staff id",
+    "id no",
+)
+LAST_NAME_ALIASES = ("last name", "surname", "last_name", "family name")
+EMAIL_ALIASES = ("email", "work_email", "email address", "e-mail")
 DATE_ALIASES = ("date", "attendance_date", "day", "punch_date")
 IN_ALIASES = (
     "check_in",
@@ -235,14 +252,6 @@ def _parse_date_value(raw: str, tz: ZoneInfo) -> date:
     return dt.astimezone(tz).date()
 
 
-def _employee_indexes(db: Session) -> tuple[dict[str, Employee], dict[str, Employee]]:
-    """Match Excel → Employee by employee_code (ID) first, then full_name."""
-    emps = db.query(Employee).filter(Employee.status != "terminated").all()
-    by_name = {_norm_name(e.full_name): e for e in emps}
-    by_code = {(e.employee_code or "").strip().lower(): e for e in emps if e.employee_code}
-    return by_name, by_code
-
-
 def _tenure_months(joined: date | None, as_of: date) -> int:
     if joined is None or joined > as_of:
         return 0
@@ -311,7 +320,9 @@ def analyze_period_file(
     headers = list(rows[0].keys())
     field_map = {_norm_header(h): h for h in headers}
     name_col = _find_col(field_map, NAME_ALIASES)
+    last_col = _find_col(field_map, LAST_NAME_ALIASES)
     code_col = _find_col(field_map, CODE_ALIASES)
+    email_col = _find_col(field_map, EMAIL_ALIASES)
     date_col = _find_col(field_map, DATE_ALIASES)
     in_col = _find_col(field_map, IN_ALIASES)
     out_col = _find_col(field_map, OUT_ALIASES)
@@ -320,10 +331,10 @@ def analyze_period_file(
         raise ValidationFailed("Missing date column (e.g. Date)")
     if in_col is None:
         raise ValidationFailed("Missing First Punch / check-in column")
-    if name_col is None:
-        raise ValidationFailed("Missing First Name / name column")
+    if name_col is None and code_col is None:
+        raise ValidationFailed("Missing First Name / name or Employee ID column")
 
-    by_name, by_code = _employee_indexes(db)
+    indexes = build_employee_indexes(db)
     errors: list[ImportErrorRow] = []
     # person_key -> date -> first punch (check_out stored only for persist)
     punches: dict[str, dict[date, dict[str, datetime | None]]] = defaultdict(dict)
@@ -332,25 +343,19 @@ def analyze_period_file(
 
     for idx, raw in enumerate(rows, start=2):
         try:
-            display = (raw.get(name_col) or "").strip()
-            if not display:
-                raise ValueError("Missing name")
-            key = _norm_name(display)
-            if not key:
-                raise ValueError("Missing name")
-            display_names.setdefault(key, display)
+            first = (raw.get(name_col) or "").strip() if name_col else ""
+            last = (raw.get(last_col) or "").strip() if last_col else ""
+            display = " ".join(p for p in (first, last) if p)
+            code = (raw.get(code_col) or "").strip() if code_col else ""
+            email = (raw.get(email_col) or "").strip() if email_col else ""
+            if not display and not code:
+                raise ValueError("Missing name and employee id")
 
-            # Prefer Excel Employee ID → employee_code, then full_name
-            if key not in linked_employee:
-                emp: Employee | None = None
-                if code_col:
-                    code = (raw.get(code_col) or "").strip().lower()
-                    if code and code not in ("employee id", "emp_id"):
-                        emp = by_code.get(code)
-                if emp is None:
-                    emp = by_name.get(key)
-                if emp is not None:
-                    linked_employee[key] = emp
+            emp = match_employee(code=code, name=display or None, email=email or None, indexes=indexes)
+            key = f"id:{emp.id}" if emp is not None else f"name:{_norm_name(display or code)}"
+            display_names.setdefault(key, emp.full_name if emp is not None else display or code)
+            if emp is not None:
+                linked_employee[key] = emp
 
             on_date = _parse_date_value(raw.get(date_col) or "", tz)
             cin_raw = (raw.get(in_col) or "").strip()
@@ -410,7 +415,7 @@ def analyze_period_file(
 
     for key in roster_keys:
         display = display_names[key]
-        emp = linked_employee.get(key) or by_name.get(key)
+        emp = linked_employee.get(key)
         emp_punches = punches.get(key, {})
         late_events: list[LateEvent] = []
         half_day_dates: list[date] = []
@@ -544,6 +549,19 @@ def analyze_period_file(
                 overtime_dates=ot_dates,
             )
         )
+
+    for key in roster_keys:
+        if key not in linked_employee:
+            errors.append(
+                ImportErrorRow(
+                    row=0,
+                    message=(
+                        f"{display_names.get(key, key)} is in the Excel file but did not match "
+                        "an employee already in the agent — attendance was not saved for them. "
+                        "Check employee code / full name on the Employees page."
+                    ),
+                )
+            )
 
     if persist:
         db.flush()

@@ -1,14 +1,19 @@
+import { useState, type FormEvent } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { FormField } from "../../components/ui/FormField";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
 import { StatusBadge } from "../../components/ui/Badge";
 import { useAdminDashboard, useAuditLogs } from "../../hooks/useAdmin";
-import { useUsers } from "../../hooks/useUsers";
+import { useSetUserPassword, useUsers } from "../../hooks/useUsers";
 import { usePagination } from "../../hooks/usePagination";
+import { useAuth } from "../../hooks/useAuth";
 import { ApiError } from "../../api/client";
+import type { User } from "../../types/users";
 
 export function DashboardPage() {
   const dash = useAdminDashboard();
@@ -50,13 +55,104 @@ export function DashboardPage() {
 }
 
 export function UserManagementPage() {
-  const { page, pageSize, setPage, params } = usePagination();
+  const { hasPermission } = useAuth();
+  const canSetPassword = hasPermission("users", "write");
+  const { page, pageSize, setPage, params } = usePagination(1, 50);
   const users = useUsers(params);
+  const setPasswordMut = useSetUserPassword();
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [revealed, setRevealed] = useState<{
+    fullName: string;
+    loginIdentifier: string;
+    password: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSetPassword(e: FormEvent) {
+    e.preventDefault();
+    if (!resetUser) return;
+    setError(null);
+    try {
+      const res = await setPasswordMut.mutateAsync({
+        userId: resetUser.id,
+        password: newPassword,
+      });
+      setRevealed({
+        fullName: res.fullName,
+        loginIdentifier: res.loginIdentifier,
+        password: res.password,
+      });
+      setResetUser(null);
+      setNewPassword("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not set password");
+    }
+  }
 
   return (
     <>
       <PageHeader title="Users" breadcrumb="Admin / Users" />
-      <div className="page">
+      <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
+        <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+          Login IDs are shown below. Passwords are stored hashed and cannot be looked up — set a new
+          password to share with the user (staff log in with email; self-registered employees use
+          username + PIN).
+        </p>
+        {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+        {revealed ? (
+          <Card status="info">
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Share these credentials once</h2>
+            <p style={{ margin: 0 }}>
+              <strong>{revealed.fullName}</strong>
+            </p>
+            <p className="font-data" style={{ margin: "var(--space-2) 0 0" }}>
+              Login: {revealed.loginIdentifier}
+            </p>
+            <p className="font-data" style={{ margin: "var(--space-1) 0 0" }}>
+              Password / PIN: {revealed.password}
+            </p>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <Button type="button" variant="secondary" onClick={() => setRevealed(null)}>
+                Hide
+              </Button>
+            </div>
+          </Card>
+        ) : null}
+        {resetUser ? (
+          <Card>
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>
+              Set password for {resetUser.fullName}
+            </h2>
+            <form onSubmit={onSetPassword} style={{ display: "grid", gap: "var(--space-3)", maxWidth: 360 }}>
+              <FormField
+                label="New password or PIN"
+                type="text"
+                autoComplete="new-password"
+                minLength={4}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                hint="Self-service accounts use a 4–8 digit PIN. Staff accounts can use a longer password."
+              />
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                <Button type="submit" variant="primary" disabled={setPasswordMut.isPending}>
+                  Save password
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setResetUser(null);
+                    setNewPassword("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        ) : null}
         {users.isLoading ? <Spinner label="Loading users" /> : null}
         {users.isError ? (
           <EmptyState
@@ -66,19 +162,26 @@ export function UserManagementPage() {
         ) : null}
         {users.data ? (
           <>
-            <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-              Self-registered employee accounts appear here automatically after signup.
-            </p>
             {users.data.items.length === 0 ? (
               <EmptyState
                 title="No users yet"
                 description="When someone creates a personal account from the register page, they will show up in this list."
               />
             ) : (
-              <Table headers={["ID", "Name", "Username", "Department", "Roles", "Registered", "Active"]}>
+              <Table
+                headers={[
+                  "Name",
+                  "Username",
+                  "Email",
+                  "Login with",
+                  "Department",
+                  "Roles",
+                  "Active",
+                  "Password",
+                ]}
+              >
                 {users.data.items.map((u) => (
                   <tr key={u.id} data-status={u.isActive ? "positive" : "neutral"}>
-                    <td className="num">{u.id}</td>
                     <td>
                       {u.fullName}
                       {u.isSelfRegistered ? (
@@ -88,15 +191,23 @@ export function UserManagementPage() {
                       ) : null}
                     </td>
                     <td className="font-data">{u.username ?? "—"}</td>
+                    <td className="font-data">{u.email}</td>
+                    <td className="font-data">{u.loginIdentifier ?? u.username ?? u.email}</td>
                     <td>{u.departmentName ?? "—"}</td>
                     <td>{u.roles.length ? u.roles.join(", ") : "—"}</td>
-                    <td className="font-data">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
-                    </td>
                     <td>
                       <StatusBadge status={u.isActive ? "approved" : "draft"}>
                         {u.isActive ? "Active" : "Inactive"}
                       </StatusBadge>
+                    </td>
+                    <td>
+                      {canSetPassword ? (
+                        <Button type="button" variant="secondary" onClick={() => setResetUser(u)}>
+                          Set password
+                        </Button>
+                      ) : (
+                        <span style={{ color: "var(--color-text-muted)" }}>Hashed — not viewable</span>
+                      )}
                     </td>
                   </tr>
                 ))}

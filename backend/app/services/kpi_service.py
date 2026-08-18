@@ -1,9 +1,10 @@
 """KPI definitions, entries, rollups, period close — FEATURE_KPI.md."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session
@@ -25,6 +26,9 @@ from app.schemas.kpi import (
     GlobalKpiSummary,
     KpiAiSuggestRequest,
     KpiAiSuggestResponse,
+    KpiDailyPoint,
+    KpiDailySummary,
+    KpiWorkLogRead,
     KpiWorkSubmissionCreate,
     KpiDefinitionCreate,
     KpiDefinitionRead,
@@ -44,6 +48,8 @@ WORK_LOG_KPI_NAME = "Work submission"
 WORK_LOG_TARGET = Decimal("10")
 WORK_ENTRY_SEPARATOR = "\n\n---\n\n"
 SELF_SERVICE_POINTS_PER_ENTRY = 1.0
+COMPANY_TZ = ZoneInfo("Asia/Karachi")
+SUNDAY = 6  # date.weekday(): Monday=0 … Sunday=6
 
 # (name, description, measurement_unit, target_value, weight) — each pack sums to 1.0
 KpiPackItem = tuple[str, str, str, Decimal, float]
@@ -184,6 +190,40 @@ def work_log_band(score: float) -> Band:
     if score >= 6.0:
         return "on_target"
     return "below_target"
+
+
+def company_today() -> date:
+    return datetime.now(COMPANY_TZ).date()
+
+
+def is_sunday(day: date) -> bool:
+    return day.weekday() == SUNDAY
+
+
+def is_workday(day: date) -> bool:
+    return not is_sunday(day)
+
+
+def _employee_on_date(emp: Employee, day: date) -> bool:
+    joined = emp.date_joined or day
+    if joined > day:
+        return False
+    if emp.date_exited is not None and emp.date_exited < day:
+        return False
+    return True
+
+
+def _workdays_in_range(period_start: date, period_end: date, *, through: date | None = None) -> list[date]:
+    """Mon–Sat only, never future days (through defaults to company today)."""
+    cap = through if through is not None else company_today()
+    end = min(period_end, cap)
+    days: list[date] = []
+    day = period_start
+    while day <= end:
+        if is_workday(day):
+            days.append(day)
+        day += timedelta(days=1)
+    return days
 
 
 def _is_work_log_definition(defn: KpiDefinition) -> bool:
@@ -635,9 +675,10 @@ def _ai_format_work_submission(
         payload = payload.model_copy(update={"department_id": emp.department_id})
 
     definition = _ensure_work_log_definition(db, emp.department_id)
-    existing = _work_log_entry(
-        db, emp_id, definition.id, payload.period_start, payload.period_end
-    )
+    work_day = company_today()
+    if is_sunday(work_day):
+        raise ValidationFailed("Sunday is not a workday — you can log again on Monday")
+    existing = _work_log_entry(db, emp_id, definition.id, work_day, work_day)
     current = float(existing.actual_value) if existing else 0.0
     headroom = max(0.0, float(WORK_LOG_TARGET) - current)
 
@@ -663,15 +704,15 @@ def _ai_format_work_submission(
 
     import google.generativeai as genai
 
-    prompt = f"""You help employees log work for a monthly KPI journal (0–10 rating scale, max 10).
+    prompt = f"""You help employees log work for a daily KPI journal (0–10 rating scale, max 10 per day).
 
 Employee's raw notes:
 ---
 {raw_text}
 ---
 
-Period: {payload.period_start} to {payload.period_end}
-Current period score: {current:.1f} / 10 (room to add up to {headroom:.1f} more points)
+Period: {work_day}
+Current score for this day: {current:.1f} / 10 (room to add up to {headroom:.1f} more points)
 
 Respond with STRICT JSON only:
 {{"formatted_work": "<clear professional bullet or paragraph summarizing accomplishments>", "points_to_add": <number 0.5–2.0>, "reasoning": "<short>"}}
@@ -723,13 +764,41 @@ def _work_log_entry(
     )
 
 
-def _split_work_items(notes: str | None) -> list[EmployeeWorkItem]:
-    if not notes:
+def _work_log_entries_in_range(
+    db: Session,
+    *,
+    employee_id: int | None,
+    department_id: int | None,
+    period_start: date,
+    period_end: date,
+) -> list[KpiEntry]:
+    q = (
+        db.query(KpiEntry)
+        .join(KpiDefinition, KpiDefinition.id == KpiEntry.kpi_definition_id)
+        .filter(
+            KpiDefinition.name == WORK_LOG_KPI_NAME,
+            KpiEntry.period_start >= period_start,
+            KpiEntry.period_start <= period_end,
+        )
+    )
+    if employee_id is not None:
+        q = q.filter(KpiEntry.employee_id == employee_id)
+    if department_id is not None:
+        q = q.filter(KpiDefinition.department_id == department_id)
+    return q.order_by(KpiEntry.period_start.desc(), KpiEntry.id.desc()).all()
+
+
+def _split_work_items(entry: KpiEntry) -> list[EmployeeWorkItem]:
+    notes = entry.notes or ""
+    chunks = [chunk.strip() for chunk in notes.split(WORK_ENTRY_SEPARATOR) if chunk.strip()]
+    if not chunks:
         return []
+    points = round(float(entry.actual_value or 0), 2)
+    share = round(points / len(chunks), 2) if chunks else points
+    work_date = entry.period_start
     return [
-        EmployeeWorkItem(text=chunk.strip())
-        for chunk in notes.split(WORK_ENTRY_SEPARATOR)
-        if chunk.strip()
+        EmployeeWorkItem(text=chunk, work_date=work_date, points=share)
+        for chunk in chunks
     ]
 
 
@@ -739,13 +808,34 @@ def _department_employee_summary(
     department_id: int,
     period_start: date,
     period_end: date,
+    *,
+    employee_name: str | None = None,
 ) -> DepartmentEmployeeKpiSummary:
-    definition = _ensure_work_log_definition(db, department_id)
-    entry = _work_log_entry(db, employee_id, definition.id, period_start, period_end)
-    contribution = round(float(entry.actual_value), 2) if entry else 0.0
-    work_items = _split_work_items(entry.notes if entry else None)
+    _ensure_work_log_definition(db, department_id)
+    emp = db.query(Employee).filter(Employee.id == employee_id).one_or_none()
+    name = employee_name or (emp.full_name if emp else f"Employee #{employee_id}")
+    entries = _work_log_entries_in_range(
+        db,
+        employee_id=employee_id,
+        department_id=department_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    work_items: list[EmployeeWorkItem] = []
+    by_day: dict[date, float] = {}
+    for entry in entries:
+        work_items.extend(_split_work_items(entry))
+        by_day[entry.period_start] = by_day.get(entry.period_start, 0.0) + float(entry.actual_value or 0)
+    workdays = [
+        day
+        for day in _workdays_in_range(period_start, period_end)
+        if emp is None or _employee_on_date(emp, day)
+    ]
+    daily = [min(by_day.get(day, 0.0), float(WORK_LOG_TARGET)) for day in workdays]
+    contribution = round(sum(daily) / len(daily), 2) if daily else 0.0
     return DepartmentEmployeeKpiSummary(
         employee_id=employee_id,
+        employee_name=name,
         submission_count=len(work_items),
         contribution_score=contribution,
         band=work_log_band(contribution),
@@ -753,10 +843,18 @@ def _department_employee_summary(
     )
 
 
+def _resolve_work_date(payload: KpiWorkSubmissionCreate) -> date:
+    if payload.work_date is not None:
+        return payload.work_date
+    if payload.period_start is not None:
+        return payload.period_start
+    return company_today()
+
+
 def create_work_submission(
     db: Session, auth: AuthContext, payload: KpiWorkSubmissionCreate
 ) -> KpiEntry:
-    """Self-service: append formatted work and increment period score (max 10)."""
+    """Self-service: append formatted work for a calendar day (max 10 that day)."""
     if not is_self_service(auth):
         raise PermissionDenied("Work submissions are for employee self-service only")
     emp_id = auth.linked_employee_id
@@ -766,17 +864,19 @@ def create_work_submission(
     emp = db.query(Employee).filter(Employee.id == emp_id).one_or_none()
     if emp is None:
         raise EntityNotFound("Employee not found")
-    if payload.period_end < payload.period_start:
-        raise ValidationFailed("period_end must be on or after period_start")
 
+    work_date = _resolve_work_date(payload)
+    today = company_today()
+    if is_sunday(today):
+        raise ValidationFailed("Sunday is not a workday — you can log again on Monday")
+    if work_date != today:
+        raise ValidationFailed("You can only log work for today — past and future dates are not allowed")
     work_text = (payload.formatted_work or payload.work_text).strip()
     if not work_text:
         raise ValidationFailed("Work description is required")
 
     definition = _ensure_work_log_definition(db, emp.department_id)
-    existing = _work_log_entry(
-        db, emp_id, definition.id, payload.period_start, payload.period_end
-    )
+    existing = _work_log_entry(db, emp_id, definition.id, work_date, work_date)
     points = (
         float(payload.points_to_add)
         if payload.points_to_add is not None
@@ -814,8 +914,8 @@ def create_work_submission(
     row = KpiEntry(
         kpi_definition_id=definition.id,
         employee_id=emp_id,
-        period_start=payload.period_start,
-        period_end=payload.period_end,
+        period_start=work_date,
+        period_end=work_date,
         actual_value=Decimal(str(round(new_actual, 2))),
         score=round(new_actual, 2),
         recorded_by=auth.user_id,
@@ -834,6 +934,7 @@ def create_work_submission(
             "actual_value": str(row.actual_value),
             "score": row.score,
             "work_submission": True,
+            "work_date": work_date.isoformat(),
         },
     )
     return row
@@ -861,10 +962,12 @@ def list_entries(
         q = q.filter(KpiEntry.employee_id == employee_id)
     if department_id is not None:
         q = q.filter(KpiDefinition.department_id == department_id)
-    if period_start is not None:
-        q = q.filter(KpiEntry.period_start >= period_start)
-    if period_end is not None:
-        q = q.filter(KpiEntry.period_end <= period_end)
+    if period_start is not None and period_end is not None:
+        q = q.filter(KpiEntry.period_start <= period_end, KpiEntry.period_end >= period_start)
+    elif period_start is not None:
+        q = q.filter(KpiEntry.period_end >= period_start)
+    elif period_end is not None:
+        q = q.filter(KpiEntry.period_start <= period_end)
     total = q.count()
     rows = q.order_by(KpiEntry.period_start.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return PaginatedResponse(
@@ -1007,15 +1110,17 @@ def _department_summary_internal(
 
     eligible = _eligible_department_employees(db, department_id, period_start, period_end)
     employee_summaries = [
-        _department_employee_summary(db, e.id, department_id, period_start, period_end)
+        _department_employee_summary(
+            db, e.id, department_id, period_start, period_end, employee_name=e.full_name
+        )
         for e in eligible
     ]
     submitted = [s for s in employee_summaries if s.submission_count > 0]
     entries_expected = len(eligible)
     entries_recorded = len(submitted)
     overall = (
-        round(sum(s.contribution_score for s in submitted) / len(submitted), 2)
-        if submitted
+        round(sum(s.contribution_score for s in employee_summaries) / len(employee_summaries), 2)
+        if employee_summaries
         else 0.0
     )
     completeness = (entries_recorded / entries_expected) if entries_expected else 1.0
@@ -1031,6 +1136,139 @@ def _department_summary_internal(
         completeness=round(completeness, 4),
         employees=employee_summaries,
     )
+
+
+def _score_for_day(
+    db: Session,
+    *,
+    department_id: int,
+    day: date,
+) -> tuple[float, int]:
+    if is_sunday(day) or day > company_today():
+        return 0.0, 0
+    eligible = _eligible_department_employees(db, department_id, day, day)
+    if not eligible:
+        return 0.0, 0
+    entries = _work_log_entries_in_range(
+        db,
+        employee_id=None,
+        department_id=department_id,
+        period_start=day,
+        period_end=day,
+    )
+    by_emp: dict[int, float] = {}
+    for entry in entries:
+        by_emp[entry.employee_id] = by_emp.get(entry.employee_id, 0.0) + float(entry.actual_value or 0)
+    scores = [min(by_emp.get(emp.id, 0.0), float(WORK_LOG_TARGET)) for emp in eligible]
+    recorded = sum(1 for emp in eligible if emp.id in by_emp)
+    return round(sum(scores) / len(scores), 2), recorded
+
+
+def daily_kpi_summary(
+    db: Session,
+    period_start: date,
+    period_end: date,
+    *,
+    department_id: int | None = None,
+    auth: AuthContext | None = None,
+) -> KpiDailySummary:
+    if period_end < period_start:
+        raise ValidationFailed("period_end must be on or after period_start")
+    if auth is not None and is_self_service(auth):
+        raise PermissionDenied("Daily company rollups are for managers")
+    dept_name: str | None = None
+    if department_id is not None:
+        dept = db.query(Department).filter(Department.id == department_id).one_or_none()
+        if dept is None:
+            raise EntityNotFound(f"Department {department_id} not found")
+        dept_name = dept.name
+
+    days: list[KpiDailyPoint] = []
+    scored: list[float] = []
+    for day in _workdays_in_range(period_start, period_end):
+        if department_id is not None:
+            score, recorded = _score_for_day(db, department_id=department_id, day=day)
+        else:
+            dept_scores: list[float] = []
+            recorded = 0
+            for dept in db.query(Department).all():
+                d_score, d_recorded = _score_for_day(db, department_id=dept.id, day=day)
+                recorded += d_recorded
+                eligible = _eligible_department_employees(db, dept.id, day, day)
+                if eligible:
+                    dept_scores.append(d_score)
+            score = round(sum(dept_scores) / len(dept_scores), 2) if dept_scores else 0.0
+        scored.append(score)
+        days.append(
+            KpiDailyPoint(
+                date=day,
+                score=score,
+                band=work_log_band(score),
+                entries_recorded=recorded,
+            )
+        )
+
+    overall = round(sum(scored) / len(scored), 2) if scored else 0.0
+    return KpiDailySummary(
+        scope="department" if department_id is not None else "global",
+        department_id=department_id,
+        department_name=dept_name,
+        period_start=period_start,
+        period_end=period_end,
+        overall_score=overall,
+        band=work_log_band(overall),
+        days=days,
+    )
+
+
+def list_work_logs(
+    db: Session,
+    auth: AuthContext,
+    *,
+    department_id: int | None = None,
+    employee_id: int | None = None,
+    period_start: date,
+    period_end: date,
+) -> list[KpiWorkLogRead]:
+    if is_self_service(auth):
+        employee_id = auth.linked_employee_id
+    entries = _work_log_entries_in_range(
+        db,
+        employee_id=employee_id,
+        department_id=department_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    emp_ids = {e.employee_id for e in entries}
+    employees = {
+        e.id: e
+        for e in db.query(Employee).filter(Employee.id.in_(emp_ids)).all()
+    } if emp_ids else {}
+    dept_ids = {emp.department_id for emp in employees.values()}
+    depts = {
+        d.id: d.name
+        for d in db.query(Department).filter(Department.id.in_(dept_ids)).all()
+    } if dept_ids else {}
+    logs: list[KpiWorkLogRead] = []
+    for entry in entries:
+        emp = employees.get(entry.employee_id)
+        items = _split_work_items(entry)
+        for item in items:
+            logs.append(
+                KpiWorkLogRead(
+                    id=entry.id,
+                    employee_id=entry.employee_id,
+                    employee_name=emp.full_name if emp else f"Employee #{entry.employee_id}",
+                    department_id=emp.department_id if emp else 0,
+                    department_name=depts.get(emp.department_id, "—") if emp else "—",
+                    work_date=item.work_date or entry.period_start,
+                    text=item.text,
+                    points=item.points or float(entry.actual_value or 0),
+                    created_at=entry.created_at,
+                )
+            )
+    logs.sort(key=lambda row: (-row.work_date.toordinal(), row.employee_name.lower()))
+    return logs
 
 
 def global_kpi_summary(

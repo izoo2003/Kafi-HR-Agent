@@ -65,6 +65,8 @@ export interface KpiEntryUpdate {
 
 export interface EmployeeWorkItem {
   text: string;
+  workDate?: string | null;
+  points?: number | null;
 }
 
 export interface EmployeeKpiSummary {
@@ -83,6 +85,7 @@ export interface EmployeeKpiSummary {
 
 export interface DepartmentEmployeeKpiSummary {
   employeeId: number;
+  employeeName: string;
   submissionCount: number;
   contributionScore: number;
   band: KpiBand;
@@ -122,4 +125,34 @@ export interface GlobalKpiSummary {
   entriesExpected: number;
   completeness: number;
   departments: GlobalDepartmentKpiSummary[];
+}
+
+export interface KpiDailyPoint {
+  date: string;
+  score: number;
+  band: KpiBand;
+  entriesRecorded: number;
+}
+
+export interface KpiDailySummary {
+  scope: "global" | "department";
+  departmentId: number | null;
+  departmentName: string | null;
+  periodStart: string;
+  periodEnd: string;
+  overallScore: number;
+  band: KpiBand;
+  days: KpiDailyPoint[];
+}
+
+export interface KpiWorkLog {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  departmentId: number;
+  departmentName: string;
+  workDate: string;
+  text: string;
+  points: number;
+  createdAt: string;
 }

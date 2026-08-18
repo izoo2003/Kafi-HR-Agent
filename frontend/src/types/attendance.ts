@@ -11,6 +11,8 @@ export interface AttendanceRule {
 export interface AttendanceRecord {
   id: number;
   employeeId: number;
+  employeeName?: string | null;
+  employeeCode?: string | null;
   date: string;
   checkIn: string | null;
   checkOut: string | null;

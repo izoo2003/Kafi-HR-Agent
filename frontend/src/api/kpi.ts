@@ -4,12 +4,14 @@ import type {
   DepartmentKpiSummary,
   EmployeeKpiSummary,
   GlobalKpiSummary,
+  KpiDailySummary,
   KpiDefinition,
   KpiDefinitionCreate,
   KpiDefinitionUpdate,
   KpiEntry,
   KpiEntryCreate,
   KpiEntryUpdate,
+  KpiWorkLog,
 } from "../types/kpi";
 
 export function listKpiDefinitions(params?: {
@@ -82,6 +84,23 @@ export function getGlobalKpiSummary(
   });
 }
 
+export function getKpiDailySummary(params: {
+  periodStart: string;
+  periodEnd: string;
+  departmentId?: number;
+}): Promise<KpiDailySummary> {
+  return apiRequest<KpiDailySummary>("/kpi/daily-summary", { params });
+}
+
+export function listKpiWorkLogs(params: {
+  periodStart: string;
+  periodEnd: string;
+  departmentId?: number;
+  employeeId?: number;
+}): Promise<KpiWorkLog[]> {
+  return apiRequest<KpiWorkLog[]>("/kpi/work-logs", { params });
+}
+
 export function markKpiPeriodReviewed(
   departmentId: number,
   periodStart: string,
@@ -120,8 +139,9 @@ export function aiSuggestKpiEntry(payload: {
 }
 
 export function createKpiWorkSubmission(payload: {
-  periodStart: string;
-  periodEnd: string;
+  workDate?: string;
+  periodStart?: string;
+  periodEnd?: string;
   workText: string;
   formattedWork?: string;
   pointsToAdd?: number;

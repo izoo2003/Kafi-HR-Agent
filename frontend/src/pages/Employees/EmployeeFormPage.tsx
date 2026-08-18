@@ -230,6 +230,7 @@ export function EmployeeFormPage() {
 
   function buildPayload(): EmployeeUpdate {
     return {
+      employeeCode: form.employeeCode.trim(),
       fullName: form.fullName.trim(),
       departmentId: Number(form.departmentId),
       roleTitle: selectedDeptName || undefined,
@@ -619,8 +620,8 @@ export function EmployeeFormPage() {
                   value={form.employeeCode}
                   onChange={(e) => patchForm("employeeCode", e.target.value)}
                   required
-                  disabled={!isNew || readOnly}
-                  hint={!isNew ? "Code cannot be changed after create" : undefined}
+                  disabled={readOnly}
+                  hint="Must be unique. Used for attendance import matching."
                 />
                 <FormField
                   label="Full name"

@@ -16,6 +16,8 @@ from app.schemas.kpi import (
     GlobalKpiSummary,
     KpiAiSuggestRequest,
     KpiAiSuggestResponse,
+    KpiDailySummary,
+    KpiWorkLogRead,
     KpiWorkSubmissionCreate,
     KpiDefinitionCreate,
     KpiDefinitionRead,
@@ -182,6 +184,42 @@ def global_kpi_summary(
     period_end: date = Query(...),
 ) -> GlobalKpiSummary:
     return svc.global_kpi_summary(db, period_start, period_end, auth=auth)
+
+
+@router.get("/kpi/daily-summary", response_model=KpiDailySummary)
+def kpi_daily_summary(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    period_start: date = Query(...),
+    period_end: date = Query(...),
+    department_id: int | None = None,
+) -> KpiDailySummary:
+    return svc.daily_kpi_summary(
+        db,
+        period_start,
+        period_end,
+        department_id=department_id,
+        auth=auth,
+    )
+
+
+@router.get("/kpi/work-logs", response_model=list[KpiWorkLogRead])
+def kpi_work_logs(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    period_start: date = Query(...),
+    period_end: date = Query(...),
+    department_id: int | None = None,
+    employee_id: int | None = None,
+) -> list[KpiWorkLogRead]:
+    return svc.list_work_logs(
+        db,
+        auth,
+        department_id=department_id,
+        employee_id=employee_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
 
 
 @router.post(

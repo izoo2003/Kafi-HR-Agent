@@ -68,27 +68,36 @@ score = normalized * 100   (expressed as a percentage of target achievement)
 
 On Record actual, HR can describe work in a **Work done** textarea (especially when **Other / ad-hoc work** is selected). **Analyze with AI** calls Gemini (`GEMINI_API_KEY`) with `{ departmentId, employeeId, period, text }` and returns `{ kpiDefinitionId, actualValue, reasoning }` to prefill the form. The user must click **Save entry** — no auto-write. Without Gemini configured, a deterministic fallback maps to Other / ad-hoc with a rough count.
 
+### Work submissions (`POST /kpi/work-submissions`)
+
+Employees log work for **today only** (company timezone Asia/Karachi). Past and future dates are rejected. Sunday is not a workday (no logging; Sundays are omitted from daily score tables). Each workday is capped at 10 points. Multiple entries the same day append and add points until the cap. Employees who do not log on a workday count as **0**. Department score for a day is the average of all eligible employees (including zeros). Company score for a day is the average of departments that have eligible employees (including zeros). A month score averages workdays through today only — future days are not counted as 0 yet.
+
+### Admin dashboard filters
+
+| Scope | Grain | What admin sees |
+|---|---|---|
+| All departments | Month | Each workday’s company score (Mon–Sat; empty = 0; Sundays hidden) |
+| One department | Month | Each workday’s department score + every employee log |
+| All departments | Day | Each department’s score that day (missing employees = 0) + all logs |
+| One department | Day | Every employee log in that department that day |
+
+Default scope is **All departments** (no empty “select a department” gate). Click a day or a department row to drill in.
+
 ---
 
 ## 4. Rollups
 
 ### Employee-level (`GET /employees/{id}/kpi-summary`)
-```json
-{
-  "employee_id": 12,
-  "period_start": "2026-07-01",
-  "period_end": "2026-09-30",
-  "overall_score": 84.5,
-  "entries": [
-    { "kpi_definition_id": 3, "name": "Client Response Time", "target": 24, "actual": 20, "score": 100, "weight": 0.4 },
-    { "kpi_definition_id": 4, "name": "Ticket Resolution Rate", "target": 90, "actual": 78, "score": 76.7, "weight": 0.6 }
-  ]
-}
-```
-`overall_score` = weighted sum of entry scores using each `kpi_definition.weight`.
+Contribution score = average of that employee’s daily scores (days they logged). Also returns department and company scores for the same period, plus the work items.
 
 ### Department-level (`GET /departments/{id}/kpi-summary`)
-Average of employee `overall_score` values across the department for the period, plus a breakdown showing which KPIs are dragging the department average down — this is the view a department head or HR manager actually needs (not just an average, but "which KPI needs attention").
+Average of employee contribution scores among those who logged work in the period, plus each employee's work items. Completeness is `employees_who_logged / eligible_employees`.
+
+### Daily (`GET /kpi/daily-summary`)
+One score per calendar day for the company (omit `department_id`) or one department.
+
+### Work logs (`GET /kpi/work-logs`)
+Individual dated entries for admin drill-down. Self-service callers only receive their own logs.
 
 ---
 
@@ -101,8 +110,8 @@ Average of employee `overall_score` values across the department for the period,
 
 ## 6. Frontend Pages
 
-- `KpiDefinitionsPage` — per-department list for HR; self-service users see department KPIs plus their personal KPIs and can add their own.
-- `KpiDashboardPage` — department selector for HR; self-service users see only their own scores and can record actuals.
+- `KpiDefinitionsPage` — department KPI packs are seeded automatically; employees submit work from the dashboard rather than filling a criteria grid.
+- `KpiDashboardPage` — defaults to all departments. Month view shows a score per day (company-wide or one department). Optional day filter drills into department scores or employee logs. Self-service users log work for a chosen date and see their month/department/company scores.
 - App shell notification bell — polls unread in-app KPI reminders (~60s).
 
 ---

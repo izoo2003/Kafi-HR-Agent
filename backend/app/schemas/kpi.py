@@ -76,6 +76,8 @@ class KpiEntryRead(BaseModel):
 
 class EmployeeWorkItem(BaseModel):
     text: str
+    work_date: date | None = None
+    points: float | None = None
 
 
 class EmployeeKpiSummary(BaseModel):
@@ -94,6 +96,7 @@ class EmployeeKpiSummary(BaseModel):
 
 class DepartmentEmployeeKpiSummary(BaseModel):
     employee_id: int
+    employee_name: str
     submission_count: int
     contribution_score: float
     band: Literal["on_target", "at_risk", "below_target", "complete"]
@@ -135,6 +138,36 @@ class GlobalKpiSummary(BaseModel):
     departments: list[GlobalDepartmentKpiSummary]
 
 
+class KpiDailyPoint(BaseModel):
+    date: date
+    score: float
+    band: Literal["on_target", "at_risk", "below_target", "complete"]
+    entries_recorded: int
+
+
+class KpiDailySummary(BaseModel):
+    scope: Literal["global", "department"]
+    department_id: int | None = None
+    department_name: str | None = None
+    period_start: date
+    period_end: date
+    overall_score: float
+    band: Literal["on_target", "at_risk", "below_target", "complete"]
+    days: list[KpiDailyPoint]
+
+
+class KpiWorkLogRead(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    department_id: int
+    department_name: str
+    work_date: date
+    text: str
+    points: float
+    created_at: datetime
+
+
 class MarkPeriodReviewedRequest(BaseModel):
     period_start: date
     period_end: date
@@ -164,8 +197,9 @@ class KpiAiSuggestResponse(BaseModel):
 
 
 class KpiWorkSubmissionCreate(BaseModel):
-    period_start: date
-    period_end: date
+    work_date: date | None = None
+    period_start: date | None = None
+    period_end: date | None = None
     work_text: str = Field(min_length=3, max_length=8000)
     formatted_work: str | None = Field(default=None, max_length=8000)
     points_to_add: float | None = Field(default=None, ge=0, le=10)

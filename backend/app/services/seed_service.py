@@ -81,7 +81,10 @@ ROLE_MATRIX: dict[str, dict[str, str]] = {
         "employees": "none",
         "users": "none",
     },
-    "readonly_auditor": {m: "read" for m in MODULES},
+    "readonly_auditor": {
+        **{m: "read" for m in MODULES},
+        "attendance": "write",
+    },
 }
 
 ROLE_DESCRIPTIONS = {
@@ -91,7 +94,7 @@ ROLE_DESCRIPTIONS = {
     "department_head": "Department employees/KPI/attendance; approve leave for team",
     "recruiter": "Job descriptions & CV screening only",
     "employee": "Self-service: create account with username + PIN; own attendance and KPIs",
-    "readonly_auditor": "Read-only across all modules including audit logs",
+    "readonly_auditor": "Read-only across modules except attendance (can mark/import); includes audit logs",
 }
 
 

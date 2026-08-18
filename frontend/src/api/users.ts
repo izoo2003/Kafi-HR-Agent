@@ -11,3 +11,20 @@ export async function listUsers(
 export async function listRoles(): Promise<Role[]> {
   return apiRequest<Role[]>("/roles");
 }
+
+export async function setUserPassword(
+  userId: number,
+  password: string,
+): Promise<{
+  id: number;
+  fullName: string;
+  username: string | null;
+  email: string;
+  loginIdentifier: string;
+  password: string;
+}> {
+  return apiRequest(`/users/${userId}/set-password`, {
+    method: "POST",
+    body: { password },
+  });
+}

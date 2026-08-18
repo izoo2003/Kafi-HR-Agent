@@ -48,13 +48,27 @@ def ensure_self_service_schema(db: Session) -> None:
             )
         return
     if dialect == "postgresql":
-        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR"))
-        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
-        db.execute(
-            text(
-                "ALTER TABLE kpi_definitions ADD COLUMN IF NOT EXISTS owner_employee_id INTEGER"
+        def _has_column(table: str, column: str) -> bool:
+            return (
+                db.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = :t AND column_name = :c"
+                    ),
+                    {"t": table, "c": column},
+                ).scalar()
+                is not None
             )
-        )
+
+        if not _has_column("users", "username"):
+            db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR"))
+        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+        if not _has_column("kpi_definitions", "owner_employee_id"):
+            db.execute(
+                text(
+                    "ALTER TABLE kpi_definitions ADD COLUMN IF NOT EXISTS owner_employee_id INTEGER"
+                )
+            )
         db.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_kpi_definitions_owner_employee_id "

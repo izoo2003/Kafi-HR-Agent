@@ -103,8 +103,24 @@ def update_employee(
     db: Session, auth: AuthContext, employee_id: int, payload: EmployeeUpdate
 ) -> Employee:
     emp = get_employee(db, employee_id)
-    before = {"full_name": emp.full_name, "status": emp.status, "department_id": emp.department_id}
+    before = {
+        "employee_code": emp.employee_code,
+        "full_name": emp.full_name,
+        "status": emp.status,
+        "department_id": emp.department_id,
+    }
     data = payload.model_dump(exclude_unset=True)
+    if "employee_code" in data:
+        code = str(data["employee_code"]).strip()
+        data["employee_code"] = code
+        if code != emp.employee_code:
+            taken = (
+                db.query(Employee)
+                .filter(Employee.employee_code == code, Employee.id != employee_id)
+                .one_or_none()
+            )
+            if taken:
+                raise ConflictError(f"employee_code '{code}' already exists")
     if "department_id" in data or "role_title" in data:
         dept_id = data.get("department_id", emp.department_id)
         role = data.get("role_title", emp.role_title)

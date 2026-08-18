@@ -145,6 +145,7 @@ class EmployeeCreate(BaseModel):
 
 
 class EmployeeUpdate(BaseModel):
+    employee_code: str | None = Field(default=None, min_length=1, max_length=64)
     full_name: str | None = None
     department_id: int | None = None
     role_title: str | None = None

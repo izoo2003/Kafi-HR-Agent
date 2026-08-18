@@ -30,7 +30,7 @@ export function AttendanceRecordsPage() {
   const records = useAttendanceRecords(params);
   const employees = useEmployees({
     page: 1,
-    pageSize: 100,
+    pageSize: 500,
     status: "active",
     enabled: canWrite && !selfService,
   });
@@ -215,7 +215,15 @@ export function AttendanceRecordsPage() {
               {records.data.items.map((r) => (
                 <tr key={r.id} data-status={r.status}>
                   <td className="num">{r.date}</td>
-                  <td className="num">{r.employeeId}</td>
+                  <td>
+                    {r.employeeName ?? `Employee #${r.employeeId}`}
+                    {r.employeeCode ? (
+                      <span className="font-data" style={{ color: "var(--color-text-muted)" }}>
+                        {" "}
+                        ({r.employeeCode})
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="num">{r.checkIn ? new Date(r.checkIn).toLocaleTimeString() : "—"}</td>
                   <td className="num">{r.checkOut ? new Date(r.checkOut).toLocaleTimeString() : "—"}</td>
                   <td>

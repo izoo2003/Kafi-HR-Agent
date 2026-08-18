@@ -28,7 +28,8 @@
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/users` | List users (paginated, filterable by role/status) |
+| GET | `/users` | List users (paginated, filterable by role/status). Includes `username`, `email`, `login_identifier`. Stored passwords are never returned. |
+| POST | `/users/{id}/set-password` | Admin sets a new password/PIN; response includes the new password once so it can be shared |
 | POST | `/users` | Create user |
 | GET | `/users/{id}` | Get user detail |
 | PATCH | `/users/{id}` | Update user (name, active status) |
@@ -179,11 +180,15 @@
 | GET | `/kpi-entries` | List KPI entries (filter by employee, department, period) |
 | POST | `/kpi-entries` | Record actual value for an employee/period |
 | PATCH | `/kpi-entries/{id}` | Correct an entry |
-| GET | `/employees/{id}/kpi-summary` | Employee's KPI scores across a period |
-| GET | `/departments/{id}/kpi-summary` | Department-level rollup |
+| GET | `/employees/{id}/kpi-summary` | Employee's contribution + department/global scores for a period |
+| GET | `/departments/{id}/kpi-summary` | Department rollup with each employee's logs |
+| GET | `/kpi/global-summary` | Company rollup: score per department for a period |
+| GET | `/kpi/daily-summary` | Score per calendar day (`department_id` optional; omit = company-wide) |
+| GET | `/kpi/work-logs` | Individual work logs (`department_id`, `employee_id`, date range) |
+| POST | `/kpi/work-submissions` | Employee self-service: log work for a calendar day (max 10 points that day) |
 | POST | `/departments/{id}/kpi-period-reviewed` | Mark period reviewed; emits `hr_admin.kpi.period_closed` |
 | POST | `/departments/{id}/kpi-definitions/seed-defaults` | Idempotent default KPI pack (incl. Other / ad-hoc; weights sum to 1.0) |
-| POST | `/kpi/ai-suggest-entry` | Gemini maps free-text work → suggested `kpiDefinitionId` + `actualValue` (no write; user confirms Save) |
+| POST | `/kpi/ai-suggest-entry` | Gemini formats work text + suggested points (no write; user confirms Save) |
 
 ### Notifications (in-app)
 

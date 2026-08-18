@@ -52,11 +52,54 @@ export function useDepartmentKpiSummary(
   });
 }
 
-export function useGlobalKpiSummary(periodStart: string, periodEnd: string) {
+export function useGlobalKpiSummary(
+  periodStart: string,
+  periodEnd: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["kpi-global-summary", periodStart, periodEnd],
     queryFn: () => api.getGlobalKpiSummary(periodStart, periodEnd),
-    enabled: !!periodStart && !!periodEnd,
+    enabled: enabled && !!periodStart && !!periodEnd,
+  });
+}
+
+export function useKpiDailySummary(
+  periodStart: string,
+  periodEnd: string,
+  departmentId?: number | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["kpi-daily-summary", periodStart, periodEnd, departmentId ?? null],
+    queryFn: () =>
+      api.getKpiDailySummary({
+        periodStart,
+        periodEnd,
+        departmentId: departmentId ?? undefined,
+      }),
+    enabled: enabled && !!periodStart && !!periodEnd,
+  });
+}
+
+export function useKpiWorkLogs(params: {
+  periodStart: string;
+  periodEnd: string;
+  departmentId?: number | null;
+  employeeId?: number | null;
+  enabled?: boolean;
+}) {
+  const { periodStart, periodEnd, departmentId, employeeId, enabled = true } = params;
+  return useQuery({
+    queryKey: ["kpi-work-logs", periodStart, periodEnd, departmentId ?? null, employeeId ?? null],
+    queryFn: () =>
+      api.listKpiWorkLogs({
+        periodStart,
+        periodEnd,
+        departmentId: departmentId ?? undefined,
+        employeeId: employeeId ?? undefined,
+      }),
+    enabled: enabled && !!periodStart && !!periodEnd,
   });
 }
 
@@ -80,6 +123,8 @@ export function useCreateKpiEntry() {
       qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-emp-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-daily-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-work-logs"] });
       qc.invalidateQueries({ queryKey: ["kpi-entries"] });
     },
   });
@@ -123,6 +168,8 @@ export function useCreateKpiWorkSubmission() {
       qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-emp-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-daily-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-work-logs"] });
       qc.invalidateQueries({ queryKey: ["kpi-entries"] });
     },
   });

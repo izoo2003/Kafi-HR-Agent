@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserRead(BaseModel):
@@ -19,8 +19,22 @@ class UserRead(BaseModel):
     department_name: str | None = None
     linked_employee_id: int | None = None
     is_self_registered: bool = False
+    login_identifier: str | None = None
     last_login_at: datetime | None = None
     created_at: datetime | None = None
+
+
+class UserSetPassword(BaseModel):
+    password: str = Field(min_length=4, max_length=128)
+
+
+class UserPasswordSetResponse(BaseModel):
+    id: int
+    full_name: str
+    username: str | None
+    email: str
+    login_identifier: str
+    password: str
 
 
 class RoleRead(BaseModel):

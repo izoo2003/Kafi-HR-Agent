@@ -67,7 +67,7 @@ def list_employees(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     department_id: int | None = None,
     status: str | None = None,
 ) -> PaginatedResponse[EmployeeRead]:
