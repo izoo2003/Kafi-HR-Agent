@@ -15,6 +15,7 @@ import {
 } from "../../hooks/useJobDescriptions";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
+import { useAuth } from "../../hooks/useAuth";
 import { useState } from "react";
 import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 

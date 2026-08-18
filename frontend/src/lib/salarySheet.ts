@@ -150,7 +150,7 @@ export function draftFromResult(result: PayrollComputeResult): Record<number, Sh
 }
 
 export function applyAttendancePatch(
-  current: SheetDraft,
+  _current: SheetDraft,
   patch: Partial<SheetDraft>,
   monthDays: number,
 ): Partial<SheetDraft> {
