@@ -26,14 +26,25 @@ DOC_MIME_HINTS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/msword",
 }
+IMAGE_MIME_HINTS = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif",
+}
 
 
 def _is_cv_document_payload(doc: dict) -> bool:
     filename = (doc.get("filename") or "").lower()
     mime = (doc.get("mime_type") or "").lower()
-    if filename.endswith(".pdf") or filename.endswith(".docx"):
+    if filename.endswith((".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif")):
         return True
     if mime in DOC_MIME_HINTS or "pdf" in mime or "wordprocessingml" in mime:
+        return True
+    if mime in IMAGE_MIME_HINTS:
         return True
     return False
 
@@ -86,12 +97,19 @@ async def receive_webhook(
                 value = change.get("value") or {}
                 messages = value.get("messages") or []
                 for msg in messages:
-                    if msg.get("type") != "document":
+                    payload_doc = None
+                    if msg.get("type") == "document":
+                        payload_doc = msg.get("document") or {}
+                    elif msg.get("type") == "image":
+                        image = msg.get("image") or {}
+                        caption = (image.get("caption") or "").lower()
+                        # Don't queue casual photos — only images that look like a CV send.
+                        if not any(k in caption for k in ("cv", "resume", "curriculum", "apply", "job")):
+                            continue
+                        payload_doc = image
+                    if not payload_doc or not _is_cv_document_payload(payload_doc):
                         continue
-                    doc = msg.get("document") or {}
-                    if not _is_cv_document_payload(doc):
-                        continue
-                    media_id = doc.get("id")
+                    media_id = payload_doc.get("id")
                     wa_id = msg.get("id")
                     if not media_id or not wa_id:
                         continue
@@ -116,9 +134,9 @@ async def receive_webhook(
                         wa_message_id=wa_id,
                         from_phone=msg.get("from"),
                         media_id=media_id,
-                        filename=doc.get("filename"),
-                        mime_type=doc.get("mime_type"),
-                        caption=doc.get("caption"),
+                        filename=payload_doc.get("filename"),
+                        mime_type=payload_doc.get("mime_type"),
+                        caption=payload_doc.get("caption"),
                         status="pending",
                         received_at=received_at,
                     )

@@ -13,8 +13,10 @@ from app.schemas.common import AuthContext, MessageResponse, PaginatedResponse
 from app.schemas.kpi import (
     DepartmentKpiSummary,
     EmployeeKpiSummary,
+    GlobalKpiSummary,
     KpiAiSuggestRequest,
     KpiAiSuggestResponse,
+    KpiWorkSubmissionCreate,
     KpiDefinitionCreate,
     KpiDefinitionRead,
     KpiDefinitionUpdate,
@@ -33,12 +35,12 @@ router = APIRouter(tags=["kpi"])
 @router.get("/kpi-definitions", response_model=list[KpiDefinitionRead])
 def list_kpi_definitions(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
     department_id: int | None = None,
     include_archived: bool = False,
 ) -> list[KpiDefinitionRead]:
     rows = svc.list_definitions(
-        db, department_id=department_id, include_archived=include_archived
+        db, auth, department_id=department_id, include_archived=include_archived
     )
     return [KpiDefinitionRead.model_validate(r) for r in rows]
 
@@ -95,10 +97,19 @@ def kpi_ai_suggest_entry(
     return svc.ai_suggest_entry(db, auth, payload)
 
 
+@router.post("/kpi/work-submissions", response_model=KpiEntryRead, status_code=201)
+def create_kpi_work_submission(
+    payload: KpiWorkSubmissionCreate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+) -> KpiEntryRead:
+    return KpiEntryRead.model_validate(svc.create_work_submission(db, auth, payload))
+
+
 @router.get("/kpi-entries", response_model=PaginatedResponse[KpiEntryRead])
 def list_kpi_entries(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     employee_id: int | None = None,
@@ -108,6 +119,7 @@ def list_kpi_entries(
 ) -> PaginatedResponse[KpiEntryRead]:
     return svc.list_entries(
         db,
+        auth,
         page=page,
         page_size=page_size,
         employee_id=employee_id,
@@ -140,22 +152,36 @@ def patch_kpi_entry(
 def employee_kpi_summary(
     employee_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
     period_start: date = Query(...),
     period_end: date = Query(...),
 ) -> EmployeeKpiSummary:
-    return svc.employee_kpi_summary(db, employee_id, period_start, period_end)
+    return svc.employee_kpi_summary(
+        db, employee_id, period_start, period_end, auth=auth
+    )
 
 
 @router.get("/departments/{department_id}/kpi-summary", response_model=DepartmentKpiSummary)
 def department_kpi_summary(
     department_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
     period_start: date = Query(...),
     period_end: date = Query(...),
 ) -> DepartmentKpiSummary:
-    return svc.department_kpi_summary(db, department_id, period_start, period_end)
+    return svc.department_kpi_summary(
+        db, department_id, period_start, period_end, auth=auth
+    )
+
+
+@router.get("/kpi/global-summary", response_model=GlobalKpiSummary)
+def global_kpi_summary(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+    period_start: date = Query(...),
+    period_end: date = Query(...),
+) -> GlobalKpiSummary:
+    return svc.global_kpi_summary(db, period_start, period_end, auth=auth)
 
 
 @router.post(

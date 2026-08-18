@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -64,6 +64,35 @@ class SalaryAdvance(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
     amount_recovered: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class PayrollSheetAdjustment(Base, TimestampMixin):
+    """Per-employee monthly extras on the salary sheet (allowance, loan, advance, mode, remarks)."""
+
+    __tablename__ = "payroll_sheet_adjustments"
+    __table_args__ = (
+        UniqueConstraint(
+            "employee_id",
+            "period_month",
+            "period_year",
+            name="uq_payroll_sheet_employee_period",
+        ),
+    )
+
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
+    period_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    allowance_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    loan_deduction_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    advance_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    payment_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    days_present: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    days_absent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    days_late: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    days_half_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overtime_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    monthly_tax_override: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
 
 class TaxYear(Base, TimestampMixin):

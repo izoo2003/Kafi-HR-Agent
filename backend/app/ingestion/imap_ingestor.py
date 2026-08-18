@@ -13,14 +13,16 @@ import email.utils
 import imaplib
 import json
 import logging
+import os
 import re
 import socket
 import ssl
+import struct
 from email.message import Message
 from pathlib import Path
 
 from app.core.config import Settings
-from app.ingestion.cv_classifier import CV_EXTENSIONS, classify_cv_document
+from app.ingestion.cv_classifier import CV_EXTENSIONS, AttachmentCandidate, pick_cv_attachment
 from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 
 logger = logging.getLogger(__name__)
@@ -54,17 +56,180 @@ def _create_connection_ipv4(address: tuple[str, int], timeout: float | None) -> 
 
 
 class IMAP4_SSL_IPv4(imaplib.IMAP4_SSL):
-    """IMAP4_SSL that never tries AAAA / IPv6 first."""
+    """IMAP4_SSL that never tries AAAA / IPv6 first.
+
+    `tls_server_name` is the SNI / certificate hostname (mail.kafi-group.com)
+    when TCP connects to a different origin (MX / hosting IP) because the
+    public mail hostname is Cloudflare-proxied.
+    """
+
+    def __init__(
+        self,
+        host: str = "",
+        port: int = imaplib.IMAP4_SSL_PORT,
+        *,
+        timeout: float | None = None,
+        tls_server_name: str | None = None,
+    ):
+        self._tls_server_name = tls_server_name or host
+        super().__init__(host, port, timeout=timeout)
 
     def _create_socket(self, timeout):  # noqa: ANN001 — matches imaplib signature
         sock = _create_connection_ipv4((self.host, self.port), timeout)
         context = self.ssl_context if getattr(self, "ssl_context", None) else ssl.create_default_context()
-        return context.wrap_socket(sock, server_hostname=self.host)
+        return context.wrap_socket(sock, server_hostname=self._tls_server_name)
 
 
 class IMAP4_IPv4(imaplib.IMAP4):
     def _create_socket(self, timeout):  # noqa: ANN001
         return _create_connection_ipv4((self.host, self.port), timeout)
+
+
+def _ipv4_list(hostname: str) -> list[str]:
+    try:
+        infos = socket.getaddrinfo(hostname, 993, socket.AF_INET, socket.SOCK_STREAM)
+    except OSError:
+        return []
+    ips: list[str] = []
+    for *_, sockaddr in infos:
+        ip = sockaddr[0]
+        if ip not in ips:
+            ips.append(ip)
+    return ips
+
+
+def _is_cloudflare_ipv4(ip: str) -> bool:
+    """True when `ip` is in a published Cloudflare proxy range (orange-cloud)."""
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    if a == 104 and 16 <= b <= 31:
+        return True
+    if a == 172 and 64 <= b <= 71:
+        return True
+    if a == 188 and b == 114:
+        return True
+    if a == 162 and b == 158:
+        return True
+    if (a, b) in {(198, 41), (197, 234), (108, 162), (141, 101), (190, 93), (173, 245)}:
+        return True
+    return False
+
+
+def _decode_dns_name(msg: bytes, offset: int) -> tuple[str, int]:
+    labels: list[str] = []
+    jumped = False
+    end = offset
+    hops = 0
+    while hops < 20 and offset < len(msg):
+        hops += 1
+        length = msg[offset]
+        if length == 0:
+            if not jumped:
+                end = offset + 1
+            break
+        if length & 0xC0 == 0xC0:
+            if offset + 1 >= len(msg):
+                break
+            pointer = ((length & 0x3F) << 8) | msg[offset + 1]
+            if not jumped:
+                end = offset + 2
+            offset = pointer
+            jumped = True
+            continue
+        offset += 1
+        labels.append(msg[offset : offset + length].decode("ascii", "ignore"))
+        offset += length
+        if not jumped:
+            end = offset
+    return ".".join(labels), end
+
+
+def _lookup_mx(domain: str, dns_server: str = "8.8.8.8") -> str | None:
+    """Lowest-preference MX host via UDP DNS (stdlib only — no dnspython)."""
+    labels = domain.strip(".").encode("ascii", "ignore").split(b".")
+    if not labels or labels == [b""]:
+        return None
+    tid = int.from_bytes(os.urandom(2), "big")
+    query = struct.pack("!HHHHHH", tid, 0x0100, 1, 0, 0, 0)
+    for lab in labels:
+        query += bytes([len(lab)]) + lab
+    query += b"\x00" + struct.pack("!HH", 15, 1)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(5)
+    try:
+        sock.sendto(query, (dns_server, 53))
+        data, _ = sock.recvfrom(2048)
+    except OSError:
+        return None
+    finally:
+        sock.close()
+    if len(data) < 12:
+        return None
+    rtid, flags, qdcount, ancount, _ns, _ar = struct.unpack("!HHHHHH", data[:12])
+    if rtid != tid or (flags & 0x000F) != 0 or ancount == 0:
+        return None
+    offset = 12
+    for _ in range(qdcount):
+        _, offset = _decode_dns_name(data, offset)
+        offset += 4
+    best: tuple[int, str] | None = None
+    for _ in range(ancount):
+        _, offset = _decode_dns_name(data, offset)
+        if offset + 10 > len(data):
+            break
+        rtype, _cls, _ttl, rdlen = struct.unpack("!HHIH", data[offset : offset + 10])
+        offset += 10
+        rdata_abs = offset
+        offset += rdlen
+        if rtype != 15 or rdlen < 3:
+            continue
+        pref = struct.unpack("!H", data[rdata_abs : rdata_abs + 2])[0]
+        host, _ = _decode_dns_name(data, rdata_abs + 2)
+        host = host.rstrip(".")
+        if host and (best is None or pref < best[0]):
+            best = (pref, host)
+    return best[1] if best else None
+
+
+def _imap_endpoint(settings: Settings, named_host: str) -> tuple[str, str]:
+    """TCP host + TLS server name.
+
+    `mail.kafi-group.com` is orange-clouded at Cloudflare, which only proxies
+    HTTP — IMAP :993 to those IPs times out. Connect to the MX/origin instead
+    and keep the public hostname for SNI so the certificate matches.
+    """
+    override = (getattr(settings, "imap_connect_host", "") or "").strip()
+    sni = (getattr(settings, "imap_tls_server_name", "") or "").strip() or named_host
+    if override:
+        return override, sni
+    ips = _ipv4_list(named_host)
+    if ips and all(_is_cloudflare_ipv4(ip) for ip in ips):
+        domain = named_host
+        user = (settings.imap_user or "").strip()
+        if "@" in user:
+            domain = user.split("@", 1)[1]
+        elif named_host.lower().startswith("mail."):
+            domain = named_host[5:]
+        mx = _lookup_mx(domain)
+        if mx:
+            logger.warning(
+                "IMAP host %s is Cloudflare-proxied; connecting via MX %s (TLS SNI %s)",
+                named_host,
+                mx,
+                sni,
+            )
+            return mx, sni
+        raise TimeoutError(
+            f"{named_host} resolves only to Cloudflare proxy IPs; IMAP port 993 is not "
+            "proxied. Grey-cloud that DNS record, or set IMAP_CONNECT_HOST to the origin "
+            "mail server (MX hostname or hosting IP from SPF)."
+        )
+    return named_host, sni
 
 
 def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
@@ -90,16 +255,21 @@ def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
         return SourceFetchResult(source="webmail", configured=True, submissions=submissions)
     except TimeoutError as exc:
         logger.warning("IMAP connect timed out to %s:%s — %s", host, port, exc)
+        detail = str(exc).strip()
+        if "Cloudflare" in detail:
+            message = detail
+        else:
+            message = (
+                f"Webmail IMAP timed out connecting to {host}:{port}. "
+                "If this hostname is orange-clouded in Cloudflare, set IMAP_CONNECT_HOST "
+                "to the origin mail server (MX hostname or hosting IP) — IMAP is not "
+                "proxied on port 993."
+            )
         return SourceFetchResult(
             source="webmail",
             configured=True,
             submissions=[],
-            message=(
-                f"Webmail IMAP timed out connecting to {host}:{port}. "
-                "This network is likely blocking outbound IMAP (common on local ISP/firewall). "
-                "Use Sync CVs on the deployed Railway backend (or allow TCP 993), "
-                "not from a blocked local machine."
-            ),
+            message=message,
         )
     except OSError as exc:
         # Connection refused / unreachable / no IPv6 route
@@ -153,12 +323,15 @@ def _fetch(
 ) -> list[CvSubmission]:
     # Avoid hanging Sync for ~60s when the host blocks this network (common on local ISP/firewall).
     timeout_s = 20.0
+    connect_host, tls_name = _imap_endpoint(settings, host)
     # Force IPv4: mail.kafi-group.com has Cloudflare AAAA records; Railway often
     # cannot route IPv6 → "[Errno 101] Network is unreachable".
     if settings.imap_ssl:
-        client: imaplib.IMAP4 = IMAP4_SSL_IPv4(host, port, timeout=timeout_s)
+        client: imaplib.IMAP4 = IMAP4_SSL_IPv4(
+            connect_host, port, timeout=timeout_s, tls_server_name=tls_name
+        )
     else:
-        client = IMAP4_IPv4(host, port, timeout=timeout_s)
+        client = IMAP4_IPv4(connect_host, port, timeout=timeout_s)
 
     try:
         client.login(user, password)
@@ -216,15 +389,8 @@ def _fetch(
 def _message_to_submission(
     msg: Message, uid: str, settings: Settings
 ) -> CvSubmission | None:
-    filename, file_bytes = _first_cv_attachment(msg)
+    filename, file_bytes = _best_cv_attachment(msg, settings)
     if not file_bytes or not filename:
-        return None
-
-    classification = classify_cv_document(
-        filename=filename, content=file_bytes, settings=settings
-    )
-    if not classification.is_cv:
-        logger.info("IMAP uid %s skipped (not a CV): %s", uid, classification.reason)
         return None
 
     from_hdr = msg.get("From", "")
@@ -250,11 +416,15 @@ def _message_to_submission(
     )
 
 
-def _first_cv_attachment(msg: Message) -> tuple[str | None, bytes | None]:
+def _best_cv_attachment(msg: Message, settings: Settings) -> tuple[str | None, bytes | None]:
+    candidates: list[AttachmentCandidate] = []
     for part in msg.walk():
         if part.get_content_maintype() == "multipart":
             continue
         filename = part.get_filename()
+        disp = (part.get("Content-Disposition") or "").lower()
+        has_cid = bool(part.get("Content-ID"))
+        is_inline = disp.startswith("inline") or (has_cid and "attachment" not in disp)
         if not filename:
             continue
         filename = _decode_header(filename)
@@ -265,8 +435,8 @@ def _first_cv_attachment(msg: Message) -> tuple[str | None, bytes | None]:
         if not payload:
             continue
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
-        return safe, payload
-    return None, None
+        candidates.append(AttachmentCandidate(filename=safe, content=payload, is_inline=is_inline))
+    return pick_cv_attachment(candidates, settings, source="email")
 
 
 def _plain_body(msg: Message) -> str:

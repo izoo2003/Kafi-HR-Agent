@@ -50,6 +50,7 @@
   --status-kpi-on-target: var(--color-status-positive);
   --status-kpi-at-risk: var(--color-status-warning);
   --status-kpi-below-target: var(--color-status-critical);
+  --status-kpi-complete: var(--color-status-info);
 
   /* Typography */
   --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
@@ -170,7 +171,8 @@ textarea {
 [data-status="info"],
 [data-status="scored"],
 [data-status="on_leave"],
-[data-status="in_progress"] {
+[data-status="in_progress"],
+[data-status="complete"] {
   border-left-color: var(--color-status-info);
 }
 

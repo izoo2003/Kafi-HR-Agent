@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import get_current_user
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterOptionsResponse,
+    RegisterRequest,
+    TokenResponse,
+)
 from app.schemas.common import AuthContext, MessageResponse
 from app.services import auth_service
 
@@ -26,7 +32,8 @@ def login(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> TokenResponse:
-    return auth_service.login(db, body.email, body.password, ip_address=_client_ip(request))
+    identifier = (body.username or body.email or "").strip()
+    return auth_service.login(db, identifier, body.password, ip_address=_client_ip(request))
 
 
 @router.post("/login/form", response_model=TokenResponse, include_in_schema=False)
@@ -35,8 +42,22 @@ def login_form(
     db: Annotated[Session, Depends(get_db)],
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> TokenResponse:
-    """OAuth2 password form for Swagger Authorize button (username = email)."""
+    """OAuth2 password form for Swagger Authorize button (username or email)."""
     return auth_service.login(db, form.username, form.password, ip_address=_client_ip(request))
+
+
+@router.get("/register-options", response_model=RegisterOptionsResponse)
+def register_options(db: Annotated[Session, Depends(get_db)]) -> RegisterOptionsResponse:
+    return auth_service.list_register_options(db)
+
+
+@router.post("/register", response_model=TokenResponse, status_code=201)
+def register(
+    body: RegisterRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> TokenResponse:
+    return auth_service.register(db, body, ip_address=_client_ip(request))
 
 
 @router.post("/refresh", response_model=TokenResponse)

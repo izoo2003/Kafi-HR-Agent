@@ -1,9 +1,10 @@
-export type KpiBand = "on_target" | "at_risk" | "below_target";
+export type KpiBand = "on_target" | "at_risk" | "below_target" | "complete";
 export type KpiReviewPeriod = "monthly" | "quarterly" | "annual";
 
 export interface KpiDefinition {
   id: number;
   departmentId: number;
+  ownerEmployeeId: number | null;
   name: string;
   description: string | null;
   measurementUnit: string | null;
@@ -16,7 +17,7 @@ export interface KpiDefinition {
 }
 
 export interface KpiDefinitionCreate {
-  departmentId: number;
+  departmentId?: number;
   name: string;
   description?: string;
   measurementUnit?: string;
@@ -62,31 +63,30 @@ export interface KpiEntryUpdate {
   notes?: string | null;
 }
 
-export interface EmployeeKpiEntrySummary {
-  kpiDefinitionId: number;
-  name: string;
-  target: number;
-  actual: number;
-  score: number;
-  weight: number;
-  band: KpiBand;
+export interface EmployeeWorkItem {
+  text: string;
 }
 
 export interface EmployeeKpiSummary {
   employeeId: number;
+  departmentId: number;
   periodStart: string;
   periodEnd: string;
-  overallScore: number;
-  band: KpiBand;
-  entries: EmployeeKpiEntrySummary[];
+  submissionCount: number;
+  contributionScore: number;
+  departmentScore: number;
+  departmentBand: KpiBand;
+  globalScore: number;
+  globalBand: KpiBand;
+  workItems: EmployeeWorkItem[];
 }
 
-export interface DepartmentKpiBreakdown {
-  kpiDefinitionId: number;
-  name: string;
-  averageScore: number;
-  weight: number;
+export interface DepartmentEmployeeKpiSummary {
+  employeeId: number;
+  submissionCount: number;
+  contributionScore: number;
   band: KpiBand;
+  workItems: EmployeeWorkItem[];
 }
 
 export interface DepartmentKpiSummary {
@@ -98,6 +98,28 @@ export interface DepartmentKpiSummary {
   entriesRecorded: number;
   entriesExpected: number;
   completeness: number;
-  employees: EmployeeKpiSummary[];
-  kpiBreakdown: DepartmentKpiBreakdown[];
+  employees: DepartmentEmployeeKpiSummary[];
+}
+
+export interface GlobalDepartmentKpiSummary {
+  departmentId: number;
+  departmentName: string;
+  overallScore: number;
+  band: KpiBand;
+  entriesRecorded: number;
+  entriesExpected: number;
+  completeness: number;
+}
+
+export interface GlobalKpiSummary {
+  periodStart: string;
+  periodEnd: string;
+  overallScore: number;
+  band: KpiBand;
+  departmentsComplete: number;
+  departmentsExpected: number;
+  entriesRecorded: number;
+  entriesExpected: number;
+  completeness: number;
+  departments: GlobalDepartmentKpiSummary[];
 }

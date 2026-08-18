@@ -1,13 +1,39 @@
 """Audit logging — every write path should call log_action."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
+from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
 from app.schemas.common import AuthContext
+
+
+def _json_safe(value: Any) -> Any:
+    """Coerce values SQLAlchemy JSON columns cannot serialize (date, Decimal, …)."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    return str(value)
 
 
 def log_action(
@@ -26,8 +52,8 @@ def log_action(
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
-        before_state=before_state,
-        after_state=after_state,
+        before_state=_json_safe(before_state) if before_state is not None else None,
+        after_state=_json_safe(after_state) if after_state is not None else None,
         ip_address=ip_address,
         timestamp=datetime.now(UTC),
     )

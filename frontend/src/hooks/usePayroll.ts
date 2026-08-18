@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as payrollApi from "../api/payroll";
-import type { PayrollSalaryUpdate, TaxSlabInput, TaxYearCreate } from "../types/payroll";
+import type { PayrollSalaryUpdate, PayrollSheetAdjustmentsSave, TaxSlabInput, TaxYearCreate } from "../types/payroll";
 import type { PaginationParams } from "../types/common";
 
 export function usePayrollSalaries(params: PaginationParams = {}) {
@@ -69,5 +69,19 @@ export function usePayrollCompute(params: {
     queryKey: ["payroll-compute", params],
     queryFn: () => payrollApi.computePayroll(params!),
     enabled: Boolean(params?.taxYearId && params.periodMonth && params.periodYear),
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useSavePayrollSheet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: PayrollSheetAdjustmentsSave) =>
+      payrollApi.savePayrollSheetAdjustments(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["payroll-compute"] });
+      qc.invalidateQueries({ queryKey: ["payroll-salaries"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
   });
 }

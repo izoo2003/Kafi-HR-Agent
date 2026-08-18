@@ -29,6 +29,7 @@ export const KPI_STATUS_LABELS = {
   on_target: "On Target",
   at_risk: "At Risk",
   below_target: "Below Target",
+  complete: "Complete",
 } as const;
 
 export const LEAVE_STATUS_LABELS = {
@@ -36,3 +37,9 @@ export const LEAVE_STATUS_LABELS = {
   approved: "Approved",
   rejected: "Rejected",
 } as const;
+
+export const LINKEDIN_POST_STATUS_LABELS = {
+  posted: "Posted",
+  failed: "Not posted",
+} as const;
+

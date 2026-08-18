@@ -27,7 +27,7 @@ Steps 4–6 run as one pipeline call (`pipeline.run_cv_pipeline`) triggered auto
 
 - **Fields:** title, department, description text, requirements text, status (`draft`/`open`/`closed`), optional source file (Word/PDF upload used to pre-fill text, stored as-is).
 - **Export:** `/job-descriptions/{id}/export` generates a formatted Word or PDF using `reporting/word_export.py` / `pdf_export.py`, populated from the structured fields (not a re-upload of the original file) — so edits made in-app are reflected in the export.
-- **Status lifecycle:** `draft` → `open` (visible for CV intake) → `closed` (no new candidates accepted, existing candidates remain visible/scored).
+- **Status lifecycle:** `draft` → `open` (visible for CV intake; also publishes a LinkedIn feed post to every configured LinkedIn account) → `closed` (no new candidates accepted, existing candidates remain visible/scored). LinkedIn posting uses the same developer-app client id/secret and member/org tokens you already have — see §12.
 
 ---
 
@@ -173,7 +173,7 @@ uploaded → parsed → scored → (shortlisted | rejected) → hired
 - `CandidateListPage` (scoped to a job) — upload dropzone, table with status badges, score, rank.
 - `RankingPage` — ranked list view, score breakdown per candidate (bar per criterion, using the KPI-style score visual from `UI_DESIGN_SYSTEM.md` §4), shortlist/reject actions, export button.
 - `CandidateDetailPage` — parsed data review/edit, per-criterion score breakdown, manual review scoring UI, override action; renders an "Unassigned — pick a job" state with an inline assign control when `jobDescriptionId` is null (see §11).
-- `UnassignedCandidatesPage` — table of automatically-fetched candidates not yet matched to a job, with an inline "assign to job" action per row (see §11).
+- `UnassignedCandidatesPage` — table of automatically-fetched candidates not yet matched to a job, with **View CV** (original file preview) and an inline "assign to job" action per row (see §11).
 
 ---
 
@@ -190,21 +190,20 @@ uploaded → parsed → scored → (shortlisted | rejected) → hired
 Connects Job Descriptions and CV Screening end-to-end so HR doesn't manually upload every CV per role.
 
 ### Sources
-- **Webmail IMAP** (`hr@kafi-group.com` on `mail.kafi-group.com:993`) — primary email intake. Env: `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`. Sync pulls recent inbox messages with PDF/DOCX, runs the shared CV classifier, imports only real CVs (`source="webmail"`). Processed IMAP UIDs are tracked in `data/imap_processed_uids.json`.
-- **Outlook / Microsoft 365 Graph** (optional) — application auth (`MS_GRAPH_*`) when an Azure app is configured. Same CV classifier; categories `HR-Agent-Processed` / `HR-Agent-Skipped-NotCV`.
-- **WhatsApp** (Meta Cloud API, display number `+923330313511` / `03330313511`) — webhook queues PDF/DOCX; Sync downloads, classifies, imports (`source="whatsapp"`).
-- **Gmail** (optional) — Google Workspace only.
-- **Google Form** — Sheet + Drive upload rows.
+- **Webmail IMAP** (`hr@kafi-group.com` on `mail.kafi-group.com:993`) — primary email intake. Env: `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`. If the public hostname is Cloudflare-proxied (orange-cloud), Sync connects to the domain MX / `IMAP_CONNECT_HOST` and uses `IMAP_TLS_SERVER_NAME` (default `IMAP_HOST`) for TLS SNI. Sync pulls recent inbox messages with PDF/DOCX/TXT or images of a CV (JPG/PNG/WebP). The shared CV classifier keeps real resumes only (`source="webmail"`) and skips logos, signatures, banners, and inline email chrome. Processed IMAP UIDs are tracked in `data/imap_processed_uids.json`.
+- **Google Form** — linked responses Sheet + Drive upload rows (`source="google_form"`). Requires Google Sheets + Drive OAuth (or a service account that has been shared on the Sheet and the form-upload Drive folder).
+- **Outlook / Microsoft 365 Graph**, **WhatsApp**, **Gmail** — optional; off unless listed in `CV_SYNC_SOURCES` (default `webmail,google_form`).
 
 Each source is wrapped so missing credentials / API errors produce a clean per-source "not configured" / "fetch failed" result (`app/ingestion/cv_submission.py::SourceFetchResult`) — a sync never crashes because one source isn't set up yet.
 
 ### Trigger
-Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from configured sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against all currently **open** job descriptions.
+Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from configured sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against **all** job descriptions (open, draft, and closed).
 
 ### AI Matching (`app/scoring/cv_job_matcher.py`)
-- Primary: Gemini reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every open job's title/description/requirements and returns `{job_description_id, confidence, reasoning}` as strict JSON.
-- Fallback (no `GEMINI_API_KEY` configured): deterministic keyword overlap between the CV/position text and each job's title/requirements — capped confidence so it rarely crosses the auto-assign threshold without a strong signal, keeping the feature honestly "best-effort" without an AI key.
+- Primary: Gemini (`GEMINI_CV_MATCH_API_KEY`, falling back to `GEMINI_API_KEY`) reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every job's title/description/requirements and returns `{job_description_id, confidence, reasoning}` as strict JSON. Status does not block assignment — a fit for a draft or closed role is still assigned to that role.
+- Fallback (no match key configured): deterministic keyword overlap between the CV/position text and each job's title/requirements — capped confidence so it rarely crosses the auto-assign threshold without a strong signal, keeping the feature honestly "best-effort" without an AI key.
 - `cv_auto_match_min_confidence` (`system_config`-style setting, default `0.55`) is the auto-assign threshold: at or above it, the candidate is assigned to that job and the normal parse/score/rank pipeline runs immediately; below it, the candidate stays unassigned with `match_confidence`/`match_reasoning` recorded as a "best guess" for HR to see.
+- Pulling CVs from `hr@kafi-group.com` is IMAP (`IMAP_*` env vars). That fetch does **not** need a Gemini key. Gemini is only used after the file is downloaded, to route it to a job (and optionally to classify borderline mail attachments as CV vs not-CV via `GEMINI_API_KEY`).
 
 ### Unassigned Pool
 - `GET /candidates/unassigned` lists candidates with no job yet — surfaced via the `UnassignedCandidatesPage` and a badge/link on the CV Screening hub whenever the count is above zero.
@@ -221,22 +220,30 @@ Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`)
 **Webmail IMAP — `hr@kafi-group.com` (primary)**
 1. Host `mail.kafi-group.com`, IMAP port `993` (SSL), username `hr@kafi-group.com`.
 2. Set `IMAP_PASSWORD` to the mailbox password (local `.env` + Railway).
-3. Restart backend → **Sync CVs**.
+3. If `mail.*` is orange-clouded in Cloudflare, either grey-cloud it **or** set `IMAP_CONNECT_HOST` to the MX/origin host (Sync also auto-falls back to MX). Keep `IMAP_TLS_SERVER_NAME=mail.kafi-group.com`.
+4. Restart backend → **Sync CVs**.
 
-**Outlook Graph (optional Microsoft 365 app auth)**
-1. Azure app registration with application permission `Mail.Read` + admin consent.
-2. Set `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`.
+**Outlook Graph / WhatsApp / Gmail (optional — disabled by default)**
+Add the source name to `CV_SYNC_SOURCES` and set the matching credentials. Outlook: Azure app `Mail.Read`. WhatsApp: Meta Cloud API token + phone number ID. Gmail: Google Workspace OAuth.
 
-**WhatsApp (Meta Cloud API) — number `03330313511` / `+923330313511`**
-1. Reuse the existing Meta app; copy **Phone number ID**, permanent **access token**, **App secret**.
-2. Set env: `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` (any strong string you choose), `WHATSAPP_API_VERSION`.
-3. In Meta Developer Console → WhatsApp → Configuration → Webhook: callback URL  
-   `https://kafi-hr-agent.up.railway.app/api/v1/integrations/whatsapp/webhook`  
-   Verify token = `WHATSAPP_VERIFY_TOKEN`. Subscribe to **messages**.
-4. Send a test PDF/DOCX to the business number; confirm a `pending` row appears; click **Sync CVs**.
-
-**Google Form / optional Gmail**
-1. Create a Google Cloud OAuth client (Desktop app type); place the downloaded JSON at `backend/credentials/google_oauth_client.json` (gitignored).
-2. Run a sync once locally to complete interactive OAuth for Form/Gmail tokens if those sources are used.
+**Google Form**
+1. Create a Google Cloud OAuth client (Desktop app type); enable **Google Sheets API** and **Google Drive API**; place the downloaded JSON at `backend/credentials/google_oauth_client.json` (gitignored).
+2. From `backend/`: `python -m app.ingestion.authorize_google_form` — sign in as the account that owns the form / responses spreadsheet.
 3. Set `GOOGLE_FORM_RESPONSES_SHEET_ID` to the form's linked Sheet ID.
-4. For Gmail on Railway: paste minted token into `GOOGLE_OAUTH_TOKEN_JSON` (boot restore in `app/main.py`). Outlook Graph needs no token file — client secret in env is enough.
+4. On Railway: paste the client JSON into `GOOGLE_OAUTH_CLIENT_JSON` and the minted token into `GOOGLE_FORM_TOKEN_JSON` (boot restore in `app/main.py`). Alternative: `GOOGLE_SERVICE_ACCOUNT_JSON` plus sharing the Sheet and the form-upload Drive folder with that service account.
+
+---
+
+## 12. LinkedIn posting (when a job is set Open)
+
+When a job description is created as `open` or updated from another status to `open`, the UI asks which LinkedIn accounts should receive the post. HR can pick one, two, or all configured profiles (currently Khalid Paracha, Sadia Paracha, Adil Paracha). Only the selected accounts get an organic **feed post** (`app/services/linkedin_service.py`) with the title, a short description, and the Google Form apply URL. Choosing none still saves the job as Open without posting.
+
+This reuses the **same LinkedIn developer app** as a previous agent: `LINKEDIN_CLIENT_ID` + `LINKEDIN_CLIENT_SECRET` plus each account's `access_token` / `refresh_token`. Tokens are not locked to the old codebase.
+
+This is **not** LinkedIn Talent Solutions Job Posting API (paid job slots on linkedin.com/jobs). That product needs a LinkedIn partner contract. This integration posts to the member or company Page feed, which is what most existing “LinkedIn account” tokens already allow (`w_member_social` and/or `w_organization_social`).
+
+- Saving the job never fails because LinkedIn failed — errors are stored on `job_descriptions.linkedin_posts` and shown on the job detail page.
+- After a successful post the UI confirms which accounts published and links to each feed update (`post_url`, e.g. `https://www.linkedin.com/feed/update/urn:li:share:…`).
+- A successful post is not repeated on later edits. Failed accounts are retried the next time the job is saved while still `open`.
+- Refreshed tokens are persisted in `system_config` key `linkedin.accounts`.
+

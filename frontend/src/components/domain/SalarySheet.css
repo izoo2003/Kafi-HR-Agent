@@ -1,0 +1,125 @@
+.salary-sheet-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+}
+
+.salary-sheet {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.salary-sheet th,
+.salary-sheet td {
+  border: 1px solid var(--color-border-strong);
+  padding: 4px 6px;
+  font-size: var(--text-xs);
+  vertical-align: middle;
+}
+
+.salary-sheet__company {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-accent-hover);
+}
+
+.salary-sheet__month {
+  background: var(--color-accent-subtle);
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+.salary-sheet thead .salary-sheet__group,
+.salary-sheet thead .salary-sheet__sub {
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.salary-sheet tbody tr:hover {
+  background: var(--color-accent-subtle);
+}
+
+.salary-sheet .num {
+  font-family: var(--font-data);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.salary-sheet .ctr {
+  font-family: var(--font-data);
+  text-align: center;
+}
+
+.salary-sheet__hint {
+  font-size: 11px;
+  font-weight: var(--weight-regular);
+  color: var(--color-status-warning);
+  margin-top: 2px;
+}
+
+.salary-sheet__formula {
+  background: var(--color-surface-alt);
+}
+
+.salary-sheet__input {
+  width: 100%;
+  min-width: 72px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  text-align: right;
+  color: var(--color-text-primary);
+}
+
+.salary-sheet__input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+.salary-sheet__input--text {
+  text-align: left;
+  font-family: var(--font-ui);
+}
+
+.salary-sheet__net {
+  font-weight: var(--weight-semibold);
+  color: var(--color-status-positive);
+}
+
+.salary-sheet__total td {
+  background: var(--color-surface-alt);
+  font-weight: var(--weight-semibold);
+}
+
+.salary-sheet__signoff td {
+  border: none;
+  padding-top: var(--space-6);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.salary-sheet__signoff-line {
+  border-top: 1px solid var(--color-border-strong);
+  margin-top: var(--space-6);
+  padding-top: var(--space-2);
+  min-width: 140px;
+}

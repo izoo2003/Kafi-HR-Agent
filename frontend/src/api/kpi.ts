@@ -3,6 +3,7 @@ import type { PaginatedResponse } from "../types/common";
 import type {
   DepartmentKpiSummary,
   EmployeeKpiSummary,
+  GlobalKpiSummary,
   KpiDefinition,
   KpiDefinitionCreate,
   KpiDefinitionUpdate,
@@ -72,6 +73,15 @@ export function getDepartmentKpiSummary(
   });
 }
 
+export function getGlobalKpiSummary(
+  periodStart: string,
+  periodEnd: string,
+): Promise<GlobalKpiSummary> {
+  return apiRequest<GlobalKpiSummary>("/kpi/global-summary", {
+    params: { periodStart, periodEnd },
+  });
+}
+
 export function markKpiPeriodReviewed(
   departmentId: number,
   periodStart: string,
@@ -99,6 +109,22 @@ export function aiSuggestKpiEntry(payload: {
   periodStart: string;
   periodEnd: string;
   text: string;
-}): Promise<{ kpiDefinitionId: number; actualValue: number; reasoning: string }> {
+}): Promise<{
+  kpiDefinitionId?: number | null;
+  actualValue?: number | null;
+  formattedWork?: string | null;
+  pointsToAdd?: number | null;
+  reasoning: string;
+}> {
   return apiRequest("/kpi/ai-suggest-entry", { method: "POST", body: payload });
+}
+
+export function createKpiWorkSubmission(payload: {
+  periodStart: string;
+  periodEnd: string;
+  workText: string;
+  formattedWork?: string;
+  pointsToAdd?: number;
+}): Promise<KpiEntry> {
+  return apiRequest<KpiEntry>("/kpi/work-submissions", { method: "POST", body: payload });
 }

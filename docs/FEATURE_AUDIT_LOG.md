@@ -21,7 +21,7 @@ A non-exhaustive but representative list, drawn from every feature doc's callout
 | `user.role_assigned` / `user.role_removed` | `user` | |
 | `access_matrix.updated` | `agent_access_matrix` | before/after permission level |
 | `system_config.updated` | `system_config` | before/after value |
-| `job_description.created` / `.updated` / `.closed` | `job_description` | |
+| `job_description.created` / `.updated` / `.closed` | `job_description` | setting `open` also attempts LinkedIn feed posts |
 | `scoring_criteria.updated` | `scoring_criteria` | |
 | `candidate.score_override` | `candidate_score` | requires `reason`, before/after score |
 | `candidate.status_changed` | `candidate` | shortlisted/rejected/hired |
@@ -32,6 +32,8 @@ A non-exhaustive but representative list, drawn from every feature doc's callout
 | `payroll_run.approved` / `.paid` | `payroll_run` | |
 | `payslip.manual_adjustment` | `payslip` | requires reason, before/after |
 | `salary_advance.approved` | `salary_advance` | |
+| `payroll.salary_updated` | `employee` | base salary change |
+| `payroll.sheet_adjusted` | `payroll_sheet_adjustment` | monthly salary-sheet extras |
 | `kpi_definition.updated` | `kpi_definition` | |
 | `kpi_entry.recorded` / `.corrected` | `kpi_entry` | |
 | `kpi.period_marked_reviewed` | — | department + period |

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as empApi from "../api/employees";
+import { getRegisterOptions } from "../api/auth";
+import { ApiError } from "../api/client";
 import type {
   DepartmentCreate,
   EmployeeCreate,
@@ -10,8 +12,28 @@ import type {
 } from "../types/employees";
 import type { PaginationParams } from "../types/common";
 
-export function useDepartments() {
-  return useQuery({ queryKey: ["departments"], queryFn: () => empApi.listDepartments() });
+export function useDepartments(enabled = true) {
+  return useQuery({
+    queryKey: ["departments"],
+    queryFn: async () => {
+      try {
+        return await empApi.listDepartments();
+      } catch (err) {
+        if (!(err instanceof ApiError) || (err.status !== 403 && err.status !== 401)) {
+          throw err;
+        }
+        const res = await getRegisterOptions();
+        return (res.departments ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+          headEmployeeId: null,
+          createdAt: "",
+          updatedAt: "",
+        }));
+      }
+    },
+    enabled,
+  });
 }
 
 export function useCreateDepartment() {

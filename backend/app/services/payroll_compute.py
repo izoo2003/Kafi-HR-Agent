@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EntityNotFound, ValidationFailed
 from app.models.attendance import AttendanceRecord
-from app.models.employees import Employee
-from app.models.payroll import TaxSlab
+from app.models.employees import Department, Employee
+from app.models.payroll import PayrollSheetAdjustment, TaxSlab
 from app.models.system import SystemConfig
-from app.schemas.payroll import PayrollComputeResult, PayrollComputeRow
+from app.schemas.payroll import PayrollComputeResult, PayrollComputeRow, PayrollTaxSlabLite
 from app.services.attendance_service import _company_tz, _holiday_dates
 from app.services.tax_service import calculate_annual_tax, get_tax_year_read
 
@@ -71,6 +71,18 @@ def compute_payroll_for_month(
     if not slabs:
         raise ValidationFailed(f"Tax year '{tax_year.label}' has no slabs configured")
 
+    tax_slab_lites = [
+        PayrollTaxSlabLite(
+            sort_order=s.sort_order,
+            min_amount=s.min_amount,
+            max_amount=s.max_amount,
+            fixed_amount=s.fixed_amount,
+            rate_percent=s.rate_percent,
+            excess_over=s.excess_over,
+        )
+        for s in slabs
+    ]
+
     policy = _office_policy(db)
     late_after = _parse_hhmm(policy["late_after"], time(9, 40))
     half_after = _parse_hhmm(policy["half_day_after"], time(11, 30))
@@ -101,8 +113,24 @@ def compute_payroll_for_month(
             tax_year_id=tax_year.id,
             tax_year_label=tax_year.label,
             month_days=month_days,
+            lates_per_off=lates_per_off,
+            tax_slabs=tax_slab_lites,
             employees=[],
         )
+
+    dept_ids = {e.department_id for e in employees}
+    dept_names = {
+        d.id: d.name for d in db.query(Department).filter(Department.id.in_(dept_ids)).all()
+    }
+    adj_rows = (
+        db.query(PayrollSheetAdjustment)
+        .filter(
+            PayrollSheetAdjustment.period_month == period_month,
+            PayrollSheetAdjustment.period_year == period_year,
+        )
+        .all()
+    )
+    adjustments: dict[int, PayrollSheetAdjustment] = {a.employee_id: a for a in adj_rows}
 
     emp_ids = [e.id for e in employees]
     records = (
@@ -192,37 +220,74 @@ def compute_payroll_for_month(
         leave_allowance = monthly_leave if tenure_m >= leave_after_months else 0
         leave_used = min(leave_allowance, days_absent)
         absents_after_leave = max(0, days_absent - leave_used)
+        ot_days_final = ot_days
 
+        adj = adjustments.get(emp.id)
+        if adj is not None:
+            if adj.days_absent is not None:
+                absents_after_leave = max(0, adj.days_absent)
+                days_absent = absents_after_leave
+            if adj.days_late is not None:
+                days_late = max(0, adj.days_late)
+                late_off_days = days_late // lates_per_off
+            if adj.days_half_day is not None:
+                days_half = max(0, adj.days_half_day)
+            if adj.overtime_bonus_days is not None:
+                ot_days_final = max(0, adj.overtime_bonus_days)
+
+        days_present = (
+            adj.days_present
+            if adj is not None and adj.days_present is not None
+            else max(0, month_days - absents_after_leave)
+        )
+
+        overtime_amount = (Decimal(ot_days_final) * per_day).quantize(Decimal("0.01"))
+        allowance = Decimal(str(adj.allowance_amount)) if adj else Decimal("0")
+        loan = Decimal(str(adj.loan_deduction_amount)) if adj else Decimal("0")
+        advance = Decimal(str(adj.advance_amount)) if adj else Decimal("0")
+        late_deduction_amount = (Decimal(late_off_days) * per_day).quantize(Decimal("0.01"))
+        half_day_deduction = (Decimal(days_half) * per_day * Decimal("0.5")).quantize(Decimal("0.01"))
         attendance_deduction = (
-            Decimal(absents_after_leave) * per_day
-            + Decimal(late_off_days) * per_day
-            + Decimal(days_half) * per_day * Decimal("0.5")
+            Decimal(absents_after_leave) * per_day + late_deduction_amount + half_day_deduction
         ).quantize(Decimal("0.01"))
-        overtime_amount = (Decimal(ot_days) * per_day).quantize(Decimal("0.01"))
-        gross = (base - attendance_deduction + overtime_amount).quantize(Decimal("0.01"))
-        if gross < 0:
-            gross = Decimal("0")
-
-        annual_taxable = (gross * Decimal("12")).quantize(Decimal("0.01"))
+        gross_salary = (
+            per_day * Decimal(days_present) + allowance + overtime_amount
+        ).quantize(Decimal("0.01"))
+        annual_taxable = (gross_salary * Decimal("12")).quantize(Decimal("0.01"))
         annual_tax = calculate_annual_tax(annual_taxable, slabs)
         monthly_tax = (annual_tax / Decimal("12")).quantize(Decimal("0.01"))
-        net = (gross - monthly_tax).quantize(Decimal("0.01"))
-        if net < 0:
-            net = Decimal("0")
+        if adj is not None and adj.monthly_tax_override is not None:
+            monthly_tax = Decimal(str(adj.monthly_tax_override)).quantize(Decimal("0.01"))
+        net_payable = (
+            gross_salary
+            - late_deduction_amount
+            - loan
+            - half_day_deduction
+            - advance
+            - monthly_tax
+        ).quantize(Decimal("0.01"))
+        if net_payable < 0:
+            net_payable = Decimal("0")
+        gross = gross_salary
 
-        note = None
+        note = adj.remarks if adj and adj.remarks else None
         if not any(punches.values()):
-            note = "No attendance imported for this month — gross ≈ base (upload Excel period report first)"
+            note = note or (
+                "No attendance imported for this month — gross ≈ base (upload Excel period report first)"
+            )
         elif not emp_punches:
-            note = "No attendance rows for this employee in the selected month"
+            note = note or "No attendance rows for this employee in the selected month"
 
         rows.append(
             PayrollComputeRow(
                 employee_id=emp.id,
                 employee_code=emp.employee_code,
                 full_name=emp.full_name,
+                department_name=dept_names.get(emp.department_id),
+                role_title=emp.role_title or "",
                 base_salary=base,
                 per_day_rate=per_day,
+                days_present=days_present,
                 days_absent=days_absent,
                 days_late=days_late,
                 days_half_day=days_half,
@@ -230,14 +295,24 @@ def compute_payroll_for_month(
                 leave_allowance=leave_allowance,
                 leave_used=leave_used,
                 absents_after_leave=absents_after_leave,
-                overtime_bonus_days=ot_days,
+                overtime_bonus_days=ot_days_final,
                 attendance_deduction=attendance_deduction,
                 overtime_amount=overtime_amount,
+                late_deduction_amount=late_deduction_amount,
+                half_day_deduction=half_day_deduction,
+                allowance_amount=allowance,
+                loan_deduction_amount=loan,
+                advance_amount=advance,
+                payment_mode=(adj.payment_mode if adj and adj.payment_mode else "IBFT"),
+                remarks=adj.remarks if adj else None,
+                gross_salary=gross_salary,
                 gross_after_attendance=gross,
                 annual_taxable_income=annual_taxable,
                 annual_tax=annual_tax,
                 monthly_tax=monthly_tax,
-                net_salary=net,
+                net_salary=net_payable,
+                net_payable=net_payable,
+                tax_manual=bool(adj is not None and adj.monthly_tax_override is not None),
                 late_events=late_events,
                 notes=note,
             )
@@ -251,5 +326,7 @@ def compute_payroll_for_month(
         tax_year_id=tax_year.id,
         tax_year_label=tax_year.label,
         month_days=month_days,
+        lates_per_off=lates_per_off,
+        tax_slabs=tax_slab_lites,
         employees=rows,
     )

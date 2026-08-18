@@ -14,15 +14,23 @@ import { usePagination } from "../../hooks/usePagination";
 import { LEAVE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import { isSelfService } from "../../lib/selfService";
 
 export function LeaveRequestsPage() {
+  const { hasPermission, user } = useAuth();
+  const selfService = isSelfService(user);
+  const canApprove = hasPermission("attendance", "approve");
+  const canWrite = hasPermission("attendance", "write");
   const { page, pageSize, setPage, params } = usePagination();
   const leaves = useLeaveRequests(params);
-  const employees = useEmployees({ page: 1, pageSize: 100, status: "active" });
+  const employees = useEmployees({
+    page: 1,
+    pageSize: 100,
+    status: "active",
+    enabled: canWrite && !selfService,
+  });
   const create = useCreateLeave();
   const update = useUpdateLeave();
-  const { hasPermission } = useAuth();
-  const canApprove = hasPermission("attendance", "approve");
 
   const [form, setForm] = useState({
     employeeId: "",
@@ -64,6 +72,7 @@ export function LeaveRequestsPage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
 
+        {canWrite ? (
         <section className="card">
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Submit leave request</h2>
           <form
@@ -131,6 +140,7 @@ export function LeaveRequestsPage() {
             </div>
           </form>
         </section>
+        ) : null}
 
         {leaves.isLoading ? <Spinner /> : null}
         {leaves.data && leaves.data.items.length === 0 ? (

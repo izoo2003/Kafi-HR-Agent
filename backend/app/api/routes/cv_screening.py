@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -99,6 +101,25 @@ def get_candidate(
     _: Annotated[AuthContext, Depends(require_permission("cv_screening", "read"))],
 ) -> CandidateRead:
     return CandidateRead.model_validate(cv_service.get_candidate(db, candidate_id))
+
+
+@router.get("/candidates/{candidate_id}/cv")
+def download_candidate_cv(
+    candidate_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("cv_screening", "read"))],
+) -> Response:
+    path, mime, filename = cv_service.get_candidate_cv_file(db, candidate_id)
+    inline = mime.startswith("image/") or mime.startswith("text/") or mime == "application/pdf"
+    disposition = "inline" if inline else "attachment"
+    return FileResponse(
+        path,
+        media_type=mime.split(";")[0],
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(filename)}",
+            "Cache-Control": "private, max-age=60",
+        },
+    )
 
 
 @router.patch("/candidates/{candidate_id}", response_model=CandidateRead)

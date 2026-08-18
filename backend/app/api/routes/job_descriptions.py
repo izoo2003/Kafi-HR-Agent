@@ -16,6 +16,7 @@ from app.schemas.job_descriptions import (
     JobDescriptionUpdate,
     JobPostingAiDraftRequest,
     JobPostingAiDraftResult,
+    LinkedInAccountPublic,
     ScoringCriteriaCreate,
     ScoringCriteriaRead,
     ScoringCriteriaReplace,
@@ -60,6 +61,16 @@ def get_application_form(
     """Public Google Form URL used on job postings for CV / details submission."""
     url = (get_settings().google_form_url or "").strip() or None
     return {"application_form_url": url}
+
+
+@router.get("/job-descriptions/linkedin-accounts", response_model=list[LinkedInAccountPublic])
+def list_linkedin_accounts(
+    _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
+) -> list[LinkedInAccountPublic]:
+    """Configured LinkedIn profiles for the Open-job posting picker (no tokens)."""
+    from app.services.linkedin_service import list_public_accounts
+
+    return [LinkedInAccountPublic(**row) for row in list_public_accounts()]
 
 
 @router.post("/job-descriptions/ai-draft", response_model=JobPostingAiDraftResult)

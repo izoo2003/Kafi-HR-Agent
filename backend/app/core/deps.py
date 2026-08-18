@@ -47,10 +47,12 @@ def build_auth_context(db: Session, user: User, *, source: str = "standalone") -
     return AuthContext(
         user_id=user.id,
         email=user.email,
+        username=user.username,
         roles=role_names,
         agent_permissions=_resolve_permissions(db, role_ids),
         source=source if source in ("standalone", "orchestrator") else "standalone",
         linked_employee_id=employee.id if employee else None,
+        department_id=employee.department_id if employee else None,
     )
 
 

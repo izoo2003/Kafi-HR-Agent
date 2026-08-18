@@ -1,13 +1,42 @@
 """SQLAlchemy engine, session factory, and FastAPI get_db dependency."""
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
+from datetime import date, datetime, time
+from decimal import Decimal
+from enum import Enum
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import BASE_DIR, get_settings
+
+
+def _json_default(obj: Any) -> Any:
+    """Make date/Decimal/etc. safe for SQLAlchemy JSON columns."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, UUID):
+        return str(obj)
+    if hasattr(obj, "isoformat"):
+        return obj.isoformat()
+    return str(obj)
+
+
+def json_dumps(value: Any) -> str:
+    return json.dumps(value, default=_json_default)
 
 
 class Base(DeclarativeBase):
@@ -39,7 +68,12 @@ def get_engine() -> Engine:
         # Supabase pooler: keep pool small; avoid holding idle sessions
         engine_kwargs.update(pool_size=5, max_overflow=5, pool_recycle=280)
 
-    engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+    engine = create_engine(
+        url,
+        connect_args=connect_args,
+        json_serializer=json_dumps,
+        **engine_kwargs,
+    )
 
     if url.startswith("sqlite"):
 

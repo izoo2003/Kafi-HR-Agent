@@ -12,9 +12,11 @@ import {
   useJobDescription,
   useUploadCandidates,
 } from "../../hooks/useJobDescriptions";
+import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import type { Candidate } from "../../types/cvScreening";
 
 export function CandidateListPage() {
   const { id } = useParams();
@@ -28,6 +30,7 @@ export function CandidateListPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<Candidate | null>(null);
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -70,7 +73,7 @@ export function CandidateListPage() {
             <input
               ref={inputRef}
               type="file"
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp"
               multiple
               hidden
               onChange={(e) => onFiles(e.target.files)}
@@ -104,6 +107,9 @@ export function CandidateListPage() {
                   </StatusBadge>
                 </td>
                 <td style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+                  <Button variant="secondary" onClick={() => setPreview(c)}>
+                    View CV
+                  </Button>
                   <Link to={`/candidates/${c.id}`}>Detail</Link>
                   {canWrite ? (
                     <Button
@@ -120,6 +126,20 @@ export function CandidateListPage() {
           </Table>
         ) : null}
       </div>
+      {preview ? (
+        <CvPreviewModal
+          candidateId={preview.id}
+          candidateName={preview.fullName ?? `Candidate #${preview.id}`}
+          parsedText={
+            typeof preview.parsedData?.rawText === "string"
+              ? preview.parsedData.rawText
+              : typeof preview.parsedData?.raw_text === "string"
+                ? preview.parsedData.raw_text
+                : null
+          }
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </>
   );
 }

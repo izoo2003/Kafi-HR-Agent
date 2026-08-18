@@ -52,6 +52,14 @@ export function useDepartmentKpiSummary(
   });
 }
 
+export function useGlobalKpiSummary(periodStart: string, periodEnd: string) {
+  return useQuery({
+    queryKey: ["kpi-global-summary", periodStart, periodEnd],
+    queryFn: () => api.getGlobalKpiSummary(periodStart, periodEnd),
+    enabled: !!periodStart && !!periodEnd,
+  });
+}
+
 export function useEmployeeKpiSummary(
   employeeId: number | null,
   periodStart: string,
@@ -71,6 +79,7 @@ export function useCreateKpiEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-emp-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
       qc.invalidateQueries({ queryKey: ["kpi-entries"] });
     },
   });
@@ -81,7 +90,10 @@ export function useMarkKpiPeriodReviewed() {
   return useMutation({
     mutationFn: (args: { departmentId: number; periodStart: string; periodEnd: string }) =>
       api.markKpiPeriodReviewed(args.departmentId, args.periodStart, args.periodEnd),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
+    },
   });
 }
 
@@ -92,6 +104,7 @@ export function useSeedKpiDefaults() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kpi-definitions"] });
       qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
     },
   });
 }
@@ -99,5 +112,18 @@ export function useSeedKpiDefaults() {
 export function useAiSuggestKpiEntry() {
   return useMutation({
     mutationFn: api.aiSuggestKpiEntry,
+  });
+}
+
+export function useCreateKpiWorkSubmission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createKpiWorkSubmission,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kpi-dept-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-emp-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-global-summary"] });
+      qc.invalidateQueries({ queryKey: ["kpi-entries"] });
+    },
   });
 }

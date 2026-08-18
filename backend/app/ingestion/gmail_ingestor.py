@@ -16,6 +16,7 @@ import logging
 import re
 
 from app.core.config import Settings
+from app.ingestion.cv_classifier import CV_EXTENSIONS, AttachmentCandidate, pick_cv_attachment
 from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 from app.ingestion.google_auth import GoogleCredentialsNotConfigured, get_credentials
 
@@ -23,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 PROCESSED_LABEL = "HR-Agent-Processed"
-CV_EXTENSIONS = {".pdf", ".docx"}
 MAX_MESSAGES_PER_RUN = 20
 
 
@@ -44,7 +44,7 @@ def fetch_gmail_submissions(settings: Settings) -> SourceFetchResult:
     token_path = settings.resolved_path(settings.google_oauth_token_file)
 
     try:
-        creds = get_credentials(creds_path, token_path, SCOPES)
+        creds = get_credentials(creds_path, token_path, SCOPES, purpose="Gmail")
     except GoogleCredentialsNotConfigured as exc:
         return SourceFetchResult(
             source="gmail", configured=False, submissions=[], message=str(exc)
@@ -98,7 +98,7 @@ def _fetch_messages(service, settings: Settings, label_id: str) -> list[CvSubmis
         for msg_meta in response.get("messages", []):
             if processed >= MAX_MESSAGES_PER_RUN:
                 break
-            submission = _process_message(service, msg_meta["id"])
+            submission = _process_message(service, msg_meta["id"], settings)
             if submission:
                 submissions.append(submission)
             _mark_processed(service, msg_meta["id"], label_id)
@@ -114,14 +114,16 @@ def _mark_processed(service, message_id: str, label_id: str) -> None:
     ).execute()
 
 
-def _process_message(service, message_id: str) -> CvSubmission | None:
+def _process_message(service, message_id: str, settings: Settings) -> CvSubmission | None:
     message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     headers = {h["name"]: h["value"] for h in message["payload"].get("headers", [])}
     sender_name, sender_email = email.utils.parseaddr(headers.get("From", ""))
     subject = headers.get("Subject", "")
     body_text = _extract_body_text(message["payload"])
 
-    filename, cv_bytes = _download_first_cv_attachment(service, message_id, message["payload"])
+    filename, cv_bytes = _download_best_cv_attachment(
+        service, message_id, message["payload"], settings
+    )
     if cv_bytes is None:
         return None  # no usable CV attachment — skip, still gets labeled
 
@@ -139,9 +141,10 @@ def _process_message(service, message_id: str) -> CvSubmission | None:
     )
 
 
-def _download_first_cv_attachment(
-    service, message_id: str, payload: dict
+def _download_best_cv_attachment(
+    service, message_id: str, payload: dict, settings: Settings
 ) -> tuple[str | None, bytes | None]:
+    candidates: list[AttachmentCandidate] = []
     for part in _iter_parts(payload):
         filename = part.get("filename", "")
         if not filename:
@@ -149,6 +152,11 @@ def _download_first_cv_attachment(
         suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if suffix not in CV_EXTENSIONS:
             continue
+
+        headers = {h["name"].lower(): h["value"] for h in part.get("headers", []) or []}
+        disp = (headers.get("content-disposition") or "").lower()
+        has_cid = bool(headers.get("content-id"))
+        is_inline = disp.startswith("inline") or (has_cid and "attachment" not in disp)
 
         body = part.get("body", {})
         attachment_id = body.get("attachmentId")
@@ -169,9 +177,10 @@ def _download_first_cv_attachment(
 
         file_bytes = base64.urlsafe_b64decode(data)
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
-        return safe_name, file_bytes
-
-    return None, None
+        candidates.append(
+            AttachmentCandidate(filename=safe_name, content=file_bytes, is_inline=is_inline)
+        )
+    return pick_cv_attachment(candidates, settings, source="email")
 
 
 def _iter_parts(payload: dict):

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from urllib.parse import quote
 
 from app.core.db import get_db
-from app.core.deps import require_permission
+from app.core.deps import get_current_user, require_permission
 from app.core.exceptions import ValidationFailed
 from app.schemas.cnic import CnicVerificationResult
 from app.schemas.common import AuthContext, PaginatedResponse
@@ -35,8 +35,9 @@ router = APIRouter(tags=["employees"])
 @router.get("/departments", response_model=list[DepartmentRead])
 def list_departments(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
+    _: Annotated[AuthContext, Depends(get_current_user)],
 ) -> list[DepartmentRead]:
+    """Department names are needed for signup-adjacent screens (KPI/attendance self-service)."""
     return [DepartmentRead.model_validate(d) for d in department_service.list_departments(db)]
 
 

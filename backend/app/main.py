@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import api_router
+from app.ingestion.google_auth import restore_google_credential_files
 from app.core.config import get_settings
 from app.core.db import Base, get_engine, get_session_factory
 from app.core.exceptions import HrAdminAgentError
@@ -24,17 +25,8 @@ def _error_payload(code: str, message: str, details: dict | None = None) -> dict
 
 
 def _restore_google_oauth_token(settings) -> None:
-    """Ephemeral filesystems (Railway) lose credentials/*.json on redeploy. If a token was
-    minted once locally and pasted into GOOGLE_OAUTH_TOKEN_JSON, write it back so Gmail/Google
-    Form sync keeps working without a fresh interactive OAuth consent every deploy."""
-    if not settings.google_oauth_token_json:
-        return
-    token_path = settings.resolved_path(settings.google_oauth_token_file)
-    if token_path.exists():
-        return
-    token_path.parent.mkdir(parents=True, exist_ok=True)
-    token_path.write_text(settings.google_oauth_token_json, encoding="utf-8")
-    print(f"[startup] Restored Google OAuth token to {token_path}", flush=True)
+    """Ephemeral filesystems (Railway) lose credentials/*.json on redeploy."""
+    restore_google_credential_files(settings)
 
 
 @asynccontextmanager

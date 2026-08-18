@@ -61,8 +61,11 @@ export interface PayrollComputeRow {
   employeeId: number;
   employeeCode: string;
   fullName: string;
+  departmentName: string | null;
+  roleTitle: string;
   baseSalary: string | number;
   perDayRate: string | number;
+  daysPresent: number;
   daysAbsent: number;
   daysLate: number;
   daysHalfDay: number;
@@ -73,13 +76,32 @@ export interface PayrollComputeRow {
   overtimeBonusDays: number;
   attendanceDeduction: string | number;
   overtimeAmount: string | number;
+  lateDeductionAmount: string | number;
+  halfDayDeduction: string | number;
+  allowanceAmount: string | number;
+  loanDeductionAmount: string | number;
+  advanceAmount: string | number;
+  paymentMode: string | null;
+  remarks: string | null;
+  grossSalary: string | number;
   grossAfterAttendance: string | number;
   annualTaxableIncome: string | number;
   annualTax: string | number;
   monthlyTax: string | number;
   netSalary: string | number;
+  netPayable: string | number;
+  taxManual?: boolean;
   lateEvents: { date: string; checkInTime: string; note?: string }[];
   notes: string | null;
+}
+
+export interface PayrollTaxSlabLite {
+  sortOrder: number;
+  minAmount: string | number;
+  maxAmount: string | number | null;
+  fixedAmount: string | number;
+  ratePercent: string | number;
+  excessOver: string | number;
 }
 
 export interface PayrollComputeResult {
@@ -90,5 +112,30 @@ export interface PayrollComputeResult {
   taxYearId: number;
   taxYearLabel: string;
   monthDays: number;
+  latesPerOff: number;
+  companyName: string;
+  taxSlabs: PayrollTaxSlabLite[];
   employees: PayrollComputeRow[];
+}
+
+export interface PayrollSheetAdjustmentInput {
+  employeeId: number;
+  allowanceAmount: number;
+  loanDeductionAmount: number;
+  advanceAmount: number;
+  paymentMode: string | null;
+  remarks: string | null;
+  baseSalary?: number | null;
+  daysPresent?: number | null;
+  daysAbsent?: number | null;
+  daysLate?: number | null;
+  daysHalfDay?: number | null;
+  overtimeBonusDays?: number | null;
+  monthlyTaxOverride?: number | null;
+}
+
+export interface PayrollSheetAdjustmentsSave {
+  periodMonth: number;
+  periodYear: number;
+  items: PayrollSheetAdjustmentInput[];
 }

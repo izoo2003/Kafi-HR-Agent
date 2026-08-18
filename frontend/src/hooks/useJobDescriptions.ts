@@ -41,6 +41,13 @@ export function useApplicationFormUrl() {
   });
 }
 
+export function useLinkedInAccounts() {
+  return useQuery({
+    queryKey: ["job-descriptions", "linkedin-accounts"],
+    queryFn: () => jdApi.listLinkedInAccounts(),
+  });
+}
+
 export function useUpdateJobDescription(id: number) {
   const qc = useQueryClient();
   return useMutation({

@@ -10,16 +10,18 @@ Talks to the backend only via `/api/v1` (`VITE_API_BASE_URL`). Never imports bac
 
 ```
 src/
-  pages/{Module}/     # route pages
+  pages/{Module}/     # JobDescriptions, CvScreening, Attendance, Payroll, Kpi, Employees, AdminPanel, HrPolicies, Auth
   components/ui/      # Button, Table, Badge, Card, …
   components/layout/  # AppShell, RequirePermission
-  components/domain/  # HR-aware shared widgets (add as features land)
+  components/domain/  # SalarySheet, LinkedInPostResults, CvPreviewModal, …
   api/                # one file per backend module
   hooks/              # React Query wrappers
   context/            # AuthContext
   types/              # camelCase mirrors of backend schemas
   styles/tokens.css   # design tokens
   constants/          # status label vocabulary
+
+HR Policies (`/hr-policies`) is available to every signed-in user. Use **Copy all** in the page header to copy the full handbook text.
 ```
 
 ## Setup

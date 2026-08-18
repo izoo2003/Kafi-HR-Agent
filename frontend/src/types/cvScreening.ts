@@ -1,3 +1,18 @@
+export interface LinkedInAccount {
+  name: string;
+  label: string;
+}
+
+export interface LinkedInPostResult {
+  account: string;
+  label: string | null;
+  authorUrn: string | null;
+  postUrn: string | null;
+  postUrl: string | null;
+  postedAt: string | null;
+  error: string | null;
+}
+
 export interface JobDescription {
   id: number;
   title: string;
@@ -11,6 +26,7 @@ export interface JobDescription {
   updatedAt: string;
   applicantsCount: number;
   applicationFormUrl: string | null;
+  linkedinPosts: LinkedInPostResult[];
 }
 
 export interface JobDescriptionCreate {
@@ -19,6 +35,7 @@ export interface JobDescriptionCreate {
   descriptionText: string;
   requirementsText?: string;
   status?: "draft" | "open" | "closed";
+  linkedinAccountNames?: string[];
 }
 
 export interface JobPostingAiDraftRequest {

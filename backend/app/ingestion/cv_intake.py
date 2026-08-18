@@ -10,8 +10,11 @@ from app.core.config import get_settings
 from app.core.exceptions import ValidationFailed
 from app.models.cv_screening import Candidate
 
-ALLOWED_SUFFIXES = {".pdf", ".docx", ".txt"}
+from app.ingestion.cv_classifier import CV_EXTENSIONS
+
+ALLOWED_SUFFIXES = CV_EXTENSIONS
 MAX_BYTES = 10 * 1024 * 1024
+_TYPE_HINT = "PDF, DOCX, TXT, or an image of a CV (JPG/PNG/WebP)"
 
 
 def store_cv_upload(
@@ -25,7 +28,7 @@ def store_cv_upload(
 ) -> Candidate:
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
-        raise ValidationFailed("CV must be PDF, DOCX, or TXT")
+        raise ValidationFailed(f"CV must be {_TYPE_HINT}")
     if len(content) > MAX_BYTES:
         raise ValidationFailed("CV exceeds 10MB limit")
 
@@ -66,7 +69,7 @@ def store_fetched_cv(
     one bad CV doesn't fail the whole sync."""
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
-        raise ValidationFailed(f"CV '{filename}' must be PDF, DOCX, or TXT")
+        raise ValidationFailed(f"CV '{filename}' must be {_TYPE_HINT}")
     if len(content) > MAX_BYTES:
         raise ValidationFailed(f"CV '{filename}' exceeds 10MB limit")
 

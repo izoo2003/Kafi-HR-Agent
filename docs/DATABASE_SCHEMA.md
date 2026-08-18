@@ -12,8 +12,9 @@ Naming convention: `snake_case` table and column names, singular model class nam
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
-| email | TEXT UNIQUE NOT NULL | login identifier |
-| password_hash | TEXT NOT NULL | bcrypt/argon2 |
+| email | TEXT UNIQUE NOT NULL | login identifier (staff); self-registered accounts use `{username}@self.kafi-hr.local` |
+| username | TEXT UNIQUE NULL | self-service login identifier; null for staff who sign in with email |
+| password_hash | TEXT NOT NULL | bcrypt/argon2 of password or PIN |
 | full_name | TEXT NOT NULL | |
 | is_active | BOOLEAN DEFAULT TRUE | soft-disable instead of delete |
 | last_login_at | DATETIME NULL | |
@@ -153,6 +154,7 @@ Hiring **job postings** (open roles for CV screening). UI label: Job Postings. D
 | file_path | TEXT NULL | stored Word/PDF source |
 | status | TEXT | `draft`, `open`, `closed` |
 | created_by | INTEGER FK → users.id | |
+| linkedin_posts | JSON NULL | per-account results when posted (`account`, `author_urn`, `post_urn`, `post_url`, `posted_at`, `error`) |
 
 ### `scoring_criteria`
 Per-role CV scoring rubric (in-scope item 2).
@@ -300,6 +302,27 @@ One row per employee per payroll run.
 | net_pay | DECIMAL | computed |
 | generated_pdf_path | TEXT NULL | |
 
+### `payroll_sheet_adjustments`
+Monthly extras on the Kafi salary sheet (allowance, loan, advance, payment mode, remarks). Unique per employee per month.
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| period_month | INTEGER | 1–12 |
+| period_year | INTEGER | |
+| allowance_amount | DECIMAL DEFAULT 0 | |
+| loan_deduction_amount | DECIMAL DEFAULT 0 | |
+| advance_amount | DECIMAL DEFAULT 0 | |
+| payment_mode | TEXT NULL | e.g. `IBFT`, `CHQ`, `Cash` |
+| remarks | TEXT NULL | |
+| days_present | INTEGER NULL | salary-sheet override; NULL = use attendance |
+| days_absent | INTEGER NULL | unpaid absents override |
+| days_late | INTEGER NULL | late count override |
+| days_half_day | INTEGER NULL | half-day count override |
+| overtime_bonus_days | INTEGER NULL | OT days override |
+| monthly_tax_override | DECIMAL NULL | typed tax/other; NULL = slab formula |
+| UNIQUE (employee_id, period_month, period_year) | | |
+
 ### `deductions`
 | Column | Type | Notes |
 |---|---|---|
@@ -325,11 +348,12 @@ One row per employee per payroll run.
 ## 6. KPI
 
 ### `kpi_definitions`
-Per-department KPI definitions (in-scope item 5).
+Per-department KPI definitions (in-scope item 5). Personal/self-service KPIs set `owner_employee_id`.
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
 | department_id | INTEGER FK → departments.id | |
+| owner_employee_id | INTEGER FK → employees.id NULL | set for personal KPIs; NULL = department-owned |
 | name | TEXT NOT NULL | |
 | description | TEXT | |
 | measurement_unit | TEXT | e.g. `%`, `count`, `score_1_5` |

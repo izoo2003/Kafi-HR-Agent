@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
+import { LinkedInPostResults } from "../../components/domain/LinkedInPostResults";
 import { useDepartments } from "../../hooks/useEmployees";
 import {
   useApplicationFormUrl,
@@ -10,11 +11,12 @@ import {
   useCriteria,
   useGenerateJobPostingAiDraft,
   useJobDescription,
+  useLinkedInAccounts,
   useUpdateJobDescription,
 } from "../../hooks/useJobDescriptions";
 import { replaceCriteria as replaceCriteriaApi } from "../../api/jobDescriptions";
 import { ApiError } from "../../api/client";
-import type { ScoringCriteriaInput } from "../../types/cvScreening";
+import type { LinkedInPostResult, ScoringCriteriaInput } from "../../types/cvScreening";
 
 function skillRow(name = "", rating = 5): ScoringCriteriaInput {
   const skill = name.trim();
@@ -51,6 +53,7 @@ export function JobDescriptionFormPage() {
   const updateJob = useUpdateJobDescription(jobId);
   const aiDraft = useGenerateJobPostingAiDraft();
   const applicationForm = useApplicationFormUrl();
+  const linkedinAccounts = useLinkedInAccounts();
   const criteriaQ = useCriteria(jobId);
 
   const [title, setTitle] = useState("");
@@ -61,6 +64,11 @@ export function JobDescriptionFormPage() {
   const [skills, setSkills] = useState<ScoringCriteriaInput[]>([skillRow("", 5)]);
   const [error, setError] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+  const [linkedinPromptOpen, setLinkedinPromptOpen] = useState(false);
+  const [linkedinPhase, setLinkedinPhase] = useState<"pick" | "posting" | "result">("pick");
+  const [selectedLinkedin, setSelectedLinkedin] = useState<string[]>([]);
+  const [linkedinResults, setLinkedinResults] = useState<LinkedInPostResult[]>([]);
+  const [postedJobId, setPostedJobId] = useState<number | null>(null);
 
   const formUrl =
     applicationForm.data?.applicationFormUrl ||
@@ -112,6 +120,11 @@ export function JobDescriptionFormPage() {
   }, [existing.data]);
 
   useEffect(() => {
+    const names = (linkedinAccounts.data ?? []).map((a) => a.name);
+    if (names.length) setSelectedLinkedin(names);
+  }, [linkedinAccounts.data]);
+
+  useEffect(() => {
     if (!criteriaQ.data?.length) return;
     setSkills(
       criteriaQ.data.map((c) => skillRow(c.criterionName, toRating(Number(c.weight)))),
@@ -124,9 +137,10 @@ export function JobDescriptionFormPage() {
     setSkills(next);
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  async function saveJob(
+    linkedinAccountNames?: string[],
+    options?: { forceOpen?: boolean; showLinkedInResult?: boolean },
+  ) {
     const cleaned = skills
       .map((s) => skillRow(s.criterionName.trim(), toRating(Number(s.weight))))
       .filter((s) => s.criterionName.length > 0);
@@ -146,16 +160,57 @@ export function JobDescriptionFormPage() {
         departmentId: Number(departmentId),
         descriptionText: descriptionText.trim(),
         requirementsText: requirementsText.trim() || undefined,
-        status,
+        status: options?.forceOpen ? "open" : status,
+        linkedinAccountNames,
       };
       const job = isEdit
         ? await updateJob.mutateAsync(payload)
         : await createJob.mutateAsync(payload);
       await replaceCriteriaApi(job.id, cleaned);
+      if (options?.showLinkedInResult) {
+        setPostedJobId(job.id);
+        const selected = new Set(selectedLinkedin);
+        const rows = (job.linkedinPosts ?? []).filter((post) => selected.has(post.account));
+        setLinkedinResults(rows.length ? rows : (job.linkedinPosts ?? []));
+        setLinkedinPhase("result");
+        setLinkedinPromptOpen(true);
+        return;
+      }
       navigate(`/job-descriptions/${job.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Save failed");
+      if (options?.showLinkedInResult) {
+        setLinkedinPhase("pick");
+      }
     }
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    await saveJob();
+  }
+
+  async function onPostToLinkedIn() {
+    setError(null);
+    setAiMessage(null);
+    if (!title.trim() || !departmentId || !descriptionText.trim()) {
+      setError("Complete the job posting before posting to LinkedIn.");
+      return;
+    }
+    const accounts = linkedinAccounts.data ?? [];
+    if (accounts.length === 0) {
+      setError("No LinkedIn accounts are configured for posting.");
+      return;
+    }
+    setLinkedinPhase("pick");
+    setLinkedinPromptOpen(true);
+  }
+
+  function toggleLinkedinAccount(name: string) {
+    setSelectedLinkedin((current) =>
+      current.includes(name) ? current.filter((n) => n !== name) : [...current, name],
+    );
   }
 
   return (
@@ -275,6 +330,11 @@ export function JobDescriptionFormPage() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
+            <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+              Status controls visibility. LinkedIn posting is now triggered only by the separate
+              <strong> Post to LinkedIn </strong>
+              button.
+            </span>
           </label>
 
           <div>
@@ -330,11 +390,158 @@ export function JobDescriptionFormPage() {
             </Button>
           </div>
 
-          <Button type="submit" variant="primary">
-            Save Job Posting
-          </Button>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+            <Button type="submit" variant="primary">
+              Save Job Posting
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={createJob.isPending || updateJob.isPending || linkedinAccounts.isLoading}
+              onClick={onPostToLinkedIn}
+            >
+              Post to LinkedIn
+            </Button>
+          </div>
         </form>
       </div>
+      {linkedinPromptOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="linkedin-post-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(16, 24, 40, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--space-5)",
+            zIndex: 40,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 560,
+              width: "100%",
+              boxShadow: "0 8px 24px rgba(16,24,40,0.12)",
+              display: "grid",
+              gap: "var(--space-4)",
+            }}
+          >
+            {linkedinPhase === "posting" ? (
+              <>
+                <h2 id="linkedin-post-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
+                  Posting to LinkedIn
+                </h2>
+                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                  Publishing this job to the selected accounts. This can take a few seconds.
+                </p>
+              </>
+            ) : null}
+            {linkedinPhase === "result" ? (
+              <>
+                <h2 id="linkedin-post-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
+                  LinkedIn post confirmation
+                </h2>
+                {linkedinResults.length > 0 ? (
+                  <LinkedInPostResults posts={linkedinResults} />
+                ) : (
+                  <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                    The job was saved, but LinkedIn did not return post results. Open the job to retry.
+                  </p>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => navigate(`/job-descriptions/${postedJobId ?? jobId}`)}
+                  >
+                    View job posting
+                  </Button>
+                </div>
+              </>
+            ) : null}
+            {linkedinPhase === "pick" ? (
+              <>
+                <div>
+                  <h2 id="linkedin-post-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
+                    This will be posted on LinkedIn
+                  </h2>
+                  <p
+                    style={{
+                      margin: "var(--space-2) 0 0",
+                      color: "var(--color-text-secondary)",
+                      fontSize: "var(--text-sm)",
+                    }}
+                  >
+                    Select the accounts that should publish this job. Choose all three, or only the
+                    profiles you want.
+                  </p>
+                </div>
+                <div style={{ display: "grid", gap: "var(--space-3)" }}>
+                  {(linkedinAccounts.data ?? []).map((account) => (
+                    <label
+                      key={account.name}
+                      style={{
+                        display: "flex",
+                        gap: "var(--space-3)",
+                        alignItems: "center",
+                        padding: "var(--space-3)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: selectedLinkedin.includes(account.name)
+                          ? "var(--color-accent-subtle)"
+                          : "var(--color-surface)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedLinkedin.includes(account.name)}
+                        onChange={() => toggleLinkedinAccount(account.name)}
+                      />
+                      <span>{account.label}</span>
+                    </label>
+                  ))}
+                </div>
+                {selectedLinkedin.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--color-status-warning)", fontSize: "var(--text-sm)" }}>
+                    Select at least one account to post, or save without posting.
+                  </p>
+                ) : null}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+                  <Button type="button" variant="secondary" onClick={() => setLinkedinPromptOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={async () => {
+                      setLinkedinPromptOpen(false);
+                      await saveJob([]);
+                    }}
+                  >
+                    Save without posting
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={selectedLinkedin.length === 0 || createJob.isPending || updateJob.isPending}
+                    onClick={async () => {
+                      setLinkedinPhase("posting");
+                      await saveJob(selectedLinkedin, { forceOpen: true, showLinkedInResult: true });
+                    }}
+                  >
+                    Post to selected accounts
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

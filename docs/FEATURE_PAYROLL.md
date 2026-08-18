@@ -102,10 +102,21 @@ Per `AUTH_AND_RBAC.md`:
 
 ## 8. Frontend Pages
 
-- `PayrollRunListPage` — list of runs by period, status badges, "New Payroll Run" action.
+- `PayrollRunListPage` — employee name, base salary, and net salary for the selected month; **Edit Salary Sheets** opens the Excel-format calculator.
+- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month; **Download Excel** exports the same format.
 - `PayrollRunDetailPage` — all payslips in the run (table, net pay in `--font-data`), Generate/Submit/Approve/Mark Paid actions gated by permission, bulk export.
 - `PayslipDetailPage` — full breakdown matching the PDF layout, edit capability while still in draft/pending, download PDF button.
 - `SalaryAdvancesPage` — request/approve advances, recovery progress bar (reuse the KPI-style progress visual from `UI_DESIGN_SYSTEM.md`).
+
+Salary sheet net payable (matching the empty Excel format; cells recalculate live when edited):
+
+```
+per_day = base_salary / 30
+present + absent = 30  (editing one updates the other)
+late_off_days = floor(lates / 3)
+gross = per_day × present_days + allowance + (OT days × per_day)
+net_payable = gross − (late_off_days × per_day) − loan − (half_days × per_day × 0.5) − advance − monthly_tax
+```
 
 ---
 

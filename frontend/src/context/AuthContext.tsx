@@ -15,7 +15,13 @@ import type { AuthContextData, PermissionLevel } from "../types/common";
 type AuthState = {
   user: AuthContextData | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (payload: {
+    fullName: string;
+    username: string;
+    pin: string;
+    departmentId: number;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
   hasPermission: (moduleKey: string, minLevel: PermissionLevel) => boolean;
@@ -63,10 +69,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshMe]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await authApi.login(username, password);
     setUser(res.auth);
   }, []);
+
+  const register = useCallback(
+    async (payload: {
+      fullName: string;
+      username: string;
+      pin: string;
+      departmentId: number;
+    }) => {
+      const res = await authApi.register(payload);
+      setUser(res.auth);
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -88,8 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, refreshMe, hasPermission }),
-    [user, loading, login, logout, refreshMe, hasPermission],
+    () => ({ user, loading, login, register, logout, refreshMe, hasPermission }),
+    [user, loading, login, register, logout, refreshMe, hasPermission],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

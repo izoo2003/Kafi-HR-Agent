@@ -7,7 +7,12 @@ from typing import Any
 
 
 def _extract_text(path: Path) -> str:
+    from app.core.config import get_settings
+    from app.ingestion.cv_classifier import IMAGE_EXTENSIONS, extract_cv_text
+
     suffix = path.suffix.lower()
+    if suffix in IMAGE_EXTENSIONS:
+        return extract_cv_text(path.name, path.read_bytes(), get_settings())
     if suffix == ".pdf":
         import pdfplumber
 

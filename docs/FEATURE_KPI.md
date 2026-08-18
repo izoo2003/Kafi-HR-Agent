@@ -19,8 +19,8 @@
 
 ## 2. KPI Definitions
 
-- Scoped to a `department_id` — a KPI is always department-specific by design (per the in-scope spec: "KPI definitions per department"), not global or per-individual. If a specific employee needs an individual target different from their department's, that's a future extension (e.g. an optional `employee_id` override) — flag it if requested, don't build it speculatively now.
-- Fields: `name`, `description`, `measurement_unit` (`%`, `count`, `score_1_5`, or others as needed — keep as a free-text unit label rather than a rigid enum, since departments will have varied metrics), `target_value`, `weight` (contribution to an overall department/employee score, same weighting principle as CV scoring criteria — weights across a department's active KPIs should sum to 1.0; create/update reject sums over 1.0 so KPIs can be added incrementally, and recording actuals requires an exact 1.0 sum), `review_period` (`monthly`/`quarterly`/`annual`).
+- Scoped to a `department_id` — department KPIs are the HR-managed pack for a role. Self-service users may also create **personal** KPIs (`owner_employee_id` set to their employee id); those are excluded from department weight sums and rollups.
+- Fields: `name`, `description`, `measurement_unit` (`%`, `count`, `score_1_5`, or others as needed — keep as a free-text unit label rather than a rigid enum, since departments will have varied metrics), `target_value`, `weight` (contribution to an overall department/employee score, same weighting principle as CV scoring criteria — weights across a department's active KPIs should sum to 1.0; create/update reject sums over 1.0 so KPIs can be added incrementally, and recording actuals requires an exact 1.0 sum), `review_period` (`monthly`/`quarterly`/`annual`). Personal KPI weights are validated separately (must not exceed 1.0).
 
 ### Default KPI packs (`POST /departments/{id}/kpi-definitions/seed-defaults`)
 
@@ -101,8 +101,8 @@ Average of employee `overall_score` values across the department for the period,
 
 ## 6. Frontend Pages
 
-- `KpiDefinitionsPage` — per-department list, create/edit form with weight-sum validation (mirrors the CV scoring criteria builder pattern from `FEATURE_CV_SCREENING.md` §3 — reuse the same weight-validation component if practical), **Add default KPIs** when empty.
-- `KpiDashboardPage` — department selector, employee-level score table (status rail + badge per `UI_DESIGN_SYSTEM.md`), drill-down to an individual employee's KPI breakdown, Record actual form (always visible when a department is selected, with empty states for missing employees/definitions), AI suggest + Save entry, "mark period reviewed" action.
+- `KpiDefinitionsPage` — per-department list for HR; self-service users see department KPIs plus their personal KPIs and can add their own.
+- `KpiDashboardPage` — department selector for HR; self-service users see only their own scores and can record actuals.
 - App shell notification bell — polls unread in-app KPI reminders (~60s).
 
 ---

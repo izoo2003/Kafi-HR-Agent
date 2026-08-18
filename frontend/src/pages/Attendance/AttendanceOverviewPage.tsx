@@ -7,6 +7,8 @@ import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { useAttendanceRecords, useAttendanceSummary } from "../../hooks/useAttendance";
 import { useEmployees } from "../../hooks/useEmployees";
+import { useAuth } from "../../hooks/useAuth";
+import { isSelfService } from "../../lib/selfService";
 import { ATTENDANCE_STATUS_LABELS } from "../../constants/statusLabels";
 
 function monthRange(ym: string): { from: string; to: string } {
@@ -18,24 +20,35 @@ function monthRange(ym: string): { from: string; to: string } {
 }
 
 export function AttendanceOverviewPage() {
+  const { user, hasPermission } = useAuth();
+  const selfService = isSelfService(user);
+  const canWrite = hasPermission("attendance", "write");
   const now = new Date();
   const [month, setMonth] = useState(
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
   );
-  const [employeeId, setEmployeeId] = useState<number | "">("");
+  const [employeeId, setEmployeeId] = useState<number | "">(
+    selfService && user?.linkedEmployeeId ? user.linkedEmployeeId : "",
+  );
   const range = useMemo(() => monthRange(month), [month]);
-  const employees = useEmployees({ page: 1, pageSize: 100, status: "active" });
+  const employees = useEmployees({
+    page: 1,
+    pageSize: 100,
+    status: "active",
+    enabled: !selfService,
+  });
+  const scopedEmployeeId = selfService ? (user?.linkedEmployeeId ?? undefined) : employeeId === "" ? undefined : employeeId;
   const records = useAttendanceRecords({
     page: 1,
     pageSize: 200,
     dateFrom: range.from,
     dateTo: range.to,
-    employeeId: employeeId === "" ? undefined : employeeId,
+    employeeId: scopedEmployeeId,
   });
   const summary = useAttendanceSummary(
-    employeeId === ""
-      ? null
-      : { employeeId, periodStart: range.from, periodEnd: range.to },
+    scopedEmployeeId
+      ? { employeeId: scopedEmployeeId, periodStart: range.from, periodEnd: range.to }
+      : null,
   );
 
   const byDate = useMemo(() => {
@@ -70,15 +83,17 @@ export function AttendanceOverviewPage() {
   return (
     <>
       <PageHeader
-        title="Attendance Overview"
+        title={selfService ? "My attendance" : "Attendance Overview"}
         breadcrumb="Attendance"
         actions={
           <>
-            <Link to="/attendance/period-report">
-              <Button variant="primary">Excel period report</Button>
-            </Link>
+            {canWrite ? (
+              <Link to="/attendance/period-report">
+                <Button variant="primary">Excel period report</Button>
+              </Link>
+            ) : null}
             <Link to="/attendance/records">
-              <Button variant="secondary">Records & Import</Button>
+              <Button variant="secondary">{canWrite ? "Records & Import" : "Records"}</Button>
             </Link>
             <Link to="/attendance/leave-requests">
               <Button variant="primary">Leave Requests</Button>
@@ -97,6 +112,7 @@ export function AttendanceOverviewPage() {
               onChange={(e) => setMonth(e.target.value)}
             />
           </label>
+          {selfService ? null : (
           <label className="form-field">
             <span className="form-field__label">Employee (for summary)</span>
             <select
@@ -112,6 +128,7 @@ export function AttendanceOverviewPage() {
               ))}
             </select>
           </label>
+          )}
         </div>
 
         {summary.data ? (

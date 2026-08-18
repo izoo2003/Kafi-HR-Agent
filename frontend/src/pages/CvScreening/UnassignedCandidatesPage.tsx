@@ -15,6 +15,7 @@ import {
 } from "../../hooks/useJobDescriptions";
 import { usePagination } from "../../hooks/usePagination";
 import { ApiError } from "../../api/client";
+import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 import { useAuth } from "../../hooks/useAuth";
 import type { Candidate } from "../../types/cvScreening";
 
@@ -44,10 +45,18 @@ function AssignControl({ candidate }: { candidate: Candidate }) {
   }
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "grid",
+        gap: "var(--space-2)",
+        gridTemplateColumns: "minmax(180px, 1fr) auto",
+        alignItems: "center",
+        width: "100%",
+      }}
+    >
       <select
         className="form-field__input"
-        style={{ minWidth: 160 }}
+        style={{ minWidth: 0, width: "100%" }}
         value={jobId}
         onChange={(e) => setJobId(e.target.value)}
       >
@@ -62,7 +71,15 @@ function AssignControl({ candidate }: { candidate: Candidate }) {
         Assign
       </Button>
       {error ? (
-        <span style={{ color: "var(--color-status-critical)", fontSize: "var(--text-xs)" }}>{error}</span>
+        <span
+          style={{
+            color: "var(--color-status-critical)",
+            fontSize: "var(--text-xs)",
+            gridColumn: "1 / -1",
+          }}
+        >
+          {error}
+        </span>
       ) : null}
     </div>
   );
@@ -75,6 +92,7 @@ export function UnassignedCandidatesPage() {
   const unassigned = useUnassignedCandidates(params);
   const remove = useDeleteCandidate();
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Candidate | null>(null);
 
   async function handleDelete(candidate: Candidate) {
     const label = candidate.fullName?.trim() || `candidate #${candidate.id}`;
@@ -100,8 +118,8 @@ export function UnassignedCandidatesPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
-          CVs fetched from Webmail, Outlook, WhatsApp, Gmail, or the Google Form that could not be confidently
-          matched to an open job description. Assign each one to a role manually.
+          CVs fetched from HR webmail or the Google Form that could not be confidently
+          matched to an open job description. Open the CV, then assign the candidate to a role.
         </p>
 
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
@@ -149,13 +167,16 @@ export function UnassignedCandidatesPage() {
                   </td>
                   <td
                     style={{
-                      display: "flex",
+                      display: "grid",
                       gap: "var(--space-2)",
-                      flexWrap: "wrap",
-                      alignItems: "center",
+                      alignItems: "start",
+                      minWidth: 250,
                     }}
                   >
                     {canWrite ? <AssignControl candidate={c} /> : null}
+                    <Button variant="secondary" onClick={() => setPreview(c)}>
+                      View CV
+                    </Button>
                     {canWrite ? (
                       <Button
                         variant="destructive"
@@ -178,6 +199,20 @@ export function UnassignedCandidatesPage() {
           </>
         ) : null}
       </div>
+      {preview ? (
+        <CvPreviewModal
+          candidateId={preview.id}
+          candidateName={preview.fullName ?? `Candidate #${preview.id}`}
+          parsedText={
+            typeof preview.parsedData?.raw_text === "string"
+              ? preview.parsedData.raw_text
+              : typeof preview.parsedData?.rawText === "string"
+                ? preview.parsedData.rawText
+                : null
+          }
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </>
   );
 }

@@ -55,15 +55,34 @@ class Settings(BaseSettings):
     seed_admin_name: str = "System Admin"
 
     # --- Optional LLM ---
-    # CV screening / matching / evaluation
+    # CV parse/score/evaluation + optional mail CV-vs-not-CV classifier
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"
+    # Sync CVs: route a fetched CV to the best matching job (any status)
+    gemini_cv_match_api_key: str = ""
+    gemini_cv_match_model: str = "gemini-flash-latest"
     # CNIC image verification (falls back to gemini_api_key)
     gemini_cnic_api_key: str = ""
     gemini_cnic_model: str = "gemini-flash-latest"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
     gemini_job_posting_model: str = "gemini-flash-latest"
+
+    # LinkedIn feed post when a job description is set to Open (reuse the same
+    # developer app client id/secret + member tokens from a previous agent).
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_access_token: str = ""
+    linkedin_refresh_token: str = ""
+    linkedin_author_urn: str = ""  # urn:li:person:… or urn:li:organization:…
+    linkedin_account_1_label: str = ""
+    linkedin_account_2_access_token: str = ""
+    linkedin_account_2_label: str = ""
+    linkedin_account_3_access_token: str = ""
+    linkedin_account_3_label: str = ""
+    linkedin_organization_id: str = ""
+    linkedin_accounts_json: str = ""  # optional JSON list override
+    linkedin_api_version: str = ""  # blank = current YYYYMM (e.g. 202608)
 
     # --- Automated CV intake (FEATURE_CV_SCREENING.md §11) ---
     # All blank-safe: sync reports a source as "not configured" rather than failing.
@@ -90,14 +109,31 @@ class Settings(BaseSettings):
     # If set, written to google_oauth_token_file on boot when that file is missing —
     # lets a token minted once locally survive an ephemeral-filesystem redeploy (Railway).
     google_oauth_token_json: str = ""
+    google_oauth_client_json: str = ""
+    google_form_token_json: str = ""
+    google_service_account_json: str = ""
+    # Comma-separated CV sync sources. Default is the two live intake channels.
+    cv_sync_sources: str = "webmail,google_form"
     # HR webmail via IMAP (mail.kafi-group.com) — primary for hr@kafi-group.com
     imap_host: str = "mail.kafi-group.com"
     imap_port: int = 993
     imap_user: str = "hr@kafi-group.com"
     imap_password: str = ""
     imap_ssl: bool = True
+    # TCP target when imap_host is Cloudflare-proxied (IMAP cannot use orange-cloud DNS).
+    # Leave blank to auto-detect via MX of the mailbox domain.
+    imap_connect_host: str = ""
+    imap_tls_server_name: str = ""
 
-    @field_validator("imap_password", mode="before")
+    @field_validator(
+        "imap_password",
+        "linkedin_access_token",
+        "linkedin_refresh_token",
+        "linkedin_client_secret",
+        "linkedin_account_2_access_token",
+        "linkedin_account_3_access_token",
+        mode="before",
+    )
     @classmethod
     def strip_imap_password_quotes(cls, value: object) -> object:
         """Railway/.env pastes sometimes keep surrounding quotes; strip them."""
@@ -143,6 +179,16 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def resolved_gemini_cv_match_api_key(self) -> str:
+        """Dedicated match key, then GEMINI_API_KEY. Empty if still a placeholder."""
+        key = (self.gemini_cv_match_api_key or self.gemini_api_key or "").strip()
+        if not key or key.startswith("your_"):
+            return ""
+        return key
+
+    def resolved_gemini_cv_match_model(self) -> str:
+        return (self.gemini_cv_match_model or self.gemini_model or "gemini-flash-latest").strip()
 
     def sqlite_path(self) -> Path | None:
         if self.database_url.startswith("sqlite:///"):

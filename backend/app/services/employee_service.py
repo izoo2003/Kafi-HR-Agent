@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -119,9 +118,9 @@ def update_employee(
     for k, v in data.items():
         setattr(emp, k, v)
     db.flush()
-    after = {
-        k: str(v) if isinstance(v, Decimal) else v for k, v in data.items()
-    }
+    after = payload.model_dump(exclude_unset=True, mode="json")
+    if "role_title" in data:
+        after["role_title"] = data["role_title"]
     audit_service.log_from_auth(
         db,
         auth,

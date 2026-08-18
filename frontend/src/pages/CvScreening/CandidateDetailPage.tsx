@@ -16,7 +16,7 @@ import {
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useState } from "react";
-import { useAuth } from "../../hooks/useAuth";
+import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 
 function recommendationStatus(rec: string): string {
   if (rec === "shortlist") return "shortlisted";
@@ -40,6 +40,7 @@ export function CandidateDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [assignJobId, setAssignJobId] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   async function setStatus(status: "shortlisted" | "rejected") {
     setError(null);
@@ -108,6 +109,9 @@ export function CandidateDetailPage() {
                 {remove.isPending ? "Removing…" : "Remove Candidate"}
               </Button>
             ) : null}
+            <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
+              View CV
+            </Button>
             <Link
               to={
                 isAssigned
@@ -324,6 +328,20 @@ export function CandidateDetailPage() {
           </details>
         </Card>
       </div>
+      {previewOpen ? (
+        <CvPreviewModal
+          candidateId={candidate.data.id}
+          candidateName={candidate.data.fullName ?? `Candidate #${candidate.data.id}`}
+          parsedText={
+            typeof parsed.rawText === "string"
+              ? parsed.rawText
+              : typeof parsed.raw_text === "string"
+                ? parsed.raw_text
+                : null
+          }
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
     </>
   );
 }

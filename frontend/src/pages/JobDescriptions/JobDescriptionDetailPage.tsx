@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
+import { LinkedInPostResults } from "../../components/domain/LinkedInPostResults";
 import { useCriteria, useJobDescription } from "../../hooks/useJobDescriptions";
 
 export function JobDescriptionDetailPage() {
@@ -80,6 +81,12 @@ export function JobDescriptionDetailPage() {
               <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
                 Candidates submit their details and CV through this form.
               </p>
+            </>
+          ) : null}
+          {(job.data.linkedinPosts ?? []).length > 0 ? (
+            <>
+              <h3>LinkedIn</h3>
+              <LinkedInPostResults posts={job.data.linkedinPosts ?? []} />
             </>
           ) : null}
         </Card>

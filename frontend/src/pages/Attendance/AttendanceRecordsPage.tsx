@@ -19,11 +19,21 @@ import { usePagination } from "../../hooks/usePagination";
 import { syncBiometric, attendanceImportTemplateCsv } from "../../api/attendance";
 import { ATTENDANCE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
+import { useAuth } from "../../hooks/useAuth";
+import { isSelfService } from "../../lib/selfService";
 
 export function AttendanceRecordsPage() {
+  const { user, hasPermission } = useAuth();
+  const selfService = isSelfService(user);
+  const canWrite = hasPermission("attendance", "write");
   const { page, pageSize, setPage, params } = usePagination(1, 50);
   const records = useAttendanceRecords(params);
-  const employees = useEmployees({ page: 1, pageSize: 100, status: "active" });
+  const employees = useEmployees({
+    page: 1,
+    pageSize: 100,
+    status: "active",
+    enabled: canWrite && !selfService,
+  });
   const rules = useAttendanceRules();
   const create = useCreateAttendance();
   const importMut = useImportAttendance();
@@ -71,7 +81,7 @@ export function AttendanceRecordsPage() {
   return (
     <>
       <PageHeader
-        title="Attendance Records"
+        title={selfService ? "My attendance records" : "Attendance Records"}
         breadcrumb="Attendance / Records"
         actions={
           <Link to="/attendance">
@@ -96,6 +106,8 @@ export function AttendanceRecordsPage() {
           ))}
         </section>
 
+        {canWrite ? (
+          <>
         <section className="card">
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Manual entry</h2>
           <form
@@ -187,6 +199,8 @@ export function AttendanceRecordsPage() {
             Sync Biometric Device
           </Button>
         </section>
+          </>
+        ) : null}
 
         {records.isLoading ? <Spinner label="Loading records" /> : null}
         {records.data && records.data.items.length === 0 ? (

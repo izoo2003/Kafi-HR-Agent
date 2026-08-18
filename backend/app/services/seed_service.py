@@ -76,7 +76,7 @@ ROLE_MATRIX: dict[str, dict[str, str]] = {
         "cv_screening": "none",
         "attendance": "read",
         "payroll": "read",
-        "kpi": "read",
+        "kpi": "write",
         "admin_panel": "none",
         "employees": "none",
         "users": "none",
@@ -90,7 +90,7 @@ ROLE_DESCRIPTIONS = {
     "payroll_officer": "Full access to payroll, read-only elsewhere",
     "department_head": "Department employees/KPI/attendance; approve leave for team",
     "recruiter": "Job descriptions & CV screening only",
-    "employee": "Self-service: own attendance, payslips, KPI",
+    "employee": "Self-service: create account with username + PIN; own attendance and KPIs",
     "readonly_auditor": "Read-only across all modules including audit logs",
 }
 
@@ -289,6 +289,12 @@ def seed_system_config_from_yaml(db: Session) -> None:
 
 
 def run_all_seeds(db: Session) -> None:
+    from app.services.auth_service import ensure_self_service_schema
+
+    ensure_self_service_schema(db)
+    from app.services.linkedin_service import ensure_linkedin_schema
+
+    ensure_linkedin_schema(db)
     seed_roles_and_matrix(db)
     seed_admin_user(db)
     seed_demo_users(db)

@@ -4,15 +4,18 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
+from app.reporting.salary_sheet_excel import salary_sheet_xlsx_bytes
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.payroll import (
     PayrollComputeResult,
     PayrollSalaryRow,
     PayrollSalaryUpdate,
+    PayrollSheetAdjustmentsSave,
     TaxSlabsReplace,
     TaxYearCreate,
     TaxYearRead,
@@ -59,6 +62,41 @@ def compute_payroll(
         period_year=period_year,
         tax_year_id=tax_year_id,
     )
+
+
+@router.get("/payroll/compute/export")
+def export_salary_sheet(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("payroll", "read"))],
+    period_month: int = Query(..., ge=1, le=12),
+    period_year: int = Query(..., ge=2000, le=2100),
+    tax_year_id: int = Query(...),
+) -> Response:
+    result = compute_payroll_for_month(
+        db,
+        period_month=period_month,
+        period_year=period_year,
+        tax_year_id=tax_year_id,
+    )
+    month_label = f"{period_year}-{period_month:02d}"
+    data = salary_sheet_xlsx_bytes(result)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="Salary_Sheet_{month_label}.xlsx"'
+        },
+    )
+
+
+@router.put("/payroll/sheet-adjustments")
+def save_salary_sheet_adjustments(
+    payload: PayrollSheetAdjustmentsSave,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("payroll", "write"))],
+) -> dict:
+    saved = payroll_service.save_sheet_adjustments(db, auth, payload)
+    return {"message": f"Saved {saved} salary sheet row(s)", "saved": saved}
 
 
 # --- Tax years / slabs -------------------------------------------------------

@@ -65,8 +65,10 @@ def fetch_whatsapp_submissions(db: Session, settings: Settings) -> SourceFetchRe
                 row.skip_reason = f"download failed: {exc}"
                 continue
 
+            caption = (row.caption or "").strip()
+            source_hint = "form" if re.search(r"cv|resume|curriculum", caption, re.I) else "whatsapp"
             classification = classify_cv_document(
-                filename=filename, content=content, settings=settings
+                filename=filename, content=content, settings=settings, source=source_hint
             )
             if not classification.is_cv:
                 row.status = "skipped"
@@ -136,6 +138,17 @@ def _download_media(
             filename = f"{filename}.pdf"
         elif "wordprocessingml" in mime or "msword" in mime:
             filename = f"{filename}.docx"
+        elif mime.startswith("image/"):
+            ext = {
+                "image/jpeg": ".jpg",
+                "image/jpg": ".jpg",
+                "image/png": ".png",
+                "image/webp": ".webp",
+                "image/gif": ".gif",
+                "image/heic": ".heic",
+                "image/heif": ".heif",
+            }.get(mime, ".jpg")
+            filename = f"{filename}{ext}"
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
     return safe, file_resp.content
 

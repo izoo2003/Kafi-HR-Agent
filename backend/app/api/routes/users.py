@@ -1,50 +1,36 @@
-"""Users & roles routes — skeleton; full CRUD in later feature work."""
+"""Users & roles routes — API_ENDPOINTS.md §2."""
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
-from app.models.identity import Role, User
+from app.models.identity import Role
 from app.schemas.common import AuthContext, PaginatedResponse
-from pydantic import BaseModel, ConfigDict
+from app.schemas.users import RoleRead, UserRead
+from app.services import user_service
 
 router = APIRouter(tags=["users"])
-
-
-class UserRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    email: str
-    full_name: str
-    is_active: bool
-
-
-class RoleRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    description: str | None
 
 
 @router.get("/users", response_model=PaginatedResponse[UserRead])
 def list_users(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("users", "read"))],
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    is_active: bool | None = None,
+    self_registered_only: bool = False,
 ) -> PaginatedResponse[UserRead]:
-    q = db.query(User)
-    total = q.count()
-    items = q.offset((page - 1) * page_size).limit(page_size).all()
-    return PaginatedResponse(
-        items=[UserRead.model_validate(u) for u in items],
-        total=total,
+    return user_service.list_users(
+        db,
         page=page,
         page_size=page_size,
+        is_active=is_active,
+        self_registered_only=self_registered_only,
     )
 
 

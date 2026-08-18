@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.core.self_service import own_employee_id
 from app.core.exceptions import (
     BusinessRuleViolation,
     ConflictError,
@@ -215,6 +216,7 @@ def update_rule(
 
 def list_records(
     db: Session,
+    auth: AuthContext,
     *,
     page: int = 1,
     page_size: int = 50,
@@ -224,6 +226,9 @@ def list_records(
     date_to: date | None = None,
 ) -> PaginatedResponse[AttendanceRecordRead]:
     q = db.query(AttendanceRecord).join(Employee, Employee.id == AttendanceRecord.employee_id)
+    own = own_employee_id(auth)
+    if own is not None:
+        employee_id = own
     if employee_id is not None:
         q = q.filter(AttendanceRecord.employee_id == employee_id)
     if department_id is not None:
@@ -346,6 +351,7 @@ def _leave_overlaps(
 
 def list_leave_requests(
     db: Session,
+    auth: AuthContext,
     *,
     page: int = 1,
     page_size: int = 50,
@@ -354,6 +360,9 @@ def list_leave_requests(
     department_id: int | None = None,
 ) -> PaginatedResponse[LeaveRequestRead]:
     q = db.query(LeaveRequest).join(Employee, Employee.id == LeaveRequest.employee_id)
+    own = own_employee_id(auth)
+    if own is not None:
+        employee_id = own
     if employee_id is not None:
         q = q.filter(LeaveRequest.employee_id == employee_id)
     if status is not None:
@@ -456,11 +465,15 @@ def update_leave_request(
 
 def attendance_summary(
     db: Session,
+    auth: AuthContext,
     *,
     employee_id: int,
     period_start: date,
     period_end: date,
 ) -> AttendanceSummary:
+    own = own_employee_id(auth)
+    if own is not None:
+        employee_id = own
     emp = db.query(Employee).filter(Employee.id == employee_id).one_or_none()
     if emp is None:
         raise EntityNotFound(f"Employee {employee_id} not found")

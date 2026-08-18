@@ -5,10 +5,12 @@ export type AuthSource = "standalone" | "orchestrator";
 export interface AuthContextData {
   userId: number;
   email: string;
+  username: string | null;
   roles: string[];
   agentPermissions: Record<string, string>;
   source: AuthSource;
   linkedEmployeeId: number | null;
+  departmentId: number | null;
 }
 
 export interface PaginatedResponse<T> {

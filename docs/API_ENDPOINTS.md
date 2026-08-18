@@ -1,6 +1,6 @@
 # API ENDPOINTS — HR & Admin Agent
 
-> All routes prefixed with `/api/v1`. All routes (except `/auth/login`) require a valid JWT bearer token. All routes are additionally gated by the RBAC permission matrix — see `AUTH_AND_RBAC.md`. Request/response bodies are Pydantic models defined under `backend/app/schemas/`; frontend TS types under `frontend/src/types/` must mirror them exactly.
+> All routes prefixed with `/api/v1`. All routes (except `/auth/login`, `/auth/register`, and `/auth/register-options`) require a valid JWT bearer token. All routes are additionally gated by the RBAC permission matrix — see `AUTH_AND_RBAC.md`. Request/response bodies are Pydantic models defined under `backend/app/schemas/`; frontend TS types under `frontend/src/types/` must mirror them exactly.
 
 **Conventions:**
 - Standard REST verbs: `GET` (read), `POST` (create), `PATCH` (partial update), `DELETE` (soft-delete where applicable).
@@ -15,10 +15,12 @@
 
 | Method | Path | Purpose | Auth |
 |---|---|---|---|
-| POST | `/auth/login` | Email+password login, returns JWT | none |
+| POST | `/auth/login` | Username or email + PIN/password, returns JWT | none |
+| POST | `/auth/register` | Self-service signup (username + PIN + department); creates `employee` user + linked employee | none |
+| GET | `/auth/register-options` | Public department list for the signup form | none |
 | POST | `/auth/logout` | Invalidate session/token | required |
 | POST | `/auth/refresh` | Refresh access token | required (refresh token) |
-| GET | `/auth/me` | Current user profile + roles + permissions | required |
+| GET | `/auth/me` | Current user profile + roles + permissions + linked employee | required |
 
 ---
 
@@ -46,7 +48,7 @@
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/departments` | List departments |
+| GET | `/departments` | List departments (any signed-in user; needed for self-service KPI/attendance) |
 | POST | `/departments` | Create department |
 | PATCH | `/departments/{id}` | Update department |
 | GET | `/employees` | List employees (filter by department, status) |
@@ -75,9 +77,10 @@
 | GET | `/job-descriptions` | List job descriptions (filter by department, status); includes `applicants_count` |
 | POST | `/job-descriptions` | Create job description (auto-appends Google Form apply link if missing) |
 | GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
+| GET | `/job-descriptions/linkedin-accounts` | Configured LinkedIn profile names/labels for the Open-job picker (no tokens) |
 | POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description + requirements + skills from title + department; appends Google Form link |
-| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count` + `application_form_url`) |
-| PATCH | `/job-descriptions/{id}` | Update |
+| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count`, `application_form_url`, `linkedin_posts` with `post_url` when posted) |
+| PATCH | `/job-descriptions/{id}` | Update; setting status to `open` with `linkedin_account_names` posts to those LinkedIn accounts |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
 | GET | `/job-descriptions/{id}/export` | Export as Word/PDF |
 | GET | `/job-descriptions/{id}/scoring-criteria` | Get scoring rubric for this role |
@@ -94,6 +97,7 @@
 | POST | `/job-descriptions/{id}/candidates` | Upload CV(s) for this job description (multipart) |
 | GET | `/job-descriptions/{id}/candidates` | List candidates for a job, with scores/rank if available |
 | GET | `/candidates/{id}` | Candidate detail incl. parsed data |
+| GET | `/candidates/{id}/cv` | Original CV/resume file (PDF, DOCX, TXT, or image) — inline for preview |
 | PATCH | `/candidates/{id}` | Manual field correction / status change |
 | DELETE | `/candidates/{id}` | Remove candidate |
 | POST | `/candidates/{id}/parse` | Trigger (re-)parsing of uploaded CV |
@@ -102,7 +106,7 @@
 | GET | `/job-descriptions/{id}/ranking` | Get current ranked candidate list |
 | POST | `/candidates/{id}/score-override` | Manual override of a candidate's score, with required reason (audit-logged) |
 | GET | `/job-descriptions/{id}/report` | Export shortlist/ranking report (PDF/Excel) |
-| POST | `/cv-screening/sync` | Fetch new CVs from Webmail IMAP + optional Outlook Graph + WhatsApp + Gmail + Google Form (CV filter applied), AI-match / unassigned pool (see `FEATURE_CV_SCREENING.md` §11) |
+| POST | `/cv-screening/sync` | Fetch new CVs from enabled sources (default: HR webmail `hr@kafi-group.com` + Google Form), AI-match / unassigned pool (see `FEATURE_CV_SCREENING.md` §11) |
 | GET | `/candidates/unassigned` | List candidates fetched automatically that aren't yet matched/assigned to a job |
 | POST | `/candidates/{id}/assign` | Manually assign an unassigned (or misassigned) candidate to a job description, then re-runs the scoring pipeline |
 | GET | `/candidates/{id}/scores` | Per-criterion scores for a candidate |
@@ -137,7 +141,9 @@
 |---|---|---|
 | GET | `/payroll/salaries` | List active employees with current `base_salary` (paginated) |
 | PATCH | `/payroll/salaries/{employee_id}` | Update an active employee's `base_salary` (audit-logged; requires payroll write) |
-| GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`) |
+| GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`); includes salary-sheet columns |
+| GET | `/payroll/compute/export` | Download the month's salary sheet as Excel (Kafi salary-sheet layout) |
+| PUT | `/payroll/sheet-adjustments` | Save monthly salary-sheet extras (allowance, loan, advance, payment mode, remarks) and optional base salary |
 | GET | `/payroll/tax-years` | List tax years with progressive slabs |
 | POST | `/payroll/tax-years` | Create a tax year (optional initial slabs) |
 | GET | `/payroll/tax-years/{id}` | Tax year detail |

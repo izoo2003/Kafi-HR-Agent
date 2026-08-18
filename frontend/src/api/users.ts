@@ -2,7 +2,9 @@ import { apiRequest } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type { Role, User } from "../types/users";
 
-export async function listUsers(params: PaginationParams = {}): Promise<PaginatedResponse<User>> {
+export async function listUsers(
+  params: PaginationParams & { isActive?: boolean; selfRegisteredOnly?: boolean } = {},
+): Promise<PaginatedResponse<User>> {
   return apiRequest<PaginatedResponse<User>>("/users", { params });
 }
 

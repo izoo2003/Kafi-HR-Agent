@@ -15,7 +15,7 @@ from email.utils import parseaddr
 from urllib.parse import quote
 
 from app.core.config import Settings
-from app.ingestion.cv_classifier import CV_EXTENSIONS, classify_cv_document
+from app.ingestion.cv_classifier import CV_EXTENSIONS, AttachmentCandidate, pick_cv_attachment
 from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 
 logger = logging.getLogger(__name__)
@@ -157,19 +157,10 @@ def _process_message(
         sender_name = parseaddr(sender_email)[0] or sender_email.split("@")[0]
 
     body_text = msg.get("bodyPreview") or ""
-    filename, file_bytes = _download_first_cv_attachment(token, mailbox, message_id)
+    filename, file_bytes = _download_best_cv_attachment(token, mailbox, message_id, settings)
     if file_bytes is None or not filename:
         # No usable attachment — mark processed so we don't keep re-scanning
         return None, PROCESSED_CATEGORY
-
-    classification = classify_cv_document(filename=filename, content=file_bytes, settings=settings)
-    if not classification.is_cv:
-        logger.info(
-            "Outlook message %s skipped (not a CV): %s",
-            message_id,
-            classification.reason,
-        )
-        return None, SKIPPED_NOT_CV_CATEGORY
 
     return (
         CvSubmission(
@@ -188,8 +179,8 @@ def _process_message(
     )
 
 
-def _download_first_cv_attachment(
-    token: str, mailbox: str, message_id: str
+def _download_best_cv_attachment(
+    token: str, mailbox: str, message_id: str, settings: Settings
 ) -> tuple[str | None, bytes | None]:
     import requests
 
@@ -201,6 +192,7 @@ def _download_first_cv_attachment(
         logger.warning("Graph attachments HTTP %s: %s", resp.status_code, resp.text[:300])
         return None, None
 
+    candidates: list[AttachmentCandidate] = []
     for att in resp.json().get("value", []):
         if att.get("@odata.type") != "#microsoft.graph.fileAttachment":
             continue
@@ -215,9 +207,11 @@ def _download_first_cv_attachment(
             continue
         file_bytes = base64.b64decode(raw)
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
-        return safe_name, file_bytes
-
-    return None, None
+        is_inline = bool(att.get("isInline"))
+        candidates.append(
+            AttachmentCandidate(filename=safe_name, content=file_bytes, is_inline=is_inline)
+        )
+    return pick_cv_attachment(candidates, settings, source="email")
 
 
 def _add_category(

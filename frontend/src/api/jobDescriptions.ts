@@ -1,4 +1,4 @@
-import { apiRequest, getAccessToken } from "./client";
+import { apiRequest, fetchBlob, getAccessToken } from "./client";
 import type { MessageResponse, PaginatedResponse, PaginationParams } from "../types/common";
 import type {
   Candidate,
@@ -8,6 +8,7 @@ import type {
   JobDescriptionCreate,
   JobPostingAiDraftRequest,
   JobPostingAiDraftResult,
+  LinkedInAccount,
   RankingRow,
   ScoringCriteria,
   ScoringCriteriaInput,
@@ -34,6 +35,10 @@ export async function generateJobPostingAiDraft(
 
 export async function getApplicationFormUrl(): Promise<{ applicationFormUrl: string | null }> {
   return apiRequest<{ applicationFormUrl: string | null }>("/job-descriptions/application-form");
+}
+
+export async function listLinkedInAccounts(): Promise<LinkedInAccount[]> {
+  return apiRequest<LinkedInAccount[]>("/job-descriptions/linkedin-accounts");
 }
 
 export async function getJobDescription(id: number): Promise<JobDescription> {
@@ -96,6 +101,10 @@ export async function patchCandidate(
 
 export async function deleteCandidate(id: number): Promise<MessageResponse> {
   return apiRequest<MessageResponse>(`/candidates/${id}`, { method: "DELETE" });
+}
+
+export async function downloadCandidateCv(candidateId: number): Promise<Blob> {
+  return fetchBlob(`/candidates/${candidateId}/cv`);
 }
 
 export async function getRanking(jobId: number): Promise<RankingRow[]> {

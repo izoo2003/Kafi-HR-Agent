@@ -7,11 +7,13 @@ import {
   Gauge,
   LayoutDashboard,
   LogOut,
+  ScrollText,
   UserRound,
   Users,
   Wallet,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { isSelfService } from "../../lib/selfService";
 import { Button } from "../ui/Button";
 import { NotificationBell } from "./NotificationBell";
 import "./AppShell.css";
@@ -24,6 +26,7 @@ const NAV = [
   { to: "/attendance", label: "Attendance", module: "attendance", icon: FileSpreadsheet },
   { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: Wallet },
   { to: "/kpi/dashboard", label: "KPI", module: "kpi", icon: Gauge },
+  { to: "/hr-policies", label: "HR Policies", module: null, icon: ScrollText },
   { to: "/admin/users", label: "Users", module: "users", icon: Users },
 ] as const;
 
@@ -48,6 +51,14 @@ export function PageHeader({ title, breadcrumb, actions }: ShellProps) {
 export function AppShell() {
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
+  const selfService = isSelfService(user);
+  const navItems = NAV.filter((item) => {
+    if (item.module === null) return true;
+    if (selfService && item.module !== "attendance" && item.module !== "kpi") {
+      return false;
+    }
+    return hasPermission(item.module, "read");
+  });
 
   return (
     <div className="shell">
@@ -56,11 +67,11 @@ export function AppShell() {
           <span className="sidebar__brand-mark">K</span>
           <div>
             <strong>Kafi HR</strong>
-            <span>Admin Agent</span>
+            <span>{selfService ? "My workspace" : "Admin Agent"}</span>
           </div>
         </div>
         <nav className="sidebar__nav" aria-label="Modules">
-          {NAV.filter((item) => hasPermission(item.module, "read")).map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
@@ -78,7 +89,7 @@ export function AppShell() {
         </nav>
         <div className="sidebar__footer">
           <div className="sidebar__user">
-            <span className="sidebar__user-email">{user?.email}</span>
+            <span className="sidebar__user-email">{user?.username || user?.email}</span>
             <span className="sidebar__user-roles font-data">{user?.roles.join(", ")}</span>
           </div>
           <Button

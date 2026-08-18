@@ -1,9 +1,8 @@
-"""Matches a fetched CV to the best open Job Description — FEATURE_CV_SCREENING.md §11.
+"""Matches a fetched CV to the best Job Description — FEATURE_CV_SCREENING.md §11.
 
-Primary: Gemini reads the CV text against every open JD and picks the best
-match with a confidence score. Falls back to a deterministic keyword
-matcher (title/requirements overlap) when GEMINI_API_KEY isn't set, so the
-feature still works without an AI key.
+Primary: Gemini reads the CV text against every job (open, draft, or closed)
+and picks the best match with a confidence score. Falls back to a deterministic
+keyword matcher (title/requirements overlap) when no CV-match Gemini key is set.
 """
 from __future__ import annotations
 
@@ -23,6 +22,7 @@ class OpenJobSummary:
     title: str
     description_text: str
     requirements_text: str | None
+    status: str = "open"
 
 
 @dataclass
@@ -35,52 +35,58 @@ class CvJobMatchResult:
 def match_candidate_to_job(
     cv_text: str,
     position_hint: str,
-    open_jobs: list[OpenJobSummary],
+    jobs: list[OpenJobSummary],
     settings: Settings,
 ) -> CvJobMatchResult:
-    if not open_jobs:
+    if not jobs:
         return CvJobMatchResult(
-            job_description_id=None, confidence=0.0, reasoning="No open job descriptions to match against."
+            job_description_id=None,
+            confidence=0.0,
+            reasoning="No job descriptions to match against.",
         )
 
-    if settings.gemini_api_key:
+    api_key = settings.resolved_gemini_cv_match_api_key()
+    if api_key:
         try:
-            return _match_with_gemini(cv_text, position_hint, open_jobs, settings)
+            return _match_with_gemini(cv_text, position_hint, jobs, settings, api_key)
         except Exception as exc:  # noqa: BLE001 — fall back rather than fail the whole sync
             logger.warning("Gemini CV-job match failed, falling back to keyword match: %s", exc)
 
-    return _match_with_keywords(cv_text, position_hint, open_jobs)
+    return _match_with_keywords(cv_text, position_hint, jobs)
 
 
 def _match_with_gemini(
     cv_text: str,
     position_hint: str,
-    open_jobs: list[OpenJobSummary],
+    jobs: list[OpenJobSummary],
     settings: Settings,
+    api_key: str,
 ) -> CvJobMatchResult:
     import google.generativeai as genai
 
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel(settings.gemini_model)
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(settings.resolved_gemini_cv_match_model())
 
     jobs_payload = [
         {
             "id": job.id,
             "title": job.title,
+            "status": job.status,
             "description": (job.description_text or "")[:1500],
             "requirements": (job.requirements_text or "")[:1500],
         }
-        for job in open_jobs
+        for job in jobs
     ]
 
-    prompt = f"""You are screening a candidate's CV to route it to the correct open job.
+    prompt = f"""You are screening a candidate's CV to route it to the correct job.
 
 Candidate's stated position of interest (may be inaccurate or missing): "{position_hint}"
 
 CV text (truncated):
 \"\"\"{(cv_text or "")[:6000]}\"\"\"
 
-Open job descriptions (JSON):
+Job descriptions (JSON). Include draft and closed jobs — assign to the best
+role fit regardless of status:
 {json.dumps(jobs_payload, indent=2)}
 
 Pick the single best-matching job_description_id for this candidate based on skills,
@@ -94,7 +100,7 @@ Respond with STRICT JSON only, no markdown fences, in this exact shape:
     data = _parse_json_response(response.text)
 
     job_id = data.get("job_description_id")
-    valid_ids = {job.id for job in open_jobs}
+    valid_ids = {job.id for job in jobs}
     if job_id is not None and int(job_id) not in valid_ids:
         job_id = None
 
@@ -123,7 +129,7 @@ def _normalize(text: str) -> str:
 
 
 def _match_with_keywords(
-    cv_text: str, position_hint: str, open_jobs: list[OpenJobSummary]
+    cv_text: str, position_hint: str, jobs: list[OpenJobSummary]
 ) -> CvJobMatchResult:
     """Deterministic fallback: overlap between (position hint + CV text) and
     each job's title/requirements words. No external calls, always available."""
@@ -133,7 +139,7 @@ def _match_with_keywords(
     best_job: OpenJobSummary | None = None
     best_score = 0.0
 
-    for job in open_jobs:
+    for job in jobs:
         title_norm = _normalize(job.title)
         if title_norm and title_norm in haystack:
             # Direct title mention in the CV/position hint — strong signal.
@@ -155,7 +161,7 @@ def _match_with_keywords(
         return CvJobMatchResult(
             job_description_id=None,
             confidence=0.0,
-            reasoning="No keyword overlap found with any open job description.",
+            reasoning="No keyword overlap found with any job description.",
         )
 
     # Keyword overlap scores are inherently noisier than an LLM's — cap so this
@@ -164,5 +170,8 @@ def _match_with_keywords(
     return CvJobMatchResult(
         job_description_id=best_job.id,
         confidence=confidence,
-        reasoning=f"Keyword overlap with '{best_job.title}' (no AI key configured).",
+        reasoning=(
+            f"Keyword overlap with '{best_job.title}' "
+            "(GEMINI_CV_MATCH_API_KEY not configured, using fallback matcher)."
+        ),
     )

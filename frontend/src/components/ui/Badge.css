@@ -17,7 +17,8 @@
 [data-badge-status="hired"],
 [data-badge-status="shortlisted"],
 [data-badge-status="on_target"],
-[data-badge-status="paid"] {
+[data-badge-status="paid"],
+[data-badge-status="posted"] {
   background: var(--color-status-positive-bg);
   color: var(--color-status-positive);
 }
@@ -34,14 +35,16 @@
 [data-badge-status="critical"],
 [data-badge-status="absent"],
 [data-badge-status="rejected"],
-[data-badge-status="below_target"] {
+[data-badge-status="below_target"],
+[data-badge-status="failed"] {
   background: var(--color-status-critical-bg);
   color: var(--color-status-critical);
 }
 
 [data-badge-status="info"],
 [data-badge-status="scored"],
-[data-badge-status="on_leave"] {
+[data-badge-status="on_leave"],
+[data-badge-status="complete"] {
   background: var(--color-status-info-bg);
   color: var(--color-status-info);
 }

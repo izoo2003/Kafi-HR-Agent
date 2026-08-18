@@ -1,24 +1,27 @@
-import { Fragment, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
-import { Table } from "../../components/ui/Table";
-import { usePayrollCompute, useTaxYears } from "../../hooks/usePayroll";
-
-function money(n: string | number | null | undefined): string {
-  if (n == null || n === "") return "—";
-  return Number(n).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { SalarySheet, draftFromResult, type SheetDraft } from "../../components/domain/SalarySheet";
+import { usePayrollCompute, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
+import { useAuth } from "../../hooks/useAuth";
+import { downloadSalarySheetExcel } from "../../api/payroll";
+import { ApiError } from "../../api/client";
 
 export function SalaryComputePage() {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission("payroll", "write");
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const taxYears = useTaxYears();
   const [taxYearId, setTaxYearId] = useState<number | "">("");
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, SheetDraft>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const saveSheet = useSavePayrollSheet();
 
   const activeTaxId = useMemo(() => {
     if (taxYearId !== "") return taxYearId;
@@ -32,6 +35,77 @@ export function SalaryComputePage() {
       : { periodMonth: month, periodYear: year, taxYearId: Number(activeTaxId) },
   );
 
+  useEffect(() => {
+    if (compute.data) {
+      setDrafts(draftFromResult(compute.data));
+    }
+  }, [compute.data]);
+
+  function patchDraft(employeeId: number, patch: Partial<SheetDraft>) {
+    setDrafts((prev) => ({
+      ...prev,
+      [employeeId]: { ...prev[employeeId], ...patch } as SheetDraft,
+    }));
+    setMessage(null);
+  }
+
+  async function save() {
+    if (!compute.data) return;
+    setError(null);
+    setMessage(null);
+    try {
+      await saveSheet.mutateAsync({
+        periodMonth: month,
+        periodYear: year,
+        items: compute.data.employees.map((e) => {
+          const d = drafts[e.employeeId];
+          const live = {
+            baseSalary: Number(d?.baseSalary ?? e.baseSalary),
+            daysPresent: Number(d?.daysPresent ?? e.daysPresent),
+            daysAbsent: Number(d?.daysAbsent ?? e.absentsAfterLeave),
+            daysLate: Number(d?.daysLate ?? e.daysLate),
+            daysHalfDay: Number(d?.daysHalfDay ?? e.daysHalfDay),
+            overtimeBonusDays: Number(d?.overtimeBonusDays ?? e.overtimeBonusDays),
+            allowanceAmount: Number(d?.allowanceAmount ?? e.allowanceAmount ?? 0),
+            loanDeductionAmount: Number(d?.loanDeductionAmount ?? e.loanDeductionAmount ?? 0),
+            advanceAmount: Number(d?.advanceAmount ?? e.advanceAmount ?? 0),
+            paymentMode: d?.paymentMode ?? e.paymentMode ?? "IBFT",
+            remarks: d?.remarks || null,
+            monthlyTaxOverride: d?.taxManual ? Number(d.monthlyTax) : null,
+          };
+          return {
+            employeeId: e.employeeId,
+            ...live,
+            baseSalary: Number.isFinite(live.baseSalary) ? live.baseSalary : Number(e.baseSalary),
+          };
+        }),
+      });
+      setMessage("Salary sheet saved");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Save failed");
+    }
+  }
+
+  async function downloadExcel() {
+    if (activeTaxId === "") return;
+    setError(null);
+    try {
+      const blob = await downloadSalarySheetExcel({
+        periodMonth: month,
+        periodYear: year,
+        taxYearId: Number(activeTaxId),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Salary_Sheet_${year}-${String(month).padStart(2, "0")}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -39,6 +113,14 @@ export function SalaryComputePage() {
         breadcrumb="Payroll / Salary calculation"
         actions={
           <>
+            {canEdit ? (
+              <Button variant="primary" disabled={!compute.data || saveSheet.isPending} onClick={save}>
+                {saveSheet.isPending ? "Saving…" : "Save salary sheet"}
+              </Button>
+            ) : null}
+            <Button variant="secondary" disabled={!compute.data} onClick={downloadExcel}>
+              Download Excel
+            </Button>
             <Link to="/payroll/tax-slabs">
               <Button variant="secondary">Tax slabs</Button>
             </Link>
@@ -51,9 +133,9 @@ export function SalaryComputePage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <Card>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-            Net salary = base − (absents × base/30) − (late-offs × base/30) − (half-days × base/60) +
-            OT days − monthly tax. Late after 09:40; after 11:30 = late + half day; 3 lates = 1 off.
-            Upload attendance via Attendance → Excel period report first.
+            Edit this sheet like Excel. Changing base salary, absents, lates, or half-days immediately
+            recalculates per-day rate, late offs (3 lates = 1 day), half-day deduction, tax, and net
+            payable. Present and absent stay on a 30-day month. Save to keep this month&apos;s figures.
           </p>
           <div
             style={{
@@ -102,6 +184,12 @@ export function SalaryComputePage() {
               </select>
             </label>
           </div>
+          {error ? (
+            <p style={{ color: "var(--color-status-critical)", marginBottom: 0 }}>{error}</p>
+          ) : null}
+          {message ? (
+            <p style={{ color: "var(--color-status-positive)", marginBottom: 0 }}>{message}</p>
+          ) : null}
         </Card>
 
         {compute.isLoading ? <Spinner label="Calculating salaries" /> : null}
@@ -110,102 +198,12 @@ export function SalaryComputePage() {
         ) : null}
 
         {compute.data ? (
-          <>
-            <Card>
-              <strong>
-                {compute.data.periodStart} → {compute.data.periodEnd}
-              </strong>
-              {" · "}tax {compute.data.taxYearLabel}
-              {" · "}month days {compute.data.monthDays}
-            </Card>
-            <Table
-              headers={[
-                "Employee",
-                "Base",
-                "Absent",
-                "Late",
-                "Half",
-                "Late offs",
-                "Gross",
-                "Monthly tax",
-                "Net salary",
-                "",
-              ]}
-            >
-              {compute.data.employees.map((e) => (
-                <Fragment key={e.employeeId}>
-                  <tr data-status="positive">
-                    <td>
-                      <div>{e.fullName}</div>
-                      <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-                        {e.employeeCode}
-                      </div>
-                    </td>
-                    <td className="num">{money(e.baseSalary)}</td>
-                    <td className="num">{e.daysAbsent}</td>
-                    <td className="num">{e.daysLate}</td>
-                    <td className="num">{e.daysHalfDay}</td>
-                    <td className="num">{e.lateOffDays}</td>
-                    <td className="num">{money(e.grossAfterAttendance)}</td>
-                    <td className="num">{money(e.monthlyTax)}</td>
-                    <td className="num">{money(e.netSalary)}</td>
-                    <td>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() =>
-                          setExpanded(expanded === e.employeeId ? null : e.employeeId)
-                        }
-                      >
-                        {expanded === e.employeeId ? "Hide" : "Details"}
-                      </Button>
-                    </td>
-                  </tr>
-                  {expanded === e.employeeId ? (
-                    <tr>
-                      <td colSpan={10}>
-                        <div
-                          style={{
-                            display: "grid",
-                            gap: 6,
-                            padding: "var(--space-3)",
-                            background: "var(--color-surface-alt)",
-                            borderRadius: "var(--radius-md)",
-                            fontSize: "var(--text-sm)",
-                          }}
-                        >
-                          <div>
-                            Per day (base/30): <span className="num">{money(e.perDayRate)}</span>
-                          </div>
-                          <div>
-                            Attendance deduction:{" "}
-                            <span className="num">{money(e.attendanceDeduction)}</span>
-                            {" · "}OT: <span className="num">{money(e.overtimeAmount)}</span>
-                            {" · "}leave used {e.leaveUsed}/{e.leaveAllowance}
-                          </div>
-                          <div>
-                            Annual taxable: <span className="num">{money(e.annualTaxableIncome)}</span>
-                            {" · "}annual tax: <span className="num">{money(e.annualTax)}</span>
-                          </div>
-                          {e.lateEvents.length > 0 ? (
-                            <div>
-                              Late events:{" "}
-                              {e.lateEvents
-                                .map((x) => `${x.date} ${x.checkInTime}${x.note ? ` (${x.note})` : ""}`)
-                                .join("; ")}
-                            </div>
-                          ) : null}
-                          {e.notes ? (
-                            <div style={{ color: "var(--color-status-warning)" }}>{e.notes}</div>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              ))}
-            </Table>
-          </>
+          <SalarySheet
+            result={compute.data}
+            drafts={drafts}
+            canEdit={canEdit}
+            onDraftChange={patchDraft}
+          />
         ) : null}
       </div>
     </>

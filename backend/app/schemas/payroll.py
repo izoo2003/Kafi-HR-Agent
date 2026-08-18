@@ -103,12 +103,48 @@ class TaxSlabsReplace(BaseModel):
 # --- Attendance-based salary computation -------------------------------------
 
 
+class PayrollSheetAdjustmentInput(BaseModel):
+    employee_id: int
+    allowance_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    loan_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    advance_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    payment_mode: str | None = Field(default=None, max_length=32)
+    remarks: str | None = None
+    base_salary: Decimal | None = Field(default=None)
+    days_present: int | None = Field(default=None, ge=0)
+    days_absent: int | None = Field(default=None, ge=0)
+    days_late: int | None = Field(default=None, ge=0)
+    days_half_day: int | None = Field(default=None, ge=0)
+    overtime_bonus_days: int | None = Field(default=None, ge=0)
+    monthly_tax_override: Decimal | None = Field(default=None, ge=0)
+
+    @field_validator("base_salary")
+    @classmethod
+    def salary_in_range(cls, v: Decimal | None) -> Decimal | None:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("base_salary cannot be negative")
+        if v > _MAX_BASE_SALARY:
+            raise ValueError(f"base_salary too large (max {_MAX_BASE_SALARY})")
+        return v
+
+
+class PayrollSheetAdjustmentsSave(BaseModel):
+    period_month: int = Field(ge=1, le=12)
+    period_year: int = Field(ge=2000, le=2100)
+    items: list[PayrollSheetAdjustmentInput]
+
+
 class PayrollComputeRow(BaseModel):
     employee_id: int
     employee_code: str
     full_name: str
+    department_name: str | None = None
+    role_title: str = ""
     base_salary: Decimal
     per_day_rate: Decimal
+    days_present: int = 0
     days_absent: int
     days_late: int
     days_half_day: int
@@ -119,13 +155,32 @@ class PayrollComputeRow(BaseModel):
     overtime_bonus_days: int
     attendance_deduction: Decimal
     overtime_amount: Decimal
+    late_deduction_amount: Decimal = Decimal("0")
+    half_day_deduction: Decimal = Decimal("0")
+    allowance_amount: Decimal = Decimal("0")
+    loan_deduction_amount: Decimal = Decimal("0")
+    advance_amount: Decimal = Decimal("0")
+    payment_mode: str | None = "IBFT"
+    remarks: str | None = None
+    gross_salary: Decimal = Decimal("0")
     gross_after_attendance: Decimal
     annual_taxable_income: Decimal
     annual_tax: Decimal
     monthly_tax: Decimal
     net_salary: Decimal
+    net_payable: Decimal = Decimal("0")
+    tax_manual: bool = False
     late_events: list[dict] = []
     notes: str | None = None
+
+
+class PayrollTaxSlabLite(BaseModel):
+    sort_order: int
+    min_amount: Decimal
+    max_amount: Decimal | None = None
+    fixed_amount: Decimal
+    rate_percent: Decimal
+    excess_over: Decimal
 
 
 class PayrollComputeResult(BaseModel):
@@ -136,4 +191,7 @@ class PayrollComputeResult(BaseModel):
     tax_year_id: int
     tax_year_label: str
     month_days: int = 30
+    lates_per_off: int = 3
+    company_name: str = "KAFI COMMODITIES (PVT) LTD"
+    tax_slabs: list[PayrollTaxSlabLite] = []
     employees: list[PayrollComputeRow]

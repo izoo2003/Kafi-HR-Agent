@@ -1,112 +1,40 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
-import { StatusBadge } from "../../components/ui/Badge";
-import { Pagination } from "../../components/ui/Pagination";
-import { usePayrollSalaries, useUpdatePayrollSalary } from "../../hooks/usePayroll";
-import { usePagination } from "../../hooks/usePagination";
-import { useAuth } from "../../hooks/useAuth";
-import { ApiError } from "../../api/client";
-import type { PayrollSalaryRow } from "../../types/payroll";
+import { usePayrollCompute, useTaxYears } from "../../hooks/usePayroll";
 
-function SalaryRow({
-  row,
-  canEdit,
-}: {
-  row: PayrollSalaryRow;
-  canEdit: boolean;
-}) {
-  const update = useUpdatePayrollSalary();
-  const [value, setValue] = useState(row.baseSalary != null ? String(row.baseSalary) : "");
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    setValue(row.baseSalary != null ? String(row.baseSalary) : "");
-  }, [row.baseSalary]);
-
-  const original = row.baseSalary != null ? String(row.baseSalary) : "";
-  const dirty = value.trim() !== original;
-
-  async function save() {
-    setError(null);
-    setMessage(null);
-    const trimmed = value.trim();
-    let baseSalary: number | null = null;
-    if (trimmed !== "") {
-      const n = Number(trimmed);
-      if (!Number.isFinite(n) || n < 0) {
-        setError("Enter a valid non-negative salary");
-        return;
-      }
-      baseSalary = n;
-    }
-    try {
-      await update.mutateAsync({ employeeId: row.employeeId, payload: { baseSalary } });
-      setMessage("Saved");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Save failed");
-    }
-  }
-
-  return (
-    <tr data-status="positive">
-      <td>
-        <div>{row.fullName}</div>
-        <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-          {row.employeeCode}
-        </div>
-      </td>
-      <td>{row.departmentName ?? `#${row.departmentId}`}</td>
-      <td>{row.roleTitle}</td>
-      <td>
-        <StatusBadge status="approved">Active</StatusBadge>
-      </td>
-      <td>
-        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            className="form-field__input font-data"
-            type="number"
-            min={0}
-            step="0.01"
-            disabled={!canEdit}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            style={{ width: 140 }}
-            aria-label={`Salary for ${row.fullName}`}
-          />
-          {canEdit ? (
-            <Button
-              type="button"
-              variant="primary"
-              disabled={!dirty || update.isPending}
-              onClick={save}
-            >
-              {update.isPending ? "Saving…" : "Save"}
-            </Button>
-          ) : null}
-        </div>
-        {error ? (
-          <div style={{ color: "var(--color-status-critical)", fontSize: "var(--text-xs)" }}>{error}</div>
-        ) : null}
-        {message ? (
-          <div style={{ color: "var(--color-status-positive)", fontSize: "var(--text-xs)" }}>{message}</div>
-        ) : null}
-      </td>
-    </tr>
-  );
+function money(n: string | number | null | undefined): string {
+  if (n == null || n === "") return "—";
+  return Number(n).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Payroll landing — active employees and editable base salaries. */
+function monthLabel(month: number, year: number): string {
+  return `${new Date(2000, month - 1, 1).toLocaleString("en", { month: "long" })} ${year}`;
+}
+
+/** Payroll landing — name, base salary, and this month's net payable. */
 export function PayrollRunListPage() {
-  const { hasPermission } = useAuth();
-  const canEdit = hasPermission("payroll", "write");
-  const { page, pageSize, setPage, params } = usePagination();
-  const salaries = usePayrollSalaries(params);
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const taxYears = useTaxYears();
+
+  const activeTaxId = useMemo(() => {
+    const active = (taxYears.data ?? []).find((y) => y.isActive) ?? taxYears.data?.[0];
+    return active?.id ?? "";
+  }, [taxYears.data]);
+
+  const compute = usePayrollCompute(
+    activeTaxId === ""
+      ? null
+      : { periodMonth: month, periodYear: year, taxYearId: Number(activeTaxId) },
+  );
+
+  const rows = compute.data?.employees ?? [];
 
   return (
     <>
@@ -116,7 +44,10 @@ export function PayrollRunListPage() {
         actions={
           <>
             <Link to="/payroll/compute">
-              <Button variant="primary">Salary calculation</Button>
+              <Button variant="primary">Edit Salary Sheets</Button>
+            </Link>
+            <Link to="/payroll/compute">
+              <Button variant="secondary">Salary calculation</Button>
             </Link>
             <Link to="/payroll/tax-slabs">
               <Button variant="secondary">Tax slabs</Button>
@@ -126,13 +57,52 @@ export function PayrollRunListPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-4)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
-          Set each employee&apos;s base salary here. Net pay (attendance + tax) is on Salary
-          calculation; tax years/slabs (including 2026-27) are editable under Tax slabs.
+          Base salary and net payable for {monthLabel(month, year)}. Open Edit Salary Sheets for the
+          full Excel salary-sheet layout.
         </p>
+        <div
+          style={{
+            display: "grid",
+            gap: "var(--space-3)",
+            gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
+            maxWidth: 420,
+          }}
+        >
+          <label className="form-field">
+            <span className="form-field__label">Month</span>
+            <select
+              className="form-field__input"
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2000, i, 1).toLocaleString("en", { month: "long" })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span className="form-field__label">Year</span>
+            <input
+              className="form-field__input font-data"
+              type="number"
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+            />
+          </label>
+        </div>
 
-        {salaries.isLoading ? <Spinner label="Loading salaries" /> : null}
+        {compute.isLoading || taxYears.isLoading ? <Spinner label="Loading salaries" /> : null}
 
-        {!salaries.isLoading && (salaries.data?.total ?? 0) === 0 ? (
+        {compute.isError ? (
+          <p style={{ color: "var(--color-status-critical)" }}>
+            Could not calculate net salary for this month. Check tax slabs, then open Salary
+            calculation.
+          </p>
+        ) : null}
+
+        {!compute.isLoading && !compute.isError && rows.length === 0 ? (
           <EmptyState
             title="No active employees"
             description="Add active employees in the Employees section first. Their salaries will appear here for payroll."
@@ -143,20 +113,21 @@ export function PayrollRunListPage() {
           />
         ) : null}
 
-        {salaries.data && salaries.data.items.length > 0 ? (
-          <>
-            <Table headers={["Employee", "Department", "Role", "Status", "Base salary"]}>
-              {salaries.data.items.map((row) => (
-                <SalaryRow key={row.employeeId} row={row} canEdit={canEdit} />
-              ))}
-            </Table>
-            <Pagination
-              page={page}
-              pageSize={pageSize}
-              total={salaries.data.total}
-              onPageChange={setPage}
-            />
-          </>
+        {rows.length > 0 ? (
+          <Table headers={["Employee", "Base salary", "Net salary"]}>
+            {rows.map((row) => (
+              <tr key={row.employeeId} data-status="positive">
+                <td>
+                  <div>{row.fullName}</div>
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
+                    {row.employeeCode}
+                  </div>
+                </td>
+                <td className="num">{money(row.baseSalary)}</td>
+                <td className="num">{money(row.netPayable ?? row.netSalary)}</td>
+              </tr>
+            ))}
+          </Table>
         ) : null}
       </div>
     </>

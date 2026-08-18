@@ -27,6 +27,7 @@ from app.models.kpi import KpiDefinition, KpiEntry
 from app.models.payroll import (
     Deduction,
     PayrollRun,
+    PayrollSheetAdjustment,
     PayrollStructure,
     Payslip,
     SalaryAdvance,
@@ -62,6 +63,7 @@ __all__ = [
     "Payslip",
     "Deduction",
     "SalaryAdvance",
+    "PayrollSheetAdjustment",
     "TaxYear",
     "TaxSlab",
     "KpiDefinition",

@@ -15,7 +15,7 @@ Seeded via migration, editable later through `/roles` and `/access-matrix` endpo
 | `payroll_officer` | Full access to payroll, read-only elsewhere |
 | `department_head` | Read on their department's employees/KPI/attendance, approve leave requests for their team |
 | `recruiter` | Full access to job descriptions & CV screening only |
-| `employee` | Read-only on their own attendance, payslips, KPI |
+| `employee` | Self-service: own attendance, own KPIs (create/record), own payslips |
 | `readonly_auditor` | Read-only across all modules, including audit logs — no writes anywhere |
 
 ---
@@ -101,8 +101,10 @@ This keeps every route's permission requirement visible and declarative right in
 
 The `employee` role is a special case: employees see **only their own** records (their attendance, their payslips, their KPI scores), not module-wide `read` access. This is enforced via row-level filtering in the service layer, not the module-level matrix alone:
 
-- Service functions for `employee`-role callers must filter `WHERE employee_id = auth.linked_employee_id` regardless of what the route's general query params say.
-- Requires `users.id` → `employees.user_id` link (see `DATABASE_SCHEMA.md` §2) to be resolved into `AuthContext` as `linked_employee_id` (extend the `AuthContext` schema with this optional field, update `INTEGRATION_CONTRACT.md` §2 in the same change).
+- Service functions for self-service callers (linked employee + no `employees` module read) must filter `WHERE employee_id = auth.linked_employee_id` regardless of what the route's general query params say.
+- Public signup (`POST /auth/register`) creates a user with a unique `username` + hashed PIN, assigns the `employee` role, and creates a linked `employees` row so `linked_employee_id` is set immediately.
+- Login accepts **username or email** plus PIN/password (`POST /auth/login`).
+- Self-service users may create **personal** KPI definitions (`kpi_definitions.owner_employee_id`) and record actuals against those (and department KPIs), still scoped to themselves.
 
 ---
 

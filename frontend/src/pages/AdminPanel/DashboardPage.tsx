@@ -66,20 +66,42 @@ export function UserManagementPage() {
         ) : null}
         {users.data ? (
           <>
-            <Table headers={["ID", "Name", "Email", "Active"]}>
-              {users.data.items.map((u) => (
-                <tr key={u.id} data-status={u.isActive ? "positive" : "neutral"}>
-                  <td className="num">{u.id}</td>
-                  <td>{u.fullName}</td>
-                  <td>{u.email}</td>
-                  <td>
-                    <StatusBadge status={u.isActive ? "approved" : "draft"}>
-                      {u.isActive ? "Active" : "Inactive"}
-                    </StatusBadge>
-                  </td>
-                </tr>
-              ))}
-            </Table>
+            <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+              Self-registered employee accounts appear here automatically after signup.
+            </p>
+            {users.data.items.length === 0 ? (
+              <EmptyState
+                title="No users yet"
+                description="When someone creates a personal account from the register page, they will show up in this list."
+              />
+            ) : (
+              <Table headers={["ID", "Name", "Username", "Department", "Roles", "Registered", "Active"]}>
+                {users.data.items.map((u) => (
+                  <tr key={u.id} data-status={u.isActive ? "positive" : "neutral"}>
+                    <td className="num">{u.id}</td>
+                    <td>
+                      {u.fullName}
+                      {u.isSelfRegistered ? (
+                        <div style={{ marginTop: "var(--space-1)" }}>
+                          <StatusBadge status="info">Self-registered</StatusBadge>
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="font-data">{u.username ?? "—"}</td>
+                    <td>{u.departmentName ?? "—"}</td>
+                    <td>{u.roles.length ? u.roles.join(", ") : "—"}</td>
+                    <td className="font-data">
+                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                    </td>
+                    <td>
+                      <StatusBadge status={u.isActive ? "approved" : "draft"}>
+                        {u.isActive ? "Active" : "Inactive"}
+                      </StatusBadge>
+                    </td>
+                  </tr>
+                ))}
+              </Table>
+            )}
             <Pagination
               page={page}
               pageSize={pageSize}

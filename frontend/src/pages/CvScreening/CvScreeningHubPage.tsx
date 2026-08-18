@@ -87,7 +87,7 @@ export function CvScreeningHubPage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
           Select an open role to upload CVs, review candidates, and open the ranking. Or fetch new
-          CVs automatically from Gmail and the Google Form with Sync CVs.
+          CVs automatically from hr@kafi-group.com webmail and the Google Form with Sync CVs.
         </p>
 
         {syncError ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{syncError}</p> : null}

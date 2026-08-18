@@ -16,6 +16,7 @@ import logging
 import re
 
 from app.core.config import Settings
+from app.ingestion.cv_classifier import classify_cv_document
 from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 from app.ingestion.google_auth import GoogleCredentialsNotConfigured, get_credentials
 
@@ -70,7 +71,9 @@ def fetch_form_submissions(settings: Settings) -> SourceFetchResult:
     token_path = settings.resolved_path(settings.google_form_token_file)
 
     try:
-        creds = get_credentials(creds_path, token_path, SCOPES)
+        creds = get_credentials(
+            creds_path, token_path, SCOPES, purpose="Google Form"
+        )
     except GoogleCredentialsNotConfigured as exc:
         return SourceFetchResult(
             source="google_form", configured=False, submissions=[], message=str(exc)
@@ -87,15 +90,31 @@ def fetch_form_submissions(settings: Settings) -> SourceFetchResult:
     try:
         sheets = build("sheets", "v4", credentials=creds)
         drive = build("drive", "v3", credentials=creds)
-        submissions = _fetch_new_rows(sheets, drive, settings)
-        return SourceFetchResult(source="google_form", configured=True, submissions=submissions)
+        submissions, row_warnings = _fetch_new_rows(sheets, drive, settings)
+        message = "; ".join(row_warnings[:4]) if row_warnings else None
+        if row_warnings and len(row_warnings) > 4:
+            message = f"{message}; +{len(row_warnings) - 4} more"
+        return SourceFetchResult(
+            source="google_form",
+            configured=True,
+            submissions=submissions,
+            message=message,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Google Form fetch failed")
+        message = f"Google Form fetch failed: {exc}"
+        if "403" in str(exc) or "does not have permission" in str(exc).lower():
+            message = (
+                "Google Form fetch failed: the authenticated Google account does not have access "
+                "to the linked response spreadsheet or uploaded CV files. Re-authorize with the "
+                "Google account that owns the form/spreadsheet, or share the response sheet and "
+                "Drive upload folder with the configured service account."
+            )
         return SourceFetchResult(
             source="google_form",
             configured=True,
             submissions=[],
-            message=f"Google Form fetch failed: {exc}",
+            message=message,
         )
 
 
@@ -103,7 +122,7 @@ def _state_file(settings: Settings):
     return settings.data_dir / "google_form_state.json"
 
 
-def _fetch_new_rows(sheets, drive, settings: Settings) -> list[CvSubmission]:
+def _fetch_new_rows(sheets, drive, settings: Settings) -> tuple[list[CvSubmission], list[str]]:
     sheet_id = settings.google_form_sheet_id
     sheet_name = _first_sheet_title(sheets, sheet_id)
     result = (
@@ -114,23 +133,35 @@ def _fetch_new_rows(sheets, drive, settings: Settings) -> list[CvSubmission]:
     )
     rows = result.get("values", [])
     if not rows:
-        return []
+        return [], []
 
     header_map = _resolve_headers(rows[0])
-    last_processed = _load_last_processed_row(settings)
+    last_processed = _load_last_processed_row(settings, sheet_row_count=len(rows))
+    warnings: list[str] = []
+    if "cv_upload" not in header_map:
+        warnings.append(
+            "response sheet is missing a CV upload column — expected a header like "
+            "'Upload your CV' or 'Upload your CV/Resume'"
+        )
 
     submissions: list[CvSubmission] = []
     new_last_processed = last_processed
     for row_idx, row in enumerate(rows[1:], start=2):  # sheet rows are 1-indexed w/ header
         if row_idx <= last_processed:
             continue
-        new_last_processed = row_idx
-        submission = _row_to_submission(drive, row_idx, row, header_map)
+        submission, skip_reason = _row_to_submission(drive, row_idx, row, header_map, settings)
         if submission:
             submissions.append(submission)
+            new_last_processed = row_idx
+        elif skip_reason == "no_cv":
+            new_last_processed = row_idx
+        elif skip_reason:
+            warnings.append(f"row {row_idx}: {skip_reason}")
+            if not skip_reason.startswith("could not download"):
+                new_last_processed = row_idx
 
     _save_last_processed_row(settings, new_last_processed)
-    return submissions
+    return submissions, warnings
 
 
 def _first_sheet_title(sheets, sheet_id: str) -> str:
@@ -170,29 +201,41 @@ def _cell(row: list[str], header_map: dict[str, int], field: str) -> str:
 
 
 def _row_to_submission(
-    drive, row_idx: int, row: list[str], header_map: dict[str, int]
-) -> CvSubmission | None:
+    drive, row_idx: int, row: list[str], header_map: dict[str, int], settings: Settings
+) -> tuple[CvSubmission | None, str | None]:
     cv_link = _cell(row, header_map, "cv_upload")
     file_id = _extract_drive_file_id(cv_link)
     if not file_id:
-        return None  # no CV attached to this response — nothing to score
+        return None, "no_cv" if not cv_link else "CV link in sheet could not be parsed"
 
     filename, cv_bytes = _download_drive_file(drive, file_id)
     if cv_bytes is None:
-        return None
+        return None, "could not download the uploaded CV from Google Drive — check file permissions"
+
+    classification = classify_cv_document(
+        filename=filename or "",
+        content=cv_bytes,
+        settings=settings,
+        source="form",
+    )
+    if not classification.is_cv:
+        return None, classification.reason
 
     email = _cell(row, header_map, "email").lower()
-    return CvSubmission(
-        full_name=_cell(row, header_map, "full_name") or "Unknown",
-        email=email or None,
-        phone=_cell(row, header_map, "phone") or None,
-        position_hint=_cell(row, header_map, "position") or "Unspecified",
-        source="google_form",
-        source_ref=f"form_row_{row_idx}",
-        cv_filename=filename or f"form_row{row_idx}.pdf",
-        cv_bytes=cv_bytes,
-        submitted_at=_parse_timestamp(_cell(row, header_map, "timestamp")),
-        raw_context_text=None,
+    return (
+        CvSubmission(
+            full_name=_cell(row, header_map, "full_name") or "Unknown",
+            email=email or None,
+            phone=_cell(row, header_map, "phone") or None,
+            position_hint=_cell(row, header_map, "position") or "Unspecified",
+            source="google_form",
+            source_ref=f"form_row_{row_idx}",
+            cv_filename=filename or f"form_row{row_idx}.pdf",
+            cv_bytes=cv_bytes,
+            submitted_at=_parse_timestamp(_cell(row, header_map, "timestamp")),
+            raw_context_text=None,
+        ),
+        None,
     )
 
 
@@ -233,14 +276,23 @@ def _parse_timestamp(raw: str) -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-def _load_last_processed_row(settings: Settings) -> int:
+def _load_last_processed_row(settings: Settings, *, sheet_row_count: int) -> int:
     state_file = _state_file(settings)
     if not state_file.exists():
         return 1  # header is row 1
     try:
-        return json.loads(state_file.read_text()).get("last_processed_row", 1)
-    except (json.JSONDecodeError, OSError):
+        last = int(json.loads(state_file.read_text()).get("last_processed_row", 1))
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
         return 1
+    # Sheet was cleared/recreated or linked to a new form — old row numbers are invalid.
+    if sheet_row_count > 1 and last > sheet_row_count:
+        logger.warning(
+            "Google Form sync state last_processed_row=%s but sheet only has %s rows — reprocessing",
+            last,
+            sheet_row_count,
+        )
+        return 1
+    return last
 
 
 def _save_last_processed_row(settings: Settings, row_idx: int) -> None:

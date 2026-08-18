@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -66,6 +67,40 @@ def get_candidate(db: Session, candidate_id: int) -> Candidate:
     if cand is None:
         raise EntityNotFound(f"Candidate {candidate_id} not found")
     return cand
+
+
+_CV_MIME = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain; charset=utf-8",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".bmp": "image/bmp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+}
+
+
+def get_candidate_cv_file(db: Session, candidate_id: int) -> tuple[Path, str, str]:
+    """Returns (absolute path, mime type, download filename) for the stored CV."""
+    cand = get_candidate(db, candidate_id)
+    raw = (cand.cv_file_path or "").strip()
+    if not raw:
+        raise EntityNotFound(f"Candidate {candidate_id} has no CV file")
+    path = Path(raw)
+    if not path.is_file():
+        path = get_settings().resolved_path(raw)
+    if not path.is_file():
+        raise EntityNotFound(f"CV file for candidate {candidate_id} is missing on disk")
+    suffix = path.suffix.lower()
+    mime = _CV_MIME.get(suffix, "application/octet-stream")
+    return path, mime, path.name
 
 
 def upload_candidates(
@@ -389,31 +424,45 @@ def assign_candidate_to_job(
     return get_candidate(db, cand.id)
 
 
+def _enabled_cv_sources(settings) -> list[str]:
+    allowed = {"webmail", "outlook", "whatsapp", "gmail", "google_form"}
+    raw = getattr(settings, "cv_sync_sources", None) or "webmail,google_form"
+    out: list[str] = []
+    for part in raw.split(","):
+        name = part.strip().lower()
+        if name in allowed and name not in out:
+            out.append(name)
+    return out or ["webmail", "google_form"]
+
+
 def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
-    """Fetches new CVs from Outlook, WhatsApp, optional Gmail, and Google Form,
-    dedupes, stores them unassigned, then AI-matches each against open job
-    descriptions — auto-assigning above the confidence threshold, leaving the
-    rest in the Unassigned pool for HR to route manually. FEATURE_CV_SCREENING.md §11."""
+    """Fetches new CVs from enabled sources (default: HR webmail + Google Form),
+    dedupes, stores them unassigned, then AI-matches each against all job
+    descriptions (open, draft, and closed) — auto-assigning above the confidence
+    threshold, leaving the rest in the Unassigned pool for HR to route manually.
+    FEATURE_CV_SCREENING.md §11."""
     settings = get_settings()
 
-    open_jobs = db.query(JobDescription).filter(JobDescription.status == "open").all()
-    open_job_summaries = [
+    jobs = db.query(JobDescription).all()
+    job_summaries = [
         OpenJobSummary(
             id=j.id,
             title=j.title,
             description_text=j.description_text,
             requirements_text=j.requirements_text,
+            status=j.status,
         )
-        for j in open_jobs
+        for j in jobs
     ]
 
-    fetch_results = [
-        fetch_imap_submissions(settings),
-        fetch_outlook_submissions(settings),
-        fetch_whatsapp_submissions(db, settings),
-        fetch_gmail_submissions(settings),
-        fetch_form_submissions(settings),
-    ]
+    fetchers = {
+        "webmail": lambda: fetch_imap_submissions(settings),
+        "outlook": lambda: fetch_outlook_submissions(settings),
+        "whatsapp": lambda: fetch_whatsapp_submissions(db, settings),
+        "gmail": lambda: fetch_gmail_submissions(settings),
+        "google_form": lambda: fetch_form_submissions(settings),
+    }
+    fetch_results = [fetchers[name]() for name in _enabled_cv_sources(settings) if name in fetchers]
 
     source_results: list[CvSourceResult] = []
     all_candidates: list[Candidate] = []
@@ -423,6 +472,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
 
     for fetch_result in fetch_results:
         fetched_count = 0
+        validation_skipped: list[str] = []
         for submission in fetch_result.submissions:
             existing = (
                 db.query(Candidate)
@@ -448,8 +498,11 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
                     phone=submission.phone,
                     submitted_at=submission.submitted_at,
                 )
-            except ValidationFailed:
-                continue  # unreadable/oversized file — skip, don't fail the whole sync
+            except ValidationFailed as exc:
+                validation_skipped.append(
+                    f"{submission.source_ref}: {exc.message if hasattr(exc, 'message') else exc}"
+                )
+                continue  # unreadable/oversized/unsupported file — skip, don't fail the whole sync
 
             try:
                 run_cv_pipeline(candidate.id, db)  # parse-only: job_description_id is still None
@@ -458,7 +511,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
 
             cv_text = (candidate.parsed_data or {}).get("raw_text", "")
             match_result = match_candidate_to_job(
-                cv_text, submission.position_hint, open_job_summaries, settings
+                cv_text, submission.position_hint, job_summaries, settings
             )
             candidate.match_confidence = match_result.confidence
             candidate.match_reasoning = match_result.reasoning
@@ -493,12 +546,21 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
             fetched_count += 1
             all_candidates.append(get_candidate(db, candidate.id))
 
+        source_message = fetch_result.message
+        if validation_skipped:
+            skipped_note = "; ".join(validation_skipped[:3])
+            if len(validation_skipped) > 3:
+                skipped_note += f"; +{len(validation_skipped) - 3} more skipped"
+            source_message = (
+                f"{source_message}; {skipped_note}" if source_message else skipped_note
+            )
+
         source_results.append(
             CvSourceResult(
                 source=fetch_result.source,
                 configured=fetch_result.configured,
                 fetched=fetched_count,
-                message=fetch_result.message,
+                message=source_message,
             )
         )
 

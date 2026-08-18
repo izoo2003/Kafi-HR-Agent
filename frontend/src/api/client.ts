@@ -149,3 +149,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   return keysToCamel<T>(parsed);
 }
+
+export async function fetchBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const useAuth = options.auth !== false;
+  if (useAuth) {
+    const token = getAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(buildUrl(path, options.params), {
+    method: options.method ?? "GET",
+    headers,
+  });
+  if (!response.ok) {
+    if (response.status === 401) onUnauthorized?.();
+    throw new ApiError(response.status, `File download failed (${response.status})`);
+  }
+  return response.blob();
+}

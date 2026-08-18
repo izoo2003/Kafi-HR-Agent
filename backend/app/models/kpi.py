@@ -15,6 +15,9 @@ class KpiDefinition(Base, TimestampMixin):
     __tablename__ = "kpi_definitions"
 
     department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"), nullable=False, index=True)
+    owner_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     measurement_unit: Mapped[str | None] = mapped_column(String, nullable=True)

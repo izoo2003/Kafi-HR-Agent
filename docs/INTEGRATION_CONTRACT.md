@@ -25,10 +25,12 @@ The orchestrator (once it exists) will pass an **auth context** on every call �
 class AuthContext(BaseModel):
     user_id: int
     email: str
+    username: str | None = None
     roles: list[str]
     agent_permissions: dict[str, str]   # { "hr_admin.payroll": "approve", "hr_admin.kpi": "write", ... }
     source: Literal["standalone", "orchestrator"]  # tells this agent whether it minted the token itself
     linked_employee_id: int | None = None  # AUTH_AND_RBAC.md §6 — employee self-service row filter
+    department_id: int | None = None  # from linked employee, for self-service UI
 ```
 
 

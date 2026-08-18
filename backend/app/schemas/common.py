@@ -24,10 +24,12 @@ class AuthContext(BaseModel):
 
     user_id: int
     email: str
+    username: str | None = None
     roles: list[str]
     agent_permissions: dict[str, str] = Field(default_factory=dict)
     source: AuthSource = "standalone"
     linked_employee_id: int | None = None
+    department_id: int | None = None
 
 
 class PaginatedResponse(BaseModel, Generic[T]):

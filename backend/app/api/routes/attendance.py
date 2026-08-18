@@ -61,7 +61,7 @@ def patch_rule(
 @router.get("/attendance", response_model=PaginatedResponse[AttendanceRecordRead])
 def list_attendance(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     employee_id: int | None = None,
@@ -71,6 +71,7 @@ def list_attendance(
 ) -> PaginatedResponse[AttendanceRecordRead]:
     return svc.list_records(
         db,
+        auth,
         page=page,
         page_size=page_size,
         employee_id=employee_id,
@@ -157,20 +158,24 @@ def sync_biometric(
 @router.get("/attendance/summary", response_model=AttendanceSummary)
 def summary(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
     employee_id: int = Query(...),
     period_start: date = Query(...),
     period_end: date = Query(...),
 ) -> AttendanceSummary:
     return svc.attendance_summary(
-        db, employee_id=employee_id, period_start=period_start, period_end=period_end
+        db,
+        auth,
+        employee_id=employee_id,
+        period_start=period_start,
+        period_end=period_end,
     )
 
 
 @router.get("/leave-requests", response_model=PaginatedResponse[LeaveRequestRead])
 def list_leave(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     employee_id: int | None = None,
@@ -179,6 +184,7 @@ def list_leave(
 ) -> PaginatedResponse[LeaveRequestRead]:
     return svc.list_leave_requests(
         db,
+        auth,
         page=page,
         page_size=page_size,
         employee_id=employee_id,

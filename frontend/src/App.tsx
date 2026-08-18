@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { RequireAuth, RequirePermission } from "./components/layout/RequirePermission";
 import { LoginPage } from "./pages/Auth/LoginPage";
+import { RegisterPage } from "./pages/Auth/RegisterPage";
 import { JobDescriptionListPage } from "./pages/JobDescriptions/JobDescriptionListPage";
 import { JobDescriptionDetailPage } from "./pages/JobDescriptions/JobDescriptionDetailPage";
 import { JobDescriptionFormPage } from "./pages/JobDescriptions/JobDescriptionFormPage";
@@ -31,16 +32,26 @@ import {
   SystemConfigPage,
   UserManagementPage,
 } from "./pages/AdminPanel/DashboardPage";
+import { HrPoliciesPage } from "./pages/HrPolicies/HrPoliciesPage";
 import { NotAuthorizedPage, NotFoundPage } from "./pages/SystemPages";
+import { useAuth } from "./hooks/useAuth";
+import { homePath } from "./lib/selfService";
+
+function HomeRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={homePath(user)} replace />;
+}
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/hr-policies" element={<HrPoliciesPage />} />
 
           <Route element={<RequirePermission module="employees" />}>
             <Route path="/employees" element={<EmployeeListPage />} />
@@ -69,8 +80,10 @@ export default function App() {
           <Route element={<RequirePermission module="attendance" />}>
             <Route path="/attendance" element={<AttendanceOverviewPage />} />
             <Route path="/attendance/records" element={<AttendanceRecordsPage />} />
-            <Route path="/attendance/period-report" element={<AttendancePeriodReportPage />} />
             <Route path="/attendance/leave-requests" element={<LeaveRequestsPage />} />
+          </Route>
+          <Route element={<RequirePermission module="attendance" level="write" />}>
+            <Route path="/attendance/period-report" element={<AttendancePeriodReportPage />} />
           </Route>
 
           <Route element={<RequirePermission module="payroll" />}>
