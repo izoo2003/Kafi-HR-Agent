@@ -212,3 +212,25 @@ def _parse_date(raw_date: str | None) -> dt.datetime:
         return email.utils.parsedate_to_datetime(raw_date)
     except (TypeError, ValueError):
         return dt.datetime.now(dt.timezone.utc)
+
+
+def restore_gmail_cv(message_id: str, settings: Settings) -> tuple[str, bytes] | None:
+    """Re-download a previously ingested Gmail CV by message id."""
+    if not (message_id or "").strip():
+        return None
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        return None
+    creds_path = settings.resolved_path(settings.google_oauth_credentials_file)
+    token_path = settings.resolved_path(settings.google_oauth_token_file)
+    try:
+        creds = get_credentials(creds_path, token_path, SCOPES, purpose="Gmail")
+        service = build("gmail", "v1", credentials=creds)
+        submission = _process_message(service, message_id.strip(), settings)
+    except Exception:
+        logger.warning("Gmail CV restore failed for %s", message_id, exc_info=True)
+        return None
+    if submission and submission.cv_bytes:
+        return submission.cv_filename, submission.cv_bytes
+    return None

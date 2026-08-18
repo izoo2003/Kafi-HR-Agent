@@ -254,3 +254,26 @@ def _parse_received(raw: str | None) -> dt.datetime:
         return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return dt.datetime.now(dt.timezone.utc)
+
+
+def restore_outlook_cv(message_id: str, settings: Settings) -> tuple[str, bytes] | None:
+    """Re-download a previously ingested Outlook CV by Graph message id."""
+    if not (message_id or "").strip():
+        return None
+    mailbox = (settings.outlook_mailbox or "").strip()
+    tenant = (settings.ms_graph_tenant_id or "").strip()
+    client_id = (settings.ms_graph_client_id or "").strip()
+    client_secret = (settings.ms_graph_client_secret or "").strip()
+    if not all([mailbox, tenant, client_id, client_secret]):
+        return None
+    try:
+        token = _acquire_token(tenant, client_id, client_secret)
+        filename, file_bytes = _download_best_cv_attachment(
+            token, mailbox, message_id.strip(), settings
+        )
+    except Exception:
+        logger.warning("Outlook CV restore failed for %s", message_id, exc_info=True)
+        return None
+    if file_bytes and filename:
+        return filename, file_bytes
+    return None

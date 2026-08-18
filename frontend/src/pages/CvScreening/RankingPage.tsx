@@ -97,7 +97,8 @@ export function RankingPage() {
                     {CANDIDATE_STATUS_LABELS[r.status as keyof typeof CANDIDATE_STATUS_LABELS] ?? r.status}
                   </StatusBadge>
                 </td>
-                <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <td>
+                  <div className="table-actions">
                   <Button variant="secondary" onClick={() => setPreview(r)}>
                     View CV
                   </Button>
@@ -124,6 +125,7 @@ export function RankingPage() {
                       </Button>
                     </>
                   ) : null}
+                  </div>
                 </td>
               </tr>
             ))}

@@ -106,7 +106,8 @@ export function CandidateListPage() {
                     {CANDIDATE_STATUS_LABELS[c.status as keyof typeof CANDIDATE_STATUS_LABELS] ?? c.status}
                   </StatusBadge>
                 </td>
-                <td style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+                <td>
+                  <div className="table-actions">
                   <Button variant="secondary" onClick={() => setPreview(c)}>
                     View CV
                   </Button>
@@ -120,6 +121,7 @@ export function CandidateListPage() {
                       {deletingId === c.id ? "Removing…" : "Remove"}
                     </Button>
                   ) : null}
+                  </div>
                 </td>
               </tr>
             ))}

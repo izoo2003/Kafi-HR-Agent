@@ -165,14 +165,8 @@ export function UnassignedCandidatesPage() {
                       "—"
                     )}
                   </td>
-                  <td
-                    style={{
-                      display: "grid",
-                      gap: "var(--space-2)",
-                      alignItems: "start",
-                      minWidth: 250,
-                    }}
-                  >
+                  <td>
+                    <div className="table-actions" style={{ minWidth: 250, alignItems: "start" }}>
                     {canWrite ? <AssignControl candidate={c} /> : null}
                     <Button variant="secondary" onClick={() => setPreview(c)}>
                       View CV
@@ -186,6 +180,7 @@ export function UnassignedCandidatesPage() {
                         Remove
                       </Button>
                     ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

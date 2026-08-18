@@ -163,7 +163,8 @@ export function LeaveRequestsPage() {
                       {LEAVE_STATUS_LABELS[l.status as keyof typeof LEAVE_STATUS_LABELS] ?? l.status}
                     </StatusBadge>
                   </td>
-                  <td style={{ display: "flex", gap: 8 }}>
+                  <td>
+                    <div className="table-actions">
                     {canApprove && l.status === "pending" ? (
                       <>
                         <Button
@@ -182,6 +183,7 @@ export function LeaveRequestsPage() {
                     ) : (
                       "—"
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}

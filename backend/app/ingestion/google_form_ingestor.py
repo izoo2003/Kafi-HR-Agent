@@ -299,3 +299,45 @@ def _save_last_processed_row(settings: Settings, row_idx: int) -> None:
     state_file = _state_file(settings)
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps({"last_processed_row": row_idx}), encoding="utf-8")
+
+
+def restore_form_cv(source_ref: str, settings: Settings) -> tuple[str, bytes] | None:
+    """Re-download a Google Form CV using form_row_{n} from the response sheet."""
+    match = re.match(r"form_row_(\d+)$", (source_ref or "").strip())
+    if not match or not settings.google_form_sheet_id:
+        return None
+    row_idx = int(match.group(1))
+    try:
+        from googleapiclient.discovery import build
+    except ImportError:
+        return None
+    creds_path = settings.resolved_path(settings.google_oauth_credentials_file)
+    token_path = settings.resolved_path(settings.google_form_token_file)
+    try:
+        creds = get_credentials(creds_path, token_path, SCOPES, purpose="Google Form")
+        sheets = build("sheets", "v4", credentials=creds)
+        drive = build("drive", "v3", credentials=creds)
+        sheet_id = settings.google_form_sheet_id
+        sheet_name = _first_sheet_title(sheets, sheet_id)
+        result = (
+            sheets.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=f"{sheet_name}!A:Z")
+            .execute()
+        )
+        rows = result.get("values", [])
+        if len(rows) < row_idx:
+            return None
+        header_map = _resolve_headers(rows[0])
+        row = rows[row_idx - 1]
+        cv_link = _cell(row, header_map, "cv_upload")
+        file_id = _extract_drive_file_id(cv_link)
+        if not file_id:
+            return None
+        filename, cv_bytes = _download_drive_file(drive, file_id)
+    except Exception:
+        logger.warning("Google Form CV restore failed for %s", source_ref, exc_info=True)
+        return None
+    if cv_bytes:
+        return filename or f"form_row{row_idx}.pdf", cv_bytes
+    return None

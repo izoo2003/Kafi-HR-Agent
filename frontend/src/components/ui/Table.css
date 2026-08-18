@@ -25,11 +25,19 @@
 }
 
 .data-table td {
-  height: var(--table-row-height);
-  padding: 0 var(--space-4);
+  height: auto;
+  min-height: var(--table-row-height);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--color-border);
   font-size: var(--text-sm);
   vertical-align: middle;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .data-table tbody tr:hover {
