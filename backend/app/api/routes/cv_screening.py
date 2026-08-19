@@ -36,29 +36,75 @@ router = APIRouter(tags=["cv-screening"])
 
 @router.get("/cv-screening/source-check")
 def cv_source_check() -> dict:
-    """Unauthenticated diagnostic: can we reach each CV source? No data fetched."""
+    """Unauthenticated diagnostic: can we reach each CV source? Peeks into inbox."""
+    import datetime as dt
+    import imaplib
+
     from app.core.config import get_settings
-    from app.ingestion.imap_ingestor import probe_imap_connection
+    from app.ingestion.imap_ingestor import _open_imap_client, probe_imap_connection
 
     settings = get_settings()
     sources: dict[str, dict] = {}
 
-    # Webmail / IMAP
+    # ── Webmail / IMAP ──
     imap_ok, imap_msg = probe_imap_connection(settings)
-    sources["webmail"] = {
+    imap_detail: dict = {
         "configured": bool((settings.imap_host or "").strip() and (settings.imap_password or "").strip()),
         "reachable": imap_ok,
         "detail": imap_msg,
         "connect_host": (settings.imap_connect_host or "").strip() or "(auto)",
     }
+    if imap_ok:
+        try:
+            client = _open_imap_client(settings)
+            typ, _ = client.select("INBOX")
+            if typ == "OK":
+                since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=90)).strftime("%d-%b-%Y")
+                typ2, data = client.search(None, "SINCE", since)
+                uids = data[0].split() if typ2 == "OK" and data and data[0] else []
+                imap_detail["inbox_messages_since_90d"] = len(uids)
+                # peek at last 3 messages for attachment info
+                sample = []
+                for uid in list(reversed(uids))[:3]:
+                    typ3, hdr = client.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
+                    snippet = ""
+                    if typ3 == "OK" and hdr and hdr[0]:
+                        raw = hdr[0][1] if isinstance(hdr[0], tuple) else hdr[0]
+                        snippet = raw.decode("utf-8", errors="ignore").strip()[:200] if isinstance(raw, bytes) else str(raw)[:200]
+                    # check for attachments via BODYSTRUCTURE
+                    typ4, bs = client.fetch(uid, "(BODYSTRUCTURE)")
+                    bs_str = ""
+                    if typ4 == "OK" and bs:
+                        bs_str = str(bs[0])[:500]
+                    has_attach = "attachment" in bs_str.lower() or ".pdf" in bs_str.lower() or ".docx" in bs_str.lower()
+                    uid_s = uid.decode() if isinstance(uid, bytes) else str(uid)
+                    sample.append({"uid": uid_s, "header": snippet, "has_cv_like_attach": has_attach})
+                imap_detail["recent_sample"] = sample
+            client.logout()
+        except Exception as exc:
+            imap_detail["peek_error"] = str(exc)
+    sources["webmail"] = imap_detail
 
-    # Google Form
+    # ── Google Form ──
     sheet_id = (settings.google_form_sheet_id or "").strip()
-    sources["google_form"] = {
+    gf: dict = {
         "configured": bool(sheet_id),
         "sheet_id_set": bool(sheet_id),
-        "detail": "Sheet ID present" if sheet_id else "GOOGLE_FORM_RESPONSES_SHEET_ID not set",
     }
+    if sheet_id:
+        try:
+            from app.ingestion.google_form_ingestor import fetch_form_submissions
+            result = fetch_form_submissions(settings)
+            gf["fetch_result"] = {
+                "configured": result.configured,
+                "submissions_count": len(result.submissions),
+                "message": result.message,
+            }
+        except Exception as exc:
+            gf["fetch_error"] = str(exc)
+    else:
+        gf["detail"] = "GOOGLE_FORM_RESPONSES_SHEET_ID not set"
+    sources["google_form"] = gf
 
     enabled = [s.strip() for s in (settings.cv_sync_sources or "").split(",") if s.strip()]
     return {"enabled_sources": enabled, "sources": sources}
