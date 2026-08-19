@@ -31,6 +31,7 @@ from app.schemas.cv_screening import (
     CandidateAssignRequest,
     CandidateEvaluation,
     CandidateRead,
+    CvDuplicateCandidateRead,
     CandidateUpdate,
     CvSourceResult,
     CvSyncResult,
@@ -476,6 +477,8 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     auto_matched = 0
     unassigned = 0
     duplicates_skipped = 0
+    duplicate_candidates: list[CvDuplicateCandidateRead] = []
+    DUPLICATE_DETAILS_LIMIT = 25
 
     restored_files = _repair_missing_candidate_cvs(db, limit=40)
 
@@ -493,6 +496,20 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
             )
             if existing:
                 duplicates_skipped += 1
+                if len(duplicate_candidates) < DUPLICATE_DETAILS_LIMIT:
+                    duplicate_candidates.append(
+                        CvDuplicateCandidateRead(
+                            source=fetch_result.source,
+                            source_ref=submission.source_ref,
+                            existing_candidate_id=existing.id,
+                            existing_job_description_id=existing.job_description_id,
+                            existing_status=existing.status,
+                            existing_full_name=existing.full_name,
+                            existing_email=existing.email,
+                            submitted_full_name=submission.full_name,
+                            submitted_email=submission.email,
+                        )
+                    )
                 continue
 
             try:
@@ -596,6 +613,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
         unassigned=unassigned,
         duplicates_skipped=duplicates_skipped,
         restored_files=restored_files,
+        duplicates=duplicate_candidates,
         candidates=[CandidateRead.model_validate(c) for c in all_candidates],
     )
 

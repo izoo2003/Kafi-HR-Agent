@@ -28,6 +28,19 @@ export function CvScreeningHubPage() {
   const sync = useSyncCvSources();
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+    const [duplicates, setDuplicates] = useState<
+      Array<{
+        source: string;
+        sourceRef: string;
+        existingCandidateId: number;
+        existingJobDescriptionId: number | null;
+        existingStatus: string;
+        existingFullName: string | null;
+        existingEmail: string | null;
+        submittedFullName: string | null;
+        submittedEmail: string | null;
+      }>
+    >([]);
 
   const deptName = useMemo(() => {
     const map = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
@@ -41,6 +54,7 @@ export function CvScreeningHubPage() {
   async function handleSync() {
     setSyncError(null);
     setSyncMessage(null);
+      setDuplicates([]);
     try {
       const result = await sync.mutateAsync();
       const sourceLabel: Record<string, string> = {
@@ -66,6 +80,7 @@ export function CvScreeningHubPage() {
         .join(" | ");
       if (details) msg += ` — ${details}`;
       setSyncMessage(msg);
+      setDuplicates(result.duplicates ?? []);
     } catch (err) {
       setSyncError(err instanceof ApiError ? err.message : "Sync failed");
     }
@@ -95,6 +110,36 @@ export function CvScreeningHubPage() {
 
         {syncError ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{syncError}</p> : null}
         {syncMessage ? <p style={{ color: "var(--color-status-info)", margin: 0 }}>{syncMessage}</p> : null}
+        {duplicates.length > 0 ? (
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <p style={{ margin: 0, fontWeight: "var(--weight-semibold)" }}>Possible duplicates</p>
+            <p style={{ margin: "var(--space-1) 0 0", color: "var(--color-text-secondary)" }}>
+              These submissions were skipped because a candidate with the same <code>source_ref</code> already
+              exists. If the email was applied to a different job, you can re-route the existing candidate from
+              its detail page.
+            </p>
+            <Table headers={["Submitted", "Existing", "Job", "Status"]}>
+              {duplicates.map((d) => (
+                <tr key={`${d.source}-${d.sourceRef}-${d.existingCandidateId}`} data-status="warning">
+                  <td>
+                    {d.submittedFullName ?? d.submittedEmail ?? d.sourceRef}
+                    <div style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)" }}>{d.source}</div>
+                  </td>
+                  <td>
+                    <Link to={`/candidates/${d.existingCandidateId}`}>
+                      {d.existingFullName ?? `Candidate #${d.existingCandidateId}`}
+                    </Link>
+                    <div style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)" }}>{d.sourceRef}</div>
+                  </td>
+                  <td>
+                    {d.existingJobDescriptionId ? `JD #${d.existingJobDescriptionId}` : "Unassigned"}
+                  </td>
+                  <td>{d.existingStatus}</td>
+                </tr>
+              ))}
+            </Table>
+          </div>
+        ) : null}
 
         {unassignedCount > 0 ? (
           <Link

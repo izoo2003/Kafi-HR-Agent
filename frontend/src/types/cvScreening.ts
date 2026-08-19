@@ -134,6 +134,18 @@ export interface CvSourceResult {
   message: string | null;
 }
 
+export interface CvDuplicateCandidate {
+  source: string;
+  sourceRef: string;
+  existingCandidateId: number;
+  existingJobDescriptionId: number | null;
+  existingStatus: string;
+  existingFullName: string | null;
+  existingEmail: string | null;
+  submittedFullName: string | null;
+  submittedEmail: string | null;
+}
+
 export interface CvSyncResult {
   sources: CvSourceResult[];
   totalFetched: number;
@@ -141,6 +153,7 @@ export interface CvSyncResult {
   unassigned: number;
   duplicatesSkipped: number;
   restoredFiles?: number;
+  duplicates?: CvDuplicateCandidate[];
   candidates: Candidate[];
 }
 
