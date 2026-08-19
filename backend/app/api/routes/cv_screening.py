@@ -93,15 +93,21 @@ def cv_source_check() -> dict:
     }
     if sheet_id:
         try:
-            from app.ingestion.google_form_ingestor import fetch_form_submissions
-            result = fetch_form_submissions(settings)
-            gf["fetch_result"] = {
-                "configured": result.configured,
-                "submissions_count": len(result.submissions),
-                "message": result.message,
-            }
+            import json as _json
+            state_path = settings.data_dir / "google_form_state.json"
+            last = 1
+            if state_path.exists():
+                last = int(_json.loads(state_path.read_text()).get("last_processed_row", 1))
+            token_json_set = bool((settings.google_form_token_json or "").strip())
+            creds_file = settings.resolved_path(settings.google_oauth_credentials_file)
+            token_file = settings.resolved_path(settings.google_form_token_file)
+            gf["last_processed_row"] = last
+            gf["token_json_env_set"] = token_json_set
+            gf["creds_file_exists"] = creds_file.exists() if creds_file else False
+            gf["token_file_exists"] = token_file.exists() if token_file else False
+            gf["detail"] = f"Sheet configured, last_processed_row={last}"
         except Exception as exc:
-            gf["fetch_error"] = str(exc)
+            gf["detail"] = f"check error: {exc}"
     else:
         gf["detail"] = "GOOGLE_FORM_RESPONSES_SHEET_ID not set"
     sources["google_form"] = gf

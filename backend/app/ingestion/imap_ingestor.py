@@ -415,8 +415,8 @@ def _fetch(
             return []
 
         uids = data[0].split() if data and data[0] else []
-        # Newest first
-        uids = list(reversed(uids))[-MAX_MESSAGES_PER_RUN:]
+        # Newest first, cap to MAX_MESSAGES_PER_RUN
+        uids = list(reversed(uids))[:MAX_MESSAGES_PER_RUN]
 
         state = _load_state(settings)
         mailbox_key = f"{user}@{host}"

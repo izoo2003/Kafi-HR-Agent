@@ -50,8 +50,8 @@ export function CvScreeningHubPage() {
         gmail: "Gmail",
         google_form: "Google Form",
       };
-      let msg = `Fetched ${result.totalFetched} — ${result.autoMatched} matched, ${result.unassigned} unassigned`;
-      if (result.duplicatesSkipped > 0) msg += `, ${result.duplicatesSkipped} duplicates skipped`;
+      let msg = `Fetched ${result.totalFetched} new — ${result.autoMatched} matched, ${result.unassigned} unassigned`;
+      if (result.duplicatesSkipped > 0) msg += ` (${result.duplicatesSkipped} already in system, skipped)`;
       if ((result.restoredFiles ?? 0) > 0) {
         msg += `, restored ${result.restoredFiles} missing CV file(s)`;
       }

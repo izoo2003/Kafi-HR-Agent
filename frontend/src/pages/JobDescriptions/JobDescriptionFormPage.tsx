@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -17,6 +17,13 @@ import {
 import { replaceCriteria as replaceCriteriaApi } from "../../api/jobDescriptions";
 import { ApiError } from "../../api/client";
 import type { LinkedInPostResult, ScoringCriteriaInput } from "../../types/cvScreening";
+import {
+  clearJobDescriptionFormDraft,
+  hasMeaningfulJobDescriptionDraft,
+  loadJobDescriptionFormDraft,
+  saveJobDescriptionFormDraft,
+  type JobDescriptionFormDraftPayload,
+} from "../../lib/jobDescriptionFormDraft";
 
 function skillRow(name = "", rating = 5): ScoringCriteriaInput {
   const skill = name.trim();
@@ -56,19 +63,65 @@ export function JobDescriptionFormPage() {
   const linkedinAccounts = useLinkedInAccounts();
   const criteriaQ = useCriteria(jobId);
 
-  const [title, setTitle] = useState("");
-  const [departmentId, setDepartmentId] = useState("");
-  const [descriptionText, setDescriptionText] = useState("");
-  const [requirementsText, setRequirementsText] = useState("");
-  const [status, setStatus] = useState<"draft" | "open" | "closed">("draft");
-  const [skills, setSkills] = useState<ScoringCriteriaInput[]>([skillRow("", 5)]);
+  const draftKey: number | "new" = isEdit ? jobId : "new";
+  const emptySkills = [skillRow("", 5)];
+
+  const draftBootstrap = useMemo((): {
+    draftKey: number | "new";
+    restored: boolean;
+    title: string;
+    departmentId: string;
+    descriptionText: string;
+    requirementsText: string;
+    status: "draft" | "open" | "closed";
+    skills: ScoringCriteriaInput[];
+    selectedLinkedin: string[];
+  } => {
+    const draft = loadJobDescriptionFormDraft(draftKey);
+    if (!draft) {
+      return {
+        draftKey,
+        restored: false,
+        title: "",
+        departmentId: "",
+        descriptionText: "",
+        requirementsText: "",
+        status: "draft",
+        skills: emptySkills,
+        selectedLinkedin: [],
+      };
+    }
+    return {
+      draftKey,
+      restored: true,
+      title: draft.title ?? "",
+      departmentId: draft.departmentId ?? "",
+      descriptionText: draft.descriptionText ?? "",
+      requirementsText: draft.requirementsText ?? "",
+      status: (draft.status ?? "draft") as "draft" | "open" | "closed",
+      skills: Array.isArray(draft.skills) && draft.skills.length > 0 ? draft.skills : emptySkills,
+      selectedLinkedin: Array.isArray(draft.selectedLinkedin) ? draft.selectedLinkedin : [],
+    };
+  }, [draftKey]);
+
+  const draftRestoredRef = useRef(draftBootstrap.restored);
+
+  const [title, setTitle] = useState(draftBootstrap.title);
+  const [departmentId, setDepartmentId] = useState(draftBootstrap.departmentId);
+  const [descriptionText, setDescriptionText] = useState(draftBootstrap.descriptionText);
+  const [requirementsText, setRequirementsText] = useState(draftBootstrap.requirementsText);
+  const [status, setStatus] = useState<"draft" | "open" | "closed">(draftBootstrap.status);
+  const [skills, setSkills] = useState<ScoringCriteriaInput[]>(draftBootstrap.skills);
   const [error, setError] = useState<string | null>(null);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   const [linkedinPromptOpen, setLinkedinPromptOpen] = useState(false);
   const [linkedinPhase, setLinkedinPhase] = useState<"pick" | "posting" | "result">("pick");
-  const [selectedLinkedin, setSelectedLinkedin] = useState<string[]>([]);
+  const [selectedLinkedin, setSelectedLinkedin] = useState<string[]>(draftBootstrap.selectedLinkedin);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInPostResult[]>([]);
   const [postedJobId, setPostedJobId] = useState<number | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(
+    draftBootstrap.restored ? "Restored unsaved job posting draft from your last session." : null,
+  );
 
   const formUrl =
     applicationForm.data?.applicationFormUrl ||
@@ -112,6 +165,7 @@ export function JobDescriptionFormPage() {
 
   useEffect(() => {
     if (!existing.data) return;
+    if (draftRestoredRef.current) return; // keep unsaved draft instead of overwriting from API
     setTitle(existing.data.title);
     setDepartmentId(String(existing.data.departmentId));
     setDescriptionText(existing.data.descriptionText);
@@ -121,15 +175,57 @@ export function JobDescriptionFormPage() {
 
   useEffect(() => {
     const names = (linkedinAccounts.data ?? []).map((a) => a.name);
-    if (names.length) setSelectedLinkedin(names);
+    if (names.length && !draftRestoredRef.current) setSelectedLinkedin(names);
   }, [linkedinAccounts.data]);
 
   useEffect(() => {
     if (!criteriaQ.data?.length) return;
+    if (draftRestoredRef.current) return; // keep unsaved draft instead of overwriting from API
     setSkills(
       criteriaQ.data.map((c) => skillRow(c.criterionName, toRating(Number(c.weight)))),
     );
   }, [criteriaQ.data]);
+
+  const skipPersistRef = useRef(true);
+  useEffect(() => {
+    // Don't persist before edit page data arrives (unless we restored a draft already).
+    if (isEdit && !existing.data && !draftRestoredRef.current) return;
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+
+    const draftPayload: Omit<JobDescriptionFormDraftPayload, "version" | "savedAt"> = {
+      title,
+      departmentId,
+      descriptionText,
+      requirementsText,
+      status,
+      skills,
+      selectedLinkedin,
+    };
+
+    if (!hasMeaningfulJobDescriptionDraft(draftPayload)) {
+      clearJobDescriptionFormDraft(draftKey);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      saveJobDescriptionFormDraft(draftKey, draftPayload);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    title,
+    departmentId,
+    descriptionText,
+    requirementsText,
+    status,
+    skills,
+    selectedLinkedin,
+    isEdit,
+    existing.data,
+    draftKey,
+  ]);
 
   function updateSkill(idx: number, name: string, rating: number) {
     const next = [...skills];
@@ -167,6 +263,10 @@ export function JobDescriptionFormPage() {
         ? await updateJob.mutateAsync(payload)
         : await createJob.mutateAsync(payload);
       await replaceCriteriaApi(job.id, cleaned);
+      // Job is now persisted — drop any local unsaved draft.
+      clearJobDescriptionFormDraft("new");
+      clearJobDescriptionFormDraft(job.id);
+      setDraftMessage(null);
       if (options?.showLinkedInResult) {
         setPostedJobId(job.id);
         const selected = new Set(selectedLinkedin);
@@ -222,6 +322,9 @@ export function JobDescriptionFormPage() {
       <div className="page">
         <form className="card" onSubmit={onSubmit} style={{ display: "grid", gap: "var(--space-4)" }}>
           {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+          {draftMessage ? (
+            <p style={{ color: "var(--color-status-info)", margin: 0 }}>{draftMessage}</p>
+          ) : null}
           <FormField label="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
           <label className="form-field">
             <span className="form-field__label">Department</span>
