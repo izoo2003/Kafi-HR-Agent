@@ -34,6 +34,36 @@ from app.services import audit_service, cv_screening_service as cv_service
 router = APIRouter(tags=["cv-screening"])
 
 
+@router.get("/cv-screening/source-check")
+def cv_source_check() -> dict:
+    """Unauthenticated diagnostic: can we reach each CV source? No data fetched."""
+    from app.core.config import get_settings
+    from app.ingestion.imap_ingestor import probe_imap_connection
+
+    settings = get_settings()
+    sources: dict[str, dict] = {}
+
+    # Webmail / IMAP
+    imap_ok, imap_msg = probe_imap_connection(settings)
+    sources["webmail"] = {
+        "configured": bool((settings.imap_host or "").strip() and (settings.imap_password or "").strip()),
+        "reachable": imap_ok,
+        "detail": imap_msg,
+        "connect_host": (settings.imap_connect_host or "").strip() or "(auto)",
+    }
+
+    # Google Form
+    sheet_id = (settings.google_form_sheet_id or "").strip()
+    sources["google_form"] = {
+        "configured": bool(sheet_id),
+        "sheet_id_set": bool(sheet_id),
+        "detail": "Sheet ID present" if sheet_id else "GOOGLE_FORM_RESPONSES_SHEET_ID not set",
+    }
+
+    enabled = [s.strip() for s in (settings.cv_sync_sources or "").split(",") if s.strip()]
+    return {"enabled_sources": enabled, "sources": sources}
+
+
 @router.post("/cv-screening/sync", response_model=CvSyncResult)
 def sync_cv_sources(
     db: Annotated[Session, Depends(get_db)],
