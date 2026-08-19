@@ -56,6 +56,25 @@ export async function deleteJobDescription(id: number): Promise<MessageResponse>
   return apiRequest<MessageResponse>(`/job-descriptions/${id}`, { method: "DELETE" });
 }
 
+export async function uploadJobImages(jobId: number, files: File[]): Promise<JobDescription> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+  return apiRequest<JobDescription>(`/job-descriptions/${jobId}/images`, {
+    method: "POST",
+    formData: form,
+  });
+}
+
+export async function downloadJobImage(jobId: number, index: number): Promise<Blob> {
+  return fetchBlob(`/job-descriptions/${jobId}/images/${index}/file`);
+}
+
+export async function deleteJobImage(jobId: number, index: number): Promise<JobDescription> {
+  return apiRequest<JobDescription>(`/job-descriptions/${jobId}/images/${index}`, {
+    method: "DELETE",
+  });
+}
+
 export async function listCriteria(jobId: number): Promise<ScoringCriteria[]> {
   return apiRequest<ScoringCriteria[]>(`/job-descriptions/${jobId}/scoring-criteria`);
 }

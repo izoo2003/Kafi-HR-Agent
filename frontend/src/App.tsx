@@ -13,6 +13,8 @@ import { UnassignedCandidatesPage } from "./pages/CvScreening/UnassignedCandidat
 import { EmployeeListPage } from "./pages/Employees/EmployeeListPage";
 import { EmployeeFormPage } from "./pages/Employees/EmployeeFormPage";
 import { VerifyCnicPage } from "./pages/Employees/VerifyCnicPage";
+import { DepartmentManagePage } from "./pages/Employees/DepartmentManagePage";
+import { EmployeeLettersPage } from "./pages/Employees/EmployeeLettersPage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
 import { AttendanceRecordsPage } from "./pages/Attendance/AttendanceRecordsPage";
 import { AttendancePeriodReportPage } from "./pages/Attendance/AttendancePeriodReportPage";
@@ -29,8 +31,8 @@ import {
   AuditLogPage,
   DashboardPage,
   SystemConfigPage,
-  UserManagementPage,
 } from "./pages/AdminPanel/DashboardPage";
+import { CreateUserPage, UserManagementPage } from "./pages/AdminPanel/UserManagementPage";
 import { HrPoliciesPage } from "./pages/HrPolicies/HrPoliciesPage";
 import { NotAuthorizedPage, NotFoundPage } from "./pages/SystemPages";
 import { useAuth } from "./hooks/useAuth";
@@ -56,8 +58,17 @@ export default function App() {
             <Route path="/employees" element={<EmployeeListPage />} />
             <Route path="/employees/new" element={<EmployeeFormPage />} />
             <Route path="/employees/verify-cnic" element={<VerifyCnicPage />} />
+            <Route path="/employees/departments" element={<DepartmentManagePage />} />
+            <Route
+              path="/employees/letters/appointment"
+              element={<EmployeeLettersPage kind="appointment" />}
+            />
+            <Route
+              path="/employees/letters/contract"
+              element={<EmployeeLettersPage kind="contract" />}
+            />
             <Route path="/employees/:id" element={<EmployeeFormPage />} />
-            <Route path="/departments" element={<EmployeeListPage />} />
+            <Route path="/departments" element={<DepartmentManagePage />} />
           </Route>
 
           <Route element={<RequirePermission module="job_descriptions" />}>
@@ -107,6 +118,7 @@ export default function App() {
 
           <Route element={<RequirePermission module="users" />}>
             <Route path="/admin/users" element={<UserManagementPage />} />
+            <Route path="/admin/users/new" element={<CreateUserPage />} />
           </Route>
 
           <Route path="/not-authorized" element={<NotAuthorizedPage />} />

@@ -59,3 +59,12 @@ def set_user_password(
     auth: Annotated[AuthContext, Depends(require_permission("users", "write"))],
 ) -> UserPasswordSetResponse:
     return user_service.set_password(db, auth, user_id, payload.password)
+
+
+@router.delete("/users/{user_id}", response_model=UserRead)
+def deactivate_user(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("users", "write"))],
+) -> UserRead:
+    return user_service.deactivate_user(db, auth, user_id)

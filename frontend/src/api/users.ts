@@ -21,6 +21,10 @@ export async function listRoles(): Promise<Role[]> {
   return apiRequest<Role[]>("/roles");
 }
 
+export async function deactivateUser(userId: number): Promise<User> {
+  return apiRequest<User>(`/users/${userId}`, { method: "DELETE" });
+}
+
 export async function setUserPassword(
   userId: number,
   password: string,

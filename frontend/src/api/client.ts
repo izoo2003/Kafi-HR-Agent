@@ -150,6 +150,22 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return keysToCamel<T>(parsed);
 }
 
+function readApiErrorMessage(parsed: unknown, fallback: string): string {
+  if (!parsed || typeof parsed !== "object") return fallback;
+  const rec = parsed as Record<string, unknown>;
+  const wrapped = rec.error as { message?: string } | undefined;
+  if (typeof wrapped?.message === "string" && wrapped.message.trim()) {
+    return wrapped.message.trim();
+  }
+  const detail = rec.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string };
+    if (typeof first?.msg === "string" && first.msg.trim()) return first.msg.trim();
+  }
+  return fallback;
+}
+
 export async function fetchBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
   const headers: Record<string, string> = {};
   const useAuth = options.auth !== false;
@@ -157,18 +173,28 @@ export async function fetchBlob(path: string, options: RequestOptions = {}): Pro
     const token = getAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
+
+  let body: BodyInit | undefined;
+  if (options.formData) {
+    body = options.formData;
+  } else if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(keysToSnake(options.body));
+  } else if ((options.method ?? "GET").toUpperCase() === "POST") {
+    headers["Content-Type"] = "application/json";
+    body = "{}";
+  }
+
   const response = await fetch(buildUrl(path, options.params), {
     method: options.method ?? "GET",
     headers,
+    body,
   });
   if (!response.ok) {
     if (response.status === 401) onUnauthorized?.();
     let message = `File download failed (${response.status})`;
     try {
-      const parsed = (await response.json()) as { error?: { message?: string } };
-      if (typeof parsed?.error?.message === "string" && parsed.error.message.trim()) {
-        message = parsed.error.message;
-      }
+      message = readApiErrorMessage(await response.json(), message);
     } catch {
       // keep generic message
     }

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # --- Seed admin (first boot only) ---
     seed_admin_email: str = "admin@kafi-group.com"
-    seed_admin_password: str = "ChangeMeAdmin123!"
+    seed_admin_password: str = "Admin123"
     seed_admin_name: str = "System Admin"
 
     # --- Optional LLM ---

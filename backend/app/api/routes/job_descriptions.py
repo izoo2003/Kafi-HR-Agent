@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -111,6 +112,50 @@ def delete_job(
 ) -> MessageResponse:
     jd_service.delete_job_description(db, auth, job_id)
     return MessageResponse(message="Job posting deleted")
+
+
+@router.post("/job-descriptions/{job_id}/images", response_model=JobDescriptionRead)
+async def upload_job_images(
+    job_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
+    files: Annotated[list[UploadFile], File(...)],
+) -> JobDescriptionRead:
+    payloads: list[tuple[str, bytes]] = []
+    for upload in files:
+        content = await upload.read()
+        name = upload.filename or "image.jpg"
+        payloads.append((name, content))
+    jd_service.add_job_images(db, auth, job_id, payloads)
+    return jd_service.get_job_description_read(db, job_id)
+
+
+@router.get("/job-descriptions/{job_id}/images/{index}/file")
+def download_job_image(
+    job_id: int,
+    index: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "read"))],
+) -> Response:
+    data, mime = jd_service.read_job_image(db, job_id, index)
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(f'job-{job_id}-image-{index}')}",
+        },
+    )
+
+
+@router.delete("/job-descriptions/{job_id}/images/{index}", response_model=JobDescriptionRead)
+def remove_job_image(
+    job_id: int,
+    index: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
+) -> JobDescriptionRead:
+    jd_service.delete_job_image(db, auth, job_id, index)
+    return jd_service.get_job_description_read(db, job_id)
 
 
 @router.get("/job-descriptions/{job_id}/export")

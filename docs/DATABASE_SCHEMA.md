@@ -152,6 +152,7 @@ Hiring **job postings** (open roles for CV screening). UI label: Job Postings. D
 | description_text | TEXT NOT NULL | |
 | requirements_text | TEXT | |
 | file_path | TEXT NULL | stored Word/PDF source |
+| image_paths | JSON NULL | list of posting image URIs (Supabase or local `data/uploads/jobs/`) |
 | status | TEXT | `draft`, `open`, `closed` |
 | created_by | INTEGER FK → users.id | |
 | linkedin_posts | JSON NULL | per-account results when posted (`account`, `author_urn`, `post_urn`, `post_url`, `posted_at`, `error`) |

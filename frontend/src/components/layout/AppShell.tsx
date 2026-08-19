@@ -1,21 +1,28 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import type { ReactNode } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   BriefcaseBusiness,
+  ChevronDown,
   ClipboardList,
   FileSpreadsheet,
   Gauge,
   LayoutDashboard,
   LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   UserRound,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { isSelfService } from "../../lib/selfService";
 import { Button } from "../ui/Button";
 import { NotificationBell } from "./NotificationBell";
+import { EmployeeSectionMenus } from "../../pages/Employees/EmployeeSectionMenus";
 import "./AppShell.css";
 
 const NAV = [
@@ -30,6 +37,8 @@ const NAV = [
   { to: "/admin/users", label: "Users", module: "users", icon: Users },
 ] as const;
 
+const SIDEBAR_STORAGE_KEY = "kafi.sidebar.collapsed";
+
 type ShellProps = {
   title: string;
   breadcrumb?: string;
@@ -39,7 +48,7 @@ type ShellProps = {
 export function PageHeader({ title, breadcrumb, actions }: ShellProps) {
   return (
     <header className="topbar">
-      <div>
+      <div className="topbar__heading">
         {breadcrumb ? <p className="topbar__crumb">{breadcrumb}</p> : null}
         <h1 className="topbar__title">{title}</h1>
       </div>
@@ -48,10 +57,23 @@ export function PageHeader({ title, breadcrumb, actions }: ShellProps) {
   );
 }
 
+function readCollapsedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+  if (saved === "1") return true;
+  if (saved === "0") return false;
+  return window.matchMedia("(max-width: 1023px)").matches;
+}
+
 export function AppShell() {
   const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const selfService = isSelfService(user);
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  const [collapsed, setCollapsed] = useState(readCollapsedPreference);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   const navItems = NAV.filter((item) => {
     if (item.module === null) return true;
     if (selfService && item.module !== "attendance" && item.module !== "kpi") {
@@ -60,30 +82,118 @@ export function AppShell() {
     return hasPermission(item.module, "read");
   });
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isMobile) setMobileOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || !mobileOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [isMobile, mobileOpen]);
+
+  function persistCollapsed(next: boolean) {
+    setCollapsed(next);
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? "1" : "0");
+  }
+
+  function toggleSidebar() {
+    if (isMobile) setMobileOpen((open) => !open);
+    else persistCollapsed(!collapsed);
+  }
+
+  const railCollapsed = !isMobile && collapsed;
+  const shellClass = [
+    "shell",
+    railCollapsed ? "shell--collapsed" : "",
+    isMobile && mobileOpen ? "shell--drawer-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={shellClass}>
+      {isMobile && mobileOpen ? (
+        <button
+          type="button"
+          className="sidebar__backdrop"
+          aria-label="Close menu"
+          onClick={() => setMobileOpen(false)}
+        />
+      ) : null}
+      <aside className="sidebar" id="app-sidebar">
         <div className="sidebar__brand">
           <span className="sidebar__brand-mark">K</span>
-          <div>
+          <div className="sidebar__brand-text">
             <strong>Kafi HR</strong>
             <span>{selfService ? "My workspace" : "Admin Agent"}</span>
           </div>
+          {!isMobile ? (
+            <button
+              type="button"
+              className="sidebar__toggle"
+              aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
+              aria-expanded={!collapsed}
+              aria-controls="app-sidebar"
+              onClick={toggleSidebar}
+            >
+              {collapsed ? <PanelLeftOpen size={18} aria-hidden /> : <PanelLeftClose size={18} aria-hidden />}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="sidebar__toggle"
+              aria-label="Close menu"
+              onClick={() => setMobileOpen(false)}
+            >
+              <X size={18} aria-hidden />
+            </button>
+          )}
         </div>
         <nav className="sidebar__nav" aria-label="Modules">
           {navItems.map((item) => {
             const Icon = item.icon;
-            return (
+            const link = (
               <NavLink
-                key={`${item.to}-${item.label}`}
                 to={item.to}
-                className={({ isActive }) =>
-                  `sidebar__link${isActive ? " sidebar__link--active" : ""}`
-                }
+                title={item.label}
+                className={() => {
+                  const active =
+                    item.to === "/employees"
+                      ? location.pathname.startsWith("/employees")
+                      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                  return `sidebar__link${active ? " sidebar__link--active" : ""}`;
+                }}
               >
                 <Icon size={18} strokeWidth={1.75} aria-hidden />
                 <span>{item.label}</span>
               </NavLink>
+            );
+            if (item.to === "/employees") {
+              return (
+                <EmployeeNavGroup
+                  key={`${item.to}-${item.label}`}
+                  link={link}
+                  allowSubnav={!railCollapsed}
+                />
+              );
+            }
+            return (
+              <span key={`${item.to}-${item.label}`} className="sidebar__nav-item">
+                {link}
+              </span>
             );
           })}
         </nav>
@@ -99,7 +209,8 @@ export function AppShell() {
               navigate("/login");
             }}
           >
-            <LogOut size={16} aria-hidden /> Sign out
+            <LogOut size={16} aria-hidden />
+            <span>Sign out</span>
           </Button>
           <p className="sidebar__credit">
             Made by Izaan Bin Mujeeb for Kafi Commodities
@@ -107,11 +218,65 @@ export function AppShell() {
         </div>
       </aside>
       <div className="shell__main">
-        <div className="shell__utility">
-          <NotificationBell />
+        <div className="shell__chrome">
+          {isMobile ? (
+            <button
+              type="button"
+              className="sidebar__toggle sidebar__toggle--chrome"
+              aria-label="Open menu"
+              aria-expanded={mobileOpen}
+              aria-controls="app-sidebar"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu size={18} aria-hidden />
+            </button>
+          ) : null}
+          <div className="shell__chrome-end">
+            <NotificationBell />
+          </div>
         </div>
         <Outlet />
       </div>
+    </div>
+  );
+}
+
+function EmployeeNavGroup({
+  link,
+  allowSubnav,
+}: {
+  link: ReactNode;
+  allowSubnav: boolean;
+}) {
+  const location = useLocation();
+  const onEmployees = location.pathname.startsWith("/employees");
+  const [open, setOpen] = useState(onEmployees);
+
+  useEffect(() => {
+    if (onEmployees) setOpen(true);
+  }, [onEmployees]);
+
+  useEffect(() => {
+    if (!allowSubnav) setOpen(false);
+  }, [allowSubnav]);
+
+  return (
+    <div className="sidebar__group">
+      <div className="sidebar__link-row">
+        {link}
+        {allowSubnav ? (
+          <button
+            type="button"
+            className={`sidebar__group-toggle${open ? " is-open" : ""}`}
+            aria-expanded={open}
+            aria-label={open ? "Collapse Employees menu" : "Expand Employees menu"}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <ChevronDown size={16} aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      <EmployeeSectionMenus open={allowSubnav && open} />
     </div>
   );
 }

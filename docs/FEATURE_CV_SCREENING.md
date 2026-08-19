@@ -25,7 +25,8 @@ Steps 4–6 run as one pipeline call (`pipeline.run_cv_pipeline`) triggered auto
 
 ## 2. Job Descriptions
 
-- **Fields:** title, department, description text, requirements text, status (`draft`/`open`/`closed`), optional source file (Word/PDF upload used to pre-fill text, stored as-is).
+- **Fields:** title, department, description text, requirements text, status (`draft`/`open`/`closed`), optional source file (Word/PDF), optional posting images (`image_paths`, up to 8 PNG/JPG/WEBP/GIF).
+- **AI draft:** `/job-descriptions/ai-draft` writes description + requirements + skills, ends the description with 6–10 relevant hashtags, then appends the Google Form apply link.
 - **Export:** `/job-descriptions/{id}/export` generates a formatted Word or PDF using `reporting/word_export.py` / `pdf_export.py`, populated from the structured fields (not a re-upload of the original file) — so edits made in-app are reflected in the export.
 - **Status lifecycle:** `draft` → `open` (visible for CV intake; also publishes a LinkedIn feed post to every configured LinkedIn account) → `closed` (no new candidates accepted, existing candidates remain visible/scored). LinkedIn posting uses the same developer-app client id/secret and member/org tokens you already have — see §12.
 

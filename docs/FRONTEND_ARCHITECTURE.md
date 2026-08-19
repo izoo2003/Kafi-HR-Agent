@@ -170,6 +170,8 @@ React Router, top-level structure:
 /job-descriptions/:id
 /job-descriptions/:id/candidates
 /candidates/:id
+/employees
+/employees/departments
 /attendance
 /attendance/leave-requests
 /payroll/runs
@@ -179,6 +181,7 @@ React Router, top-level structure:
 /kpi/dashboard
 /admin/dashboard
 /admin/users
+/admin/users/new
 /admin/audit-log
 /admin/config
 /not-authorized

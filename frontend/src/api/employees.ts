@@ -1,8 +1,9 @@
-import { apiRequest, getAccessToken } from "./client";
+import { apiRequest, fetchBlob } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type {
   Department,
   DepartmentCreate,
+  DepartmentUpdate,
   Employee,
   EmployeeCreate,
   EmployeeDetail,
@@ -16,31 +17,23 @@ import type {
 } from "../types/employees";
 import type { CnicVerificationResult } from "../types/cnic";
 
-function apiBase(): string {
-  const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
-  return raw.replace(/\/$/, "");
-}
-
-async function fetchBlob(path: string): Promise<Blob> {
-  const token = getAccessToken();
-  const base = apiBase();
-  const url =
-    base.startsWith("http://") || base.startsWith("https://")
-      ? `${base}${path}`
-      : `${base}${path}`;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error("File download failed");
-  return res.blob();
-}
-
 export async function listDepartments(): Promise<Department[]> {
   return apiRequest<Department[]>("/departments");
 }
 
 export async function createDepartment(payload: DepartmentCreate): Promise<Department> {
   return apiRequest<Department>("/departments", { method: "POST", body: payload });
+}
+
+export async function updateDepartment(
+  id: number,
+  payload: DepartmentUpdate,
+): Promise<Department> {
+  return apiRequest<Department>(`/departments/${id}`, { method: "PATCH", body: payload });
+}
+
+export async function deleteDepartment(id: number): Promise<void> {
+  return apiRequest<void>(`/departments/${id}`, { method: "DELETE" });
 }
 
 export async function listEmployees(
@@ -78,6 +71,20 @@ export async function updateEmployee(id: number, payload: EmployeeUpdate): Promi
 
 export async function getEmployee(id: number): Promise<EmployeeDetail> {
   return apiRequest<EmployeeDetail>(`/employees/${id}`);
+}
+
+export async function createEmployeeLetter(
+  employeeId: number,
+  kind: "appointment" | "contract",
+): Promise<Blob> {
+  return fetchBlob(`/employees/${employeeId}/letters/${kind}`, { method: "POST" });
+}
+
+export async function viewEmployeeLetter(
+  employeeId: number,
+  kind: "appointment" | "contract",
+): Promise<Blob> {
+  return fetchBlob(`/employees/${employeeId}/letters/${kind}`);
 }
 
 /** Soft-exit: marks employee terminated (does not hard-delete the row). */

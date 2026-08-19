@@ -11,8 +11,22 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 _MAX_BASE_SALARY = Decimal("9999999999.99")
 
 DOCUMENT_CATEGORIES = frozenset(
-    {"cnic", "cnic_front", "cnic_back", "education", "other", "photo", "client"}
+    {
+        "cnic",
+        "cnic_front",
+        "cnic_back",
+        "education",
+        "other",
+        "photo",
+        "client",
+        "appointment_letter",
+        "contract_letter",
+    }
 )
+LETTER_CATEGORIES = {
+    "appointment": "appointment_letter",
+    "contract": "contract_letter",
+}
 CNIC_IMAGE_CATEGORIES = frozenset({"cnic_front", "cnic_back", "cnic"})
 IMAGE_ONLY_DOCUMENT_CATEGORIES = CNIC_IMAGE_CATEGORIES | frozenset({"photo"})
 
@@ -222,6 +236,8 @@ class EmployeeRead(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    has_appointment_letter: bool = False
+    has_contract_letter: bool = False
 
 
 class EmployeeDetailRead(EmployeeRead):

@@ -88,6 +88,7 @@ class JobDescriptionRead(BaseModel):
     description_text: str
     requirements_text: str | None
     file_path: str | None
+    image_paths: list[str] = Field(default_factory=list)
     status: str
     created_by: int
     created_at: datetime
@@ -100,6 +101,15 @@ class JobDescriptionRead(BaseModel):
     @classmethod
     def _linkedin_posts(cls, value: object) -> object:
         return value or []
+
+    @field_validator("image_paths", mode="before")
+    @classmethod
+    def _image_paths(cls, value: object) -> object:
+        if not value:
+            return []
+        if isinstance(value, list):
+            return [str(v) for v in value if str(v).strip()]
+        return []
 
 
 class ScoringCriteriaCreate(BaseModel):

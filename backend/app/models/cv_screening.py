@@ -20,6 +20,7 @@ class JobDescription(Base, TimestampMixin):
     description_text: Mapped[str] = mapped_column(Text, nullable=False)
     requirements_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_paths: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String, default="draft", nullable=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     linkedin_posts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)

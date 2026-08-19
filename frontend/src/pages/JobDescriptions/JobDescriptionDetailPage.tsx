@@ -5,6 +5,7 @@ import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { LinkedInPostResults } from "../../components/domain/LinkedInPostResults";
+import { JobPostingImageGallery } from "../../components/domain/JobPostingImages";
 import { useAuth } from "../../hooks/useAuth";
 import { useCriteria, useDeleteJobDescription, useJobDescription } from "../../hooks/useJobDescriptions";
 import { ApiError } from "../../api/client";
@@ -112,6 +113,12 @@ export function JobDescriptionDetailPage() {
             </span>
           </div>
           <p style={{ whiteSpace: "pre-wrap" }}>{stripHowToApplyCta(job.data.descriptionText)}</p>
+          {(job.data.imagePaths ?? []).length > 0 ? (
+            <>
+              <h3>Images</h3>
+              <JobPostingImageGallery jobId={jobId} count={job.data.imagePaths.length} />
+            </>
+          ) : null}
           {job.data.requirementsText ? (
             <>
               <h3>Requirements</h3>

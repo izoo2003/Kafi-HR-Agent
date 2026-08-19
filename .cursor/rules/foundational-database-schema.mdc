@@ -123,6 +123,7 @@ See `docs/DATABASE_SCHEMA.md` §2 for full column lists (CNIC/education uploads 
 | description_text | TEXT NOT NULL | |
 | requirements_text | TEXT | |
 | file_path | TEXT NULL | stored Word/PDF source |
+| image_paths | JSON NULL | posting image URIs (max 8) |
 | status | TEXT | `draft`, `open`, `closed` |
 | created_by | INTEGER FK → users.id | |
 

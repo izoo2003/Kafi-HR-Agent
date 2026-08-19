@@ -9,14 +9,16 @@ import {
   useApplicationFormUrl,
   useCreateJobDescription,
   useCriteria,
+  useDeleteJobImage,
   useGenerateJobPostingAiDraft,
   useJobDescription,
   useLinkedInAccounts,
   useUpdateJobDescription,
 } from "../../hooks/useJobDescriptions";
-import { replaceCriteria as replaceCriteriaApi } from "../../api/jobDescriptions";
+import { replaceCriteria as replaceCriteriaApi, uploadJobImages } from "../../api/jobDescriptions";
 import { ApiError } from "../../api/client";
 import type { LinkedInPostResult, ScoringCriteriaInput } from "../../types/cvScreening";
+import { JobPostingImageGallery, MAX_JOB_IMAGES } from "../../components/domain/JobPostingImages";
 import {
   clearJobDescriptionFormDraft,
   hasMeaningfulJobDescriptionDraft,
@@ -62,6 +64,7 @@ export function JobDescriptionFormPage() {
   const applicationForm = useApplicationFormUrl();
   const linkedinAccounts = useLinkedInAccounts();
   const criteriaQ = useCriteria(jobId);
+  const deleteImage = useDeleteJobImage(jobId);
 
   const draftKey: number | "new" = isEdit ? jobId : "new";
   const emptySkills = [skillRow("", 5)];
@@ -119,6 +122,8 @@ export function JobDescriptionFormPage() {
   const [selectedLinkedin, setSelectedLinkedin] = useState<string[]>(draftBootstrap.selectedLinkedin);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInPostResult[]>([]);
   const [postedJobId, setPostedJobId] = useState<number | null>(null);
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
   const [draftMessage, setDraftMessage] = useState<string | null>(
     draftBootstrap.restored ? "Restored unsaved job posting draft from your last session." : null,
   );
@@ -156,7 +161,7 @@ export function JobDescriptionFormPage() {
         setSkills(draft.skills.map((s) => skillRow(s.name, toRating(s.level))));
       }
       setAiMessage(
-        "AI Analyzer filled Description, Requirements, and Skills (with Google Form apply link) — review before saving.",
+        "AI Analyzer filled Description (including hashtags), Requirements, and Skills — review before saving.",
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI Analyzer failed");
@@ -172,6 +177,12 @@ export function JobDescriptionFormPage() {
     setRequirementsText(existing.data.requirementsText ?? "");
     setStatus(existing.data.status as "draft" | "open" | "closed");
   }, [existing.data]);
+
+  useEffect(() => {
+    const urls = pendingImages.map((file) => URL.createObjectURL(file));
+    setPendingPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [pendingImages]);
 
   useEffect(() => {
     const names = (linkedinAccounts.data ?? []).map((a) => a.name);
@@ -251,6 +262,11 @@ export function JobDescriptionFormPage() {
       }
     }
     try {
+      const existingImageCount = existing.data?.imagePaths?.length ?? 0;
+      if (existingImageCount + pendingImages.length > MAX_JOB_IMAGES) {
+        setError(`At most ${MAX_JOB_IMAGES} images per job posting`);
+        return;
+      }
       const payload = {
         title: title.trim(),
         departmentId: Number(departmentId),
@@ -263,6 +279,10 @@ export function JobDescriptionFormPage() {
         ? await updateJob.mutateAsync(payload)
         : await createJob.mutateAsync(payload);
       await replaceCriteriaApi(job.id, cleaned);
+      if (pendingImages.length > 0) {
+        await uploadJobImages(job.id, pendingImages);
+        setPendingImages([]);
+      }
       // Job is now persisted — drop any local unsaved draft.
       clearJobDescriptionFormDraft("new");
       clearJobDescriptionFormDraft(job.id);
@@ -358,8 +378,8 @@ export function JobDescriptionFormPage() {
             <div style={{ flex: "1 1 220px" }}>
               <strong style={{ display: "block", marginBottom: 4 }}>AI Analyzer</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                Generates description, responsibilities/requirements, and skills for this title —
-                and appends the Google Form apply link to the description.
+                Generates description (with relevant hashtags), requirements, and skills for this
+                title — and appends the Google Form apply link to the description.
               </span>
             </div>
             <Button
@@ -412,7 +432,82 @@ export function JobDescriptionFormPage() {
               onChange={(e) => setDescriptionText(e.target.value)}
               required
             />
+            <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+              AI Analyzer ends the description with hiring hashtags. You can edit them before saving.
+            </span>
           </label>
+          <label className="form-field">
+            <span className="form-field__label">Posting images</span>
+            <input
+              className="form-field__input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (!picked.length) return;
+                setPendingImages((current) => {
+                  const existingCount = existing.data?.imagePaths?.length ?? 0;
+                  const room = Math.max(0, MAX_JOB_IMAGES - existingCount - current.length);
+                  return [...current, ...picked.slice(0, room)];
+                });
+              }}
+            />
+            <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+              Optional. PNG, JPG, WEBP, or GIF — up to {MAX_JOB_IMAGES} images. New files upload when you save.
+            </span>
+          </label>
+          {isEdit && (existing.data?.imagePaths?.length ?? 0) > 0 ? (
+            <JobPostingImageGallery
+              jobId={jobId}
+              count={existing.data?.imagePaths?.length ?? 0}
+              onRemove={(index) => {
+                void deleteImage.mutateAsync(index).catch((err) => {
+                  setError(err instanceof ApiError ? err.message : "Could not remove image");
+                });
+              }}
+            />
+          ) : null}
+          {pendingPreviews.length > 0 ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+                gap: "var(--space-3)",
+              }}
+            >
+              {pendingPreviews.map((url, index) => (
+                <figure
+                  key={`${pendingImages[index]?.name ?? index}-${index}`}
+                  style={{
+                    margin: 0,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-sm)",
+                    overflow: "hidden",
+                    background: "var(--color-surface-alt)",
+                  }}
+                >
+                  <img
+                    src={url}
+                    alt={pendingImages[index]?.name ?? `New image ${index + 1}`}
+                    style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
+                  />
+                  <div style={{ padding: "var(--space-2)" }}>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() =>
+                        setPendingImages((current) => current.filter((_, i) => i !== index))
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </figure>
+              ))}
+            </div>
+          ) : null}
           <label className="form-field">
             <span className="form-field__label">Requirements</span>
             <textarea

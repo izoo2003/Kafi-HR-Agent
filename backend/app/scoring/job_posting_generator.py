@@ -102,7 +102,7 @@ Write a clear, professional job posting for:
 
 Respond with STRICT JSON only (no markdown fences), exact shape:
 {{
-  "description_text": "<2-4 short paragraphs: role overview, day-to-day responsibilities, how the role fits the department. Plain text, use newlines between paragraphs. Do NOT include application instructions or any form URLs — those are added by the system.>",
+    "description_text": "<2-4 short paragraphs: role overview, day-to-day responsibilities, how the role fits the department. Plain text, use newlines between paragraphs. End with a hashtag line. Do NOT include application instructions or any form URLs — those are added by the system.>",
   "requirements_text": "<bullet-style plain text of requirements: education, experience, soft skills. Use lines starting with '- '. Keep it realistic for this title and department.>",
   "skills": [
     {{"name": "<specific skill name>", "level": <integer 1-10>}}
@@ -113,6 +113,7 @@ Rules:
 - Tailor content specifically to the title and department — do not invent a different role.
 - Keep language precise and suitable for an internal HR tool (not marketing fluff).
 - Do not include salary, equal-opportunity boilerplate, or application instructions.
+- End description_text with a single line of 6–10 relevant hashtags (CamelCase, no spaces), e.g. #Hiring #KafiGroup #Sales #Karachi #NowHiring. Hashtags must relate to the title, department, location (Pakistan / Karachi when relevant), and core skills. Do not put hashtags in requirements_text.
 - description_text must be at least 2 sentences; requirements_text must list at least 5 concrete requirements.
 - skills: return 5–10 concrete, scorable skills for this title (tools, languages, frameworks, domain skills).
 - level: required proficiency from 1 (very low / nice-to-have) to 10 (expert / must-have core skill).
@@ -140,6 +141,12 @@ Rules:
     if not skills:
         raise BusinessRuleViolation("AI Analyzer returned no skills — try again")
 
+    description = _ensure_hashtags(
+        description,
+        title=title,
+        department_name=department_name,
+        skill_names=[s.name for s in skills],
+    )
     description = append_application_link(description, settings.google_form_url)
 
     return JobPostingDraft(
@@ -147,6 +154,52 @@ Rules:
         requirements_text=requirements,
         skills=skills,
     )
+
+
+_HASHTAG_RE = re.compile(r"(^|\s)#([A-Za-z][A-Za-z0-9]{1,39})")
+
+
+def _tag_token(raw: str) -> str | None:
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "", raw or "")
+    if len(cleaned) < 2:
+        return None
+    return "#" + cleaned[:32]
+
+
+def _ensure_hashtags(
+    description: str,
+    *,
+    title: str,
+    department_name: str,
+    skill_names: list[str],
+) -> str:
+    text = (description or "").rstrip()
+    if _HASHTAG_RE.search(text):
+        return text
+    tags: list[str] = []
+    seen: set[str] = set()
+    for piece in (
+        "Hiring",
+        "NowHiring",
+        "KafiGroup",
+        department_name,
+        title,
+        "Karachi",
+        *skill_names[:5],
+    ):
+        tag = _tag_token(piece)
+        if not tag:
+            continue
+        key = tag.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(tag)
+        if len(tags) >= 10:
+            break
+    if not tags:
+        return text
+    return f"{text}\n\n{' '.join(tags)}"
 
 
 def _parse_skills(raw: object) -> list[DraftSkill]:

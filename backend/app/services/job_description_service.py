@@ -1,7 +1,7 @@
 """Job description & scoring criteria service."""
 from __future__ import annotations
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import EntityNotFound, ValidationFailed
@@ -23,6 +23,24 @@ from app.scoring.job_posting_generator import append_application_link, generate_
 from app.services import audit_service
 from app.services.linkedin_service import publish_job_if_open
 
+MAX_JOB_IMAGES = 8
+
+
+def ensure_job_image_schema(db: Session) -> None:
+    bind = db.get_bind()
+    if bind is None:
+        return
+    dialect = bind.dialect.name
+    if dialect == "sqlite":
+        cols = {
+            row[1] for row in db.execute(text("PRAGMA table_info(job_descriptions)")).fetchall()
+        }
+        if cols and "image_paths" not in cols:
+            db.execute(text("ALTER TABLE job_descriptions ADD COLUMN image_paths JSON"))
+        return
+    if dialect == "postgresql":
+        db.execute(text("ALTER TABLE job_descriptions ADD COLUMN IF NOT EXISTS image_paths JSON"))
+
 
 def _application_form_url() -> str | None:
     url = (get_settings().google_form_url or "").strip()
@@ -35,6 +53,7 @@ def _to_read(job: JobDescription, applicants_count: int = 0) -> JobDescriptionRe
         update={
             "applicants_count": applicants_count,
             "application_form_url": _application_form_url(),
+            "image_paths": list(job.image_paths or []),
         }
     )
 
@@ -109,6 +128,7 @@ def list_job_descriptions(
     department_id: int | None = None,
     status: str | None = None,
 ) -> PaginatedResponse[JobDescriptionRead]:
+    ensure_job_image_schema(db)
     q = db.query(JobDescription)
     if department_id is not None:
         q = q.filter(JobDescription.department_id == department_id)
@@ -126,6 +146,7 @@ def list_job_descriptions(
 
 
 def get_job_description(db: Session, job_id: int) -> JobDescription:
+    ensure_job_image_schema(db)
     job = db.query(JobDescription).filter(JobDescription.id == job_id).one_or_none()
     if job is None:
         raise EntityNotFound(f"Job description {job_id} not found")
@@ -141,12 +162,14 @@ def get_job_description_read(db: Session, job_id: int) -> JobDescriptionRead:
 def create_job_description(
     db: Session, auth: AuthContext, payload: JobDescriptionCreate
 ) -> JobDescription:
+    ensure_job_image_schema(db)
     if db.query(Department).filter(Department.id == payload.department_id).one_or_none() is None:
         raise ValidationFailed("department_id does not exist")
     data = payload.model_dump(exclude={"linkedin_account_names"})
     data["description_text"] = append_application_link(
         data["description_text"], get_settings().google_form_url
     )
+    data["image_paths"] = []
     job = JobDescription(**data, created_by=auth.user_id)
     db.add(job)
     db.flush()
@@ -225,6 +248,8 @@ def delete_job_description(db: Session, auth: AuthContext, job_id: int) -> None:
 
     if job.file_path:
         delete_stored_file(job.file_path)
+    for image_path in job.image_paths or []:
+        delete_stored_file(image_path)
 
     db.delete(job)
     db.flush()
@@ -236,6 +261,81 @@ def delete_job_description(db: Session, auth: AuthContext, job_id: int) -> None:
         entity_id=job_id,
         before_state=before,
     )
+
+
+def add_job_images(
+    db: Session,
+    auth: AuthContext,
+    job_id: int,
+    files: list[tuple[str, bytes]],
+) -> JobDescription:
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.ingestion.employee_docs import store_job_image
+
+    job = get_job_description(db, job_id)
+    paths = list(job.image_paths or [])
+    if not files:
+        raise ValidationFailed("At least one image is required")
+    if len(paths) + len(files) > MAX_JOB_IMAGES:
+        raise ValidationFailed(f"At most {MAX_JOB_IMAGES} images per job posting")
+    for filename, content in files:
+        stored, _mime = store_job_image(job_id=job_id, filename=filename, content=content)
+        paths.append(stored)
+    job.image_paths = paths
+    flag_modified(job, "image_paths")
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="job_description.images_added",
+        entity_type="job_description",
+        entity_id=job_id,
+        after_state={"image_count": len(paths)},
+    )
+    return job
+
+
+def read_job_image(db: Session, job_id: int, index: int) -> tuple[bytes, str]:
+    import mimetypes
+    from pathlib import Path
+
+    from app.ingestion.employee_docs import read_stored_file
+
+    job = get_job_description(db, job_id)
+    paths = list(job.image_paths or [])
+    if index < 0 or index >= len(paths):
+        raise EntityNotFound(f"Job image {index} not found")
+    path = paths[index]
+    data = read_stored_file(path)
+    name = Path(path).name if "://" not in path else path.rsplit("/", 1)[-1]
+    mime = mimetypes.guess_type(name)[0] or "image/jpeg"
+    return data, mime
+
+
+def delete_job_image(db: Session, auth: AuthContext, job_id: int, index: int) -> JobDescription:
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.ingestion.employee_docs import delete_stored_file
+
+    job = get_job_description(db, job_id)
+    paths = list(job.image_paths or [])
+    if index < 0 or index >= len(paths):
+        raise EntityNotFound(f"Job image {index} not found")
+    removed = paths.pop(index)
+    delete_stored_file(removed)
+    job.image_paths = paths
+    flag_modified(job, "image_paths")
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="job_description.image_removed",
+        entity_type="job_description",
+        entity_id=job_id,
+        after_state={"image_count": len(paths)},
+    )
+    return job
 
 
 def list_criteria(db: Session, job_id: int) -> list[ScoringCriteria]:

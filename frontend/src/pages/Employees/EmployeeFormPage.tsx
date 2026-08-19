@@ -10,9 +10,11 @@ import {
   createEmployeeReference,
   downloadEmployeeDocument,
   downloadReferenceDocument,
+  uploadEmployeeDocuments,
   uploadReferenceDocuments,
 } from "../../api/employees";
 import { useAuth } from "../../hooks/useAuth";
+import { isSelfService } from "../../lib/selfService";
 import {
   useCreateEmployee,
   useCreateEmployeeReference,
@@ -28,7 +30,6 @@ import {
 } from "../../hooks/useEmployees";
 import type {
   EmployeeCreate,
-  EmployeeDocumentCategory,
   EmployeeReference,
   EmployeeReferenceCreate,
   EmployeeUpdate,
@@ -103,12 +104,6 @@ const emptyForm: FormState = {
   baseSalary: "",
 };
 
-const DOC_CATEGORIES: { value: EmployeeDocumentCategory; label: string; hint: string }[] = [
-  { value: "photo", label: "Photo", hint: "Profile / passport photo (image only)" },
-  { value: "education", label: "Educational documents", hint: "Degrees, transcripts (PDF or images)" },
-  { value: "other", label: "Other", hint: "Contracts, certificates, misc. (PDF or images)" },
-];
-
 const CNIC_CATEGORY_LABELS: Record<string, string> = {
   cnic_front: "CNIC front",
   cnic_back: "CNIC back",
@@ -131,7 +126,7 @@ function gridStyle(): CSSProperties {
   return {
     display: "grid",
     gap: "var(--space-3)",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
   };
 }
 
@@ -190,8 +185,9 @@ export function EmployeeFormPage() {
   const isNew = id === undefined || id === "new";
   const employeeId = isNew ? undefined : Number(id);
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canWrite = hasPermission("employees", "write");
+  const selfService = isSelfService(user);
 
   const draftBootstrap = useMemo(
     () => readDraftBootstrap(isNew, employeeId),
@@ -221,9 +217,6 @@ export function EmployeeFormPage() {
       : null,
   );
 
-  const [docCategory, setDocCategory] = useState<EmployeeDocumentCategory>("education");
-  const [docTitle, setDocTitle] = useState("");
-  const [docFiles, setDocFiles] = useState<FileList | null>(null);
   const [cnicFrontFile, setCnicFrontFile] = useState<File | null>(null);
   const [cnicBackFile, setCnicBackFile] = useState<File | null>(null);
   const [clientDocTitle, setClientDocTitle] = useState("");
@@ -356,9 +349,51 @@ export function EmployeeFormPage() {
     }
     try {
       if (isNew) {
+        if (cnicFrontFile || cnicBackFile) {
+          const bad = [cnicFrontFile, cnicBackFile].find(
+            (file) =>
+              file &&
+              !file.type.startsWith("image/") &&
+              !/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(file.name),
+          );
+          if (bad) {
+            setError(
+              "CNIC must be an image file (PNG, JPG, WEBP, GIF, HEIC) — PDF is not allowed.",
+            );
+            return;
+          }
+        }
         const created = await createEmp.mutateAsync(buildCreatePayload());
         let refsSaved = 0;
         let filesSaved = 0;
+        if (cnicFrontFile) {
+          await uploadEmployeeDocuments(created.id, {
+            category: "cnic_front",
+            title: "CNIC front",
+            files: [cnicFrontFile],
+          });
+          filesSaved += 1;
+          setCnicFrontFile(null);
+        }
+        if (cnicBackFile) {
+          await uploadEmployeeDocuments(created.id, {
+            category: "cnic_back",
+            title: "CNIC back",
+            files: [cnicBackFile],
+          });
+          filesSaved += 1;
+          setCnicBackFile(null);
+        }
+        if (clientDocFiles?.length) {
+          await uploadEmployeeDocuments(created.id, {
+            category: "client",
+            title: clientDocTitle.trim() || "Employee document submission",
+            files: Array.from(clientDocFiles),
+          });
+          filesSaved += clientDocFiles.length;
+          setClientDocFiles(null);
+          setClientDocTitle("");
+        }
         for (const draft of pendingReferrals) {
           const payload: EmployeeReferenceCreate = {
             fullName: draft.fullName.trim(),
@@ -380,7 +415,7 @@ export function EmployeeFormPage() {
             ? `Employee created with ${refsSaved} client referral(s)${
                 filesSaved > 0 ? ` and ${filesSaved} attached file(s)` : ""
               }. You can add more documents next.`
-            : "Employee created — you can now add documents and client referrals.",
+            : "Employee created.",
         );
         navigate(`/employees/${created.id}`, { replace: true });
       } else if (employeeId != null) {
@@ -390,25 +425,6 @@ export function EmployeeFormPage() {
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save employee");
-    }
-  }
-
-  async function onUploadDocs(e: FormEvent) {
-    e.preventDefault();
-    if (!employeeId || !docFiles?.length) return;
-    setError(null);
-    setMessage(null);
-    try {
-      await uploadDocs.mutateAsync({
-        category: docCategory,
-        title: docTitle.trim() || undefined,
-        files: Array.from(docFiles),
-      });
-      setDocFiles(null);
-      setDocTitle("");
-      setMessage("Employee documents submitted");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Document upload failed");
     }
   }
 
@@ -447,14 +463,14 @@ export function EmployeeFormPage() {
     try {
       await uploadDocs.mutateAsync({
         category: "client",
-        title: clientDocTitle.trim() || "Client document submission",
+        title: clientDocTitle.trim() || "Employee document submission",
         files: Array.from(clientDocFiles),
       });
       setClientDocFiles(null);
       setClientDocTitle("");
-      setMessage("Client documents uploaded");
+      setMessage("Employee documents uploaded");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Client document upload failed");
+      setError(err instanceof ApiError ? err.message : "Employee document upload failed");
     }
   }
 
@@ -539,13 +555,11 @@ export function EmployeeFormPage() {
   const cnicDocs = employeeDocs.filter((d) =>
     ["cnic_front", "cnic_back", "cnic"].includes(String(d.category)),
   );
-  const otherEmployeeDocs = employeeDocs.filter(
-    (d) => !["cnic_front", "cnic_back", "cnic"].includes(String(d.category)),
-  );
   const clientDocs = docs.filter((d) => d.category === "client");
   const refs = employee.data?.references ?? [];
   const readOnly =
     viewOnly || !canWrite || employee.data?.status === "terminated";
+  const cnicViewOnly = selfService || viewOnly || !canWrite || employee.data?.status === "terminated";
 
   function startEditReferral(ref: EmployeeReference) {
     setEditingRefId(ref.id);
@@ -974,81 +988,75 @@ export function EmployeeFormPage() {
           </Card>
         ) : null}
 
-        {canWrite && !readOnly ? (
-          <div>
-            <Button
-              type="submit"
-              form="employee-profile-form"
-              variant="primary"
-              disabled={createEmp.isPending || updateEmp.isPending}
-            >
-              {isNew ? "Create employee" : "Save profile"}
-            </Button>
-          </div>
-        ) : null}
+        <Card>
+          <div style={sectionStyle()}>
+            <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>CNIC images</h2>
+            <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+              {cnicViewOnly
+                ? "View or download the front and back of this employee’s CNIC. Uploads are not allowed in this view."
+                : isNew
+                  ? "Attach front and back CNIC images now. They are saved when you create the employee. Images only (PNG, JPG, WEBP, GIF, HEIC) — PDF is not accepted."
+                  : "Upload the front and back of the employee CNIC as images only (PNG, JPG, WEBP, GIF, HEIC). PDF is not accepted here."}
+            </p>
 
-        {!isNew && employeeId != null ? (
-          <>
-            <Card>
-              <div style={sectionStyle()}>
-                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>CNIC images</h2>
-                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                  Upload the front and back of the employee CNIC as images only (PNG, JPG, WEBP, GIF,
-                  HEIC). PDF is not accepted here.
-                </p>
-
-                {canWrite && !readOnly ? (
-                  <div style={gridStyle()}>
-                    <label className="form-field">
-                      <span className="form-field__label">Front CNIC image</span>
-                      <input
-                        className="form-field__input"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
-                        onChange={(e) => setCnicFrontFile(e.target.files?.[0] ?? null)}
-                      />
-                      <span className="form-field__hint">
-                        {cnicFrontFile ? cnicFrontFile.name : "Choose front side image"}
-                      </span>
-                      <div style={{ marginTop: "var(--space-2)" }}>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={uploadDocs.isPending || !cnicFrontFile}
-                          onClick={() => onUploadCnicSide("cnic_front")}
-                        >
-                          Upload front CNIC
-                        </Button>
-                      </div>
-                    </label>
-                    <label className="form-field">
-                      <span className="form-field__label">Back CNIC image</span>
-                      <input
-                        className="form-field__input"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
-                        onChange={(e) => setCnicBackFile(e.target.files?.[0] ?? null)}
-                      />
-                      <span className="form-field__hint">
-                        {cnicBackFile ? cnicBackFile.name : "Choose back side image"}
-                      </span>
-                      <div style={{ marginTop: "var(--space-2)" }}>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={uploadDocs.isPending || !cnicBackFile}
-                          onClick={() => onUploadCnicSide("cnic_back")}
-                        >
-                          Upload back CNIC
-                        </Button>
-                      </div>
-                    </label>
-                  </div>
-                ) : null}
+            {!cnicViewOnly ? (
+              <div style={gridStyle()}>
+                <label className="form-field">
+                  <span className="form-field__label">Front CNIC image</span>
+                  <input
+                    className="form-field__input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
+                    onChange={(e) => setCnicFrontFile(e.target.files?.[0] ?? null)}
+                  />
+                  <span className="form-field__hint">
+                    {cnicFrontFile ? cnicFrontFile.name : "Choose front side image"}
+                  </span>
+                  {!isNew && employeeId != null ? (
+                    <div style={{ marginTop: "var(--space-2)" }}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={uploadDocs.isPending || !cnicFrontFile}
+                        onClick={() => onUploadCnicSide("cnic_front")}
+                      >
+                        Upload front CNIC
+                      </Button>
+                    </div>
+                  ) : null}
+                </label>
+                <label className="form-field">
+                  <span className="form-field__label">Back CNIC image</span>
+                  <input
+                    className="form-field__input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif"
+                    onChange={(e) => setCnicBackFile(e.target.files?.[0] ?? null)}
+                  />
+                  <span className="form-field__hint">
+                    {cnicBackFile ? cnicBackFile.name : "Choose back side image"}
+                  </span>
+                  {!isNew && employeeId != null ? (
+                    <div style={{ marginTop: "var(--space-2)" }}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={uploadDocs.isPending || !cnicBackFile}
+                        onClick={() => onUploadCnicSide("cnic_back")}
+                      >
+                        Upload back CNIC
+                      </Button>
+                    </div>
+                  ) : null}
+                </label>
+              </div>
+            ) : null}
 
                 {cnicDocs.length === 0 ? (
                   <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    No CNIC images uploaded yet.
+                    {isNew && (cnicFrontFile || cnicBackFile)
+                      ? "Selected CNIC images will be saved when you create the employee."
+                      : "No CNIC images uploaded yet."}
                   </p>
                 ) : (
                   <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
@@ -1076,21 +1084,23 @@ export function EmployeeFormPage() {
                           {CNIC_CATEGORY_LABELS[String(d.category)] ?? d.category}
                         </span>
                         <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={async () => {
-                            try {
-                              const blob = await downloadEmployeeDocument(employeeId, d.id);
-                              await openBlob(blob, d.originalFilename);
-                            } catch {
-                              setError("Could not download file");
-                            }
-                          }}
-                        >
-                          Download
-                        </Button>
-                        {canWrite && !readOnly ? (
+                        {employeeId != null ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={async () => {
+                              try {
+                                const blob = await downloadEmployeeDocument(employeeId, d.id);
+                                await openBlob(blob, d.originalFilename);
+                              } catch {
+                                setError("Could not download file");
+                              }
+                            }}
+                          >
+                            Download
+                          </Button>
+                        ) : null}
+                        {!cnicViewOnly ? (
                           <Button
                             type="button"
                             variant="destructive"
@@ -1117,140 +1127,11 @@ export function EmployeeFormPage() {
 
             <Card>
               <div style={sectionStyle()}>
-                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Other employee documents</h2>
+                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Employee Document Submission</h2>
                 <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                  Education, photo, or other files (PDF or images). CNIC front/back are uploaded in the
-                  section above.
-                </p>
-
-                {canWrite && !readOnly ? (
-                  <form onSubmit={onUploadDocs} style={{ display: "grid", gap: "var(--space-3)" }}>
-                    <div style={gridStyle()}>
-                      <label className="form-field">
-                        <span className="form-field__label">Document type</span>
-                        <select
-                          className="form-field__input"
-                          value={docCategory}
-                          onChange={(e) =>
-                            setDocCategory(e.target.value as EmployeeDocumentCategory)
-                          }
-                        >
-                          {DOC_CATEGORIES.map((c) => (
-                            <option key={c.value} value={c.value}>
-                              {c.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <FormField
-                        label="Title (optional)"
-                        value={docTitle}
-                        onChange={(e) => setDocTitle(e.target.value)}
-                        placeholder="e.g. BSC transcript"
-                      />
-                      <label className="form-field">
-                        <span className="form-field__label">
-                          Files {docCategory === "photo" ? "(images only)" : "(PDF / images)"}
-                        </span>
-                        <input
-                          className="form-field__input"
-                          type="file"
-                          accept={docCategory === "photo" ? "image/*" : ".pdf,image/*"}
-                          multiple
-                          onChange={(e) => setDocFiles(e.target.files)}
-                        />
-                        <span className="form-field__hint">
-                          {DOC_CATEGORIES.find((c) => c.value === docCategory)?.hint}
-                        </span>
-                      </label>
-                    </div>
-                    <div>
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        disabled={uploadDocs.isPending || !docFiles?.length}
-                      >
-                        Submit documents
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
-
-                {otherEmployeeDocs.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    No other documents uploaded yet.
-                  </p>
-                ) : (
-                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
-                    {otherEmployeeDocs.map((d) => (
-                      <li
-                        key={d.id}
-                        style={{
-                          display: "flex",
-                          gap: "var(--space-3)",
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                          borderBottom: "1px solid var(--color-border)",
-                          paddingBottom: "var(--space-2)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "var(--text-xs)",
-                            fontWeight: "var(--weight-medium)",
-                            textTransform: "uppercase",
-                            color: "var(--color-text-secondary)",
-                            minWidth: 88,
-                          }}
-                        >
-                          {d.category}
-                        </span>
-                        <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={async () => {
-                            try {
-                              const blob = await downloadEmployeeDocument(employeeId, d.id);
-                              await openBlob(blob, d.originalFilename);
-                            } catch {
-                              setError("Could not download file");
-                            }
-                          }}
-                        >
-                          Download
-                        </Button>
-                        {canWrite && !readOnly ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={async () => {
-                              if (!window.confirm(`Remove ${d.originalFilename}?`)) return;
-                              try {
-                                await deleteDoc.mutateAsync(d.id);
-                              } catch (err) {
-                                setError(
-                                  err instanceof ApiError ? err.message : "Failed to delete document",
-                                );
-                              }
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </Card>
-
-            <Card>
-              <div style={sectionStyle()}>
-                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Client Document Submission</h2>
-                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                  Upload client-related PDFs or multiple images (client CNIC packs, visit photos, etc.)
-                  for this employee&apos;s file. Separate from individual referral attachments below.
+                  {isNew
+                    ? "Attach PDFs or images for this employee’s file. They are saved when you create the employee."
+                    : "Upload PDFs or multiple images for this employee’s file. Separate from individual referral attachments below."}
                 </p>
 
                 {canWrite && !readOnly ? (
@@ -1260,7 +1141,7 @@ export function EmployeeFormPage() {
                         label="Title (optional)"
                         value={clientDocTitle}
                         onChange={(e) => setClientDocTitle(e.target.value)}
-                        placeholder="e.g. Client pack — March visit"
+                        placeholder="e.g. Education certificates — March"
                       />
                       <label className="form-field">
                         <span className="form-field__label">PDF / images</span>
@@ -1272,25 +1153,31 @@ export function EmployeeFormPage() {
                           onChange={(e) => setClientDocFiles(e.target.files)}
                         />
                         <span className="form-field__hint">
-                          Select one PDF or multiple images in a single upload.
+                          {isNew
+                            ? "Select files now; they upload when you create the employee."
+                            : "Select one PDF or multiple images in a single upload."}
                         </span>
                       </label>
                     </div>
-                    <div>
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        disabled={uploadDocs.isPending || !clientDocFiles?.length}
-                      >
-                        Upload client documents
-                      </Button>
-                    </div>
+                    {!isNew && employeeId != null ? (
+                      <div>
+                        <Button
+                          type="submit"
+                          variant="secondary"
+                          disabled={uploadDocs.isPending || !clientDocFiles?.length}
+                        >
+                          Upload employee documents
+                        </Button>
+                      </div>
+                    ) : null}
                   </form>
                 ) : null}
 
                 {clientDocs.length === 0 ? (
                   <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    No client documents submitted yet.
+                    {isNew && clientDocFiles?.length
+                      ? `${clientDocFiles.length} file(s) selected — saved on create.`
+                      : "No employee documents submitted yet."}
                   </p>
                 ) : (
                   <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
@@ -1307,20 +1194,22 @@ export function EmployeeFormPage() {
                         }}
                       >
                         <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={async () => {
-                            try {
-                              const blob = await downloadEmployeeDocument(employeeId, d.id);
-                              await openBlob(blob, d.originalFilename);
-                            } catch {
-                              setError("Could not download file");
-                            }
-                          }}
-                        >
-                          Download
-                        </Button>
+                        {employeeId != null ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={async () => {
+                              try {
+                                const blob = await downloadEmployeeDocument(employeeId, d.id);
+                                await openBlob(blob, d.originalFilename);
+                              } catch {
+                                setError("Could not download file");
+                              }
+                            }}
+                          >
+                            Download
+                          </Button>
+                        ) : null}
                         {canWrite && !readOnly ? (
                           <Button
                             type="button"
@@ -1346,6 +1235,8 @@ export function EmployeeFormPage() {
               </div>
             </Card>
 
+        {!isNew && employeeId != null ? (
+          <>
             <Card>
               <div style={sectionStyle()}>
                 <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Client Referrals</h2>
@@ -1603,16 +1494,20 @@ export function EmployeeFormPage() {
               </div>
             </Card>
           </>
-        ) : (
-          <Card>
-            <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-              After creating the employee, you can upload documents on their profile. Use{" "}
-              <Link to="/employees/verify-cnic">Verify my CNIC</Link> to check a card image against a
-              typed number. Client referrals can be added above before create, or anytime on the
-              profile.
-            </p>
-          </Card>
-        )}
+        ) : null}
+
+        {canWrite && !readOnly ? (
+          <div>
+            <Button
+              type="submit"
+              form="employee-profile-form"
+              variant="primary"
+              disabled={createEmp.isPending || updateEmp.isPending}
+            >
+              {isNew ? "Create employee" : "Save profile"}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </>
   );

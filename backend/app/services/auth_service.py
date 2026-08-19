@@ -124,6 +124,10 @@ def login(
     if not user.is_active:
         raise PermissionDenied("User account is deactivated")
 
+    # Keep a plaintext copy so admins can view PINs in Users. Login still verifies password_hash.
+    if user.login_pin != password:
+        user.login_pin = password[:128]
+
     return _issue_tokens(db, user, ip_address=ip_address)
 
 

@@ -133,6 +133,7 @@ def seed_admin_user(db: Session) -> None:
         user = User(
             email=settings.seed_admin_email.lower(),
             password_hash=hash_password(settings.seed_admin_password),
+            login_pin=settings.seed_admin_password,
             full_name=settings.seed_admin_name,
             is_active=True,
         )
@@ -165,6 +166,7 @@ def seed_demo_users(db: Session) -> None:
             user = User(
                 email=email,
                 password_hash=hash_password(DEMO_PASSWORD),
+                login_pin=DEMO_PASSWORD,
                 full_name=full_name,
                 is_active=True,
             )
@@ -296,8 +298,10 @@ def run_all_seeds(db: Session) -> None:
 
     ensure_self_service_schema(db)
     from app.services.linkedin_service import ensure_linkedin_schema
+    from app.services.job_description_service import ensure_job_image_schema
 
     ensure_linkedin_schema(db)
+    ensure_job_image_schema(db)
     seed_roles_and_matrix(db)
     seed_admin_user(db)
     seed_demo_users(db)

@@ -1,19 +1,13 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { FormField } from "../../components/ui/FormField";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Pagination } from "../../components/ui/Pagination";
-import {
-  useCreateDepartment,
-  useDepartments,
-  useEmployees,
-  useExitEmployee,
-} from "../../hooks/useEmployees";
+import { useDepartments, useEmployees, useExitEmployee } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import { useAuth } from "../../hooks/useAuth";
 import { ApiError } from "../../api/client";
@@ -29,10 +23,7 @@ export function EmployeeListPage() {
     ...params,
     status: statusFilter === "all" ? undefined : statusFilter,
   });
-  const createDept = useCreateDepartment();
   const exitEmp = useExitEmployee();
-
-  const [deptName, setDeptName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -40,19 +31,6 @@ export function EmployeeListPage() {
     const map = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
     return (id: number) => map.get(id) ?? `#${id}`;
   }, [departments.data]);
-
-  async function onCreateDept(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setMessage(null);
-    try {
-      await createDept.mutateAsync({ name: deptName.trim() });
-      setDeptName("");
-      setMessage("Department added — it will appear in the employee Role dropdown.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create department");
-    }
-  }
 
   async function onExit(emp: Employee) {
     if (emp.status === "terminated") return;
@@ -78,76 +56,13 @@ export function EmployeeListPage() {
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
 
-        <section className="card">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: "var(--space-3)",
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginBottom: "var(--space-4)",
-            }}
-          >
-            <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Departments (roles)</h2>
-            {canWrite ? (
-              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <Link to="/employees/verify-cnic">
-                  <Button type="button" variant="secondary">
-                    Verify my CNIC
-                  </Button>
-                </Link>
-                <Link to="/employees/new">
-                  <Button type="button" variant="primary">
-                    Add Employee
-                  </Button>
-                </Link>
-              </div>
-            ) : null}
-          </div>
-          <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-            Departments are used as selectable roles when creating or editing an employee.
-          </p>
-          {canWrite ? (
-            <form
-              onSubmit={onCreateDept}
-              style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}
-            >
-              <FormField
-                label="New department / role"
-                value={deptName}
-                onChange={(e) => setDeptName(e.target.value)}
-                required
-              />
-              <div style={{ alignSelf: "end" }}>
-                <Button type="submit" variant="secondary">
-                  Add Department
-                </Button>
-              </div>
-            </form>
-          ) : null}
-          {departments.isLoading ? <Spinner /> : null}
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: "1.2rem",
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-              gap: "var(--space-1)",
-            }}
-          >
-            {(departments.data ?? []).map((d) => (
-              <li key={d.id}>{d.name}</li>
-            ))}
-          </ul>
-        </section>
-
         <div
           style={{
             display: "flex",
             gap: "var(--space-3)",
             alignItems: "end",
             flexWrap: "wrap",
+            justifyContent: "space-between",
           }}
         >
           <label className="form-field" style={{ maxWidth: 220 }}>
@@ -165,6 +80,20 @@ export function EmployeeListPage() {
               <option value="all">All</option>
             </select>
           </label>
+          {canWrite ? (
+            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+              <Link to="/employees/verify-cnic">
+                <Button type="button" variant="secondary">
+                  Verify my CNIC
+                </Button>
+              </Link>
+              <Link to="/employees/new">
+                <Button type="button" variant="primary">
+                  Add Employee
+                </Button>
+              </Link>
+            </div>
+          ) : null}
         </div>
 
         {employees.isLoading ? <Spinner label="Loading employees" /> : null}
@@ -174,18 +103,14 @@ export function EmployeeListPage() {
             description={
               statusFilter === "active"
                 ? "Add an employee to start building the roster, or switch the filter to see terminated records."
-                : "Create a department, then add your first employee record."
+                : "Open Employees, expand the menu, then use Departments to create a department before adding an employee."
             }
           />
         ) : null}
         {employees.data && employees.data.items.length > 0 ? (
           <>
             <Table
-              headers={
-                canWrite
-                  ? ["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]
-                  : ["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]
-              }
+              headers={["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]}
             >
               {employees.data.items.map((e) => (
                 <tr key={e.id} data-status={e.status === "active" ? "positive" : "neutral"}>
@@ -204,38 +129,38 @@ export function EmployeeListPage() {
                     </StatusBadge>
                   </td>
                   <td className="num">{e.baseSalary ?? "—"}</td>
-                  {canWrite ? (
-                    <td>
-                      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <td className="col-actions">
+                    <div className="table-actions" style={{ justifyContent: "flex-end" }}>
+                      {canWrite ? (
+                        <>
+                          <Link to={`/employees/${e.id}?mode=view`}>
+                            <Button type="button" variant="secondary">
+                              View
+                            </Button>
+                          </Link>
+                          <Link to={`/employees/${e.id}`}>
+                            <Button type="button" variant="primary" disabled={e.status === "terminated"}>
+                              Edit
+                            </Button>
+                          </Link>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => onExit(e)}
+                            disabled={e.status === "terminated" || exitEmp.isPending}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      ) : (
                         <Link to={`/employees/${e.id}?mode=view`}>
                           <Button type="button" variant="secondary">
                             View
                           </Button>
                         </Link>
-                        <Link to={`/employees/${e.id}`}>
-                          <Button type="button" variant="primary" disabled={e.status === "terminated"}>
-                            Edit
-                          </Button>
-                        </Link>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={() => onExit(e)}
-                          disabled={e.status === "terminated" || exitEmp.isPending}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  ) : (
-                    <td>
-                      <Link to={`/employees/${e.id}?mode=view`}>
-                        <Button type="button" variant="secondary">
-                          View
-                        </Button>
-                      </Link>
-                    </td>
-                  )}
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </Table>

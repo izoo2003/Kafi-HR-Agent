@@ -5,7 +5,13 @@ from datetime import date
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.exceptions import ConflictError, EntityNotFound, ValidationFailed
+from app.core.exceptions import (
+    BusinessRuleViolation,
+    ConflictError,
+    EntityNotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
 from app.core.security import hash_password
 from app.models.employees import Department, Employee
 from app.models.identity import Role, User
@@ -65,7 +71,6 @@ def list_users(
         q = q.filter(User.email.like(f"%@{SELF_SERVICE_EMAIL_DOMAIN}"))
 
     rows = q.order_by(User.created_at.desc(), User.id.desc()).all()
-    rows = [u for u in rows if not _is_staff_account(u)]
     total = len(rows)
     page_rows = rows[(page - 1) * page_size : (page - 1) * page_size + page_size]
 
@@ -189,3 +194,45 @@ def set_password(
         login_identifier=ident,
         password=new_password,
     )
+
+
+def deactivate_user(db: Session, auth: AuthContext, user_id: int) -> UserRead:
+    user = db.query(User).options(joinedload(User.roles)).filter(User.id == user_id).one_or_none()
+    if user is None:
+        raise EntityNotFound(f"User {user_id} not found")
+    if user.id == auth.user_id:
+        raise PermissionDenied("You cannot remove your own login")
+    if _is_staff_account(user):
+        raise BusinessRuleViolation("Staff admin accounts cannot be removed from this list")
+    if not user.is_active:
+        employee = db.query(Employee).filter(Employee.user_id == user.id).one_or_none()
+        dept = (
+            db.query(Department).filter(Department.id == employee.department_id).one_or_none()
+            if employee
+            else None
+        )
+        return _serialize_user(user, employee, dept)
+
+    user.is_active = False
+    employee = db.query(Employee).filter(Employee.user_id == user.id).one_or_none()
+    if employee is not None and employee.status != "terminated":
+        employee.status = "terminated"
+        employee.date_exited = date.today()
+    db.flush()
+    dept = (
+        db.query(Department).filter(Department.id == employee.department_id).one_or_none()
+        if employee
+        else None
+    )
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="user.deactivated",
+        entity_type="user",
+        entity_id=user.id,
+        after_state={
+            "username": user.username,
+            "employee_id": employee.id if employee else None,
+        },
+    )
+    return _serialize_user(user, employee, dept)

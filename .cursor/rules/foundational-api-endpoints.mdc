@@ -78,10 +78,13 @@ alwaysApply: true
 | GET | `/job-descriptions` | List job descriptions (filter by department, status); includes `applicants_count` |
 | POST | `/job-descriptions` | Create job description (auto-appends Google Form apply link if missing) |
 | GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
-| POST | `/job-descriptions/ai-draft` | AI: description + requirements + skills; appends Google Form link |
-| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count` + `application_form_url`) |
+| POST | `/job-descriptions/ai-draft` | AI: description (with hashtags) + requirements + skills; appends Google Form link |
+| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count` + `application_form_url` + `image_paths`) |
 | PATCH | `/job-descriptions/{id}` | Update |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
+| POST | `/job-descriptions/{id}/images` | Upload posting image(s) (multipart, max 8) |
+| GET | `/job-descriptions/{id}/images/{index}/file` | Download posting image |
+| DELETE | `/job-descriptions/{id}/images/{index}` | Remove posting image |
 | GET | `/job-descriptions/{id}/export` | Export as Word/PDF |
 | GET | `/job-descriptions/{id}/scoring-criteria` | Get scoring rubric for this role |
 | POST | `/job-descriptions/{id}/scoring-criteria` | Add/replace scoring criteria |

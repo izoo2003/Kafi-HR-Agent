@@ -19,6 +19,7 @@ from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.employees import (
     DOCUMENT_CATEGORIES,
     IMAGE_ONLY_DOCUMENT_CATEGORIES,
+    LETTER_CATEGORIES,
     EmployeeCreate,
     EmployeeDetailRead,
     EmployeeDocumentRead,
@@ -30,6 +31,18 @@ from app.schemas.employees import (
     EmployeeUpdate,
 )
 from app.services import audit_service
+
+
+def _letter_flags(emp: Employee) -> dict[str, bool]:
+    cats = {d.category for d in (emp.documents or [])}
+    return {
+        "has_appointment_letter": LETTER_CATEGORIES["appointment"] in cats,
+        "has_contract_letter": LETTER_CATEGORIES["contract"] in cats,
+    }
+
+
+def to_employee_read(emp: Employee) -> EmployeeRead:
+    return EmployeeRead.model_validate(emp).model_copy(update=_letter_flags(emp))
 
 
 def list_employees(
@@ -53,7 +66,7 @@ def list_employees(
         .all()
     )
     return PaginatedResponse(
-        items=[EmployeeRead.model_validate(r) for r in rows],
+        items=[to_employee_read(r) for r in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -69,7 +82,7 @@ def get_employee(db: Session, employee_id: int) -> Employee:
 
 def get_employee_detail(db: Session, employee_id: int) -> EmployeeDetailRead:
     emp = get_employee(db, employee_id)
-    return EmployeeDetailRead.model_validate(emp)
+    return EmployeeDetailRead.model_validate(emp).model_copy(update=_letter_flags(emp))
 
 
 def _resolve_role_title(db: Session, department_id: int, role_title: str | None) -> str:

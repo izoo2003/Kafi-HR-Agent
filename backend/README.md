@@ -42,11 +42,11 @@ python main.py
 ### First login (seeded on boot)
 
 - Email: value of `SEED_ADMIN_EMAIL` (default `admin@kafi-group.com`)
-- Password: value of `SEED_ADMIN_PASSWORD` (default `ChangeMeAdmin123!`)
+- Password: value of `SEED_ADMIN_PASSWORD` (default `Admin123`)
 
 ```http
 POST /api/v1/auth/login
-{ "email": "admin@kafi-group.com", "password": "ChangeMeAdmin123!" }
+{ "email": "admin@kafi-group.com", "password": "Admin123" }
 ```
 
 Then call protected routes with `Authorization: Bearer <access_token>`.

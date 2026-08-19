@@ -4,6 +4,7 @@ import { getRegisterOptions } from "../api/auth";
 import { ApiError } from "../api/client";
 import type {
   DepartmentCreate,
+  DepartmentUpdate,
   EmployeeCreate,
   EmployeeDocumentCategory,
   EmployeeReferenceCreate,
@@ -41,6 +42,29 @@ export function useCreateDepartment() {
   return useMutation({
     mutationFn: (payload: DepartmentCreate) => empApi.createDepartment(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["departments"] }),
+  });
+}
+
+export function useUpdateDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: DepartmentUpdate }) =>
+      empApi.updateDepartment(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["departments"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
+  });
+}
+
+export function useDeleteDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => empApi.deleteDepartment(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["departments"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
   });
 }
 

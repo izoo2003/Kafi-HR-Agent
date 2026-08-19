@@ -72,6 +72,28 @@ export function useDeleteJobDescription() {
   });
 }
 
+export function useUploadJobImages(jobId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (files: File[]) => jdApi.uploadJobImages(jobId, files),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job-descriptions"] });
+      qc.invalidateQueries({ queryKey: ["job-descriptions", jobId] });
+    },
+  });
+}
+
+export function useDeleteJobImage(jobId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (index: number) => jdApi.deleteJobImage(jobId, index),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job-descriptions"] });
+      qc.invalidateQueries({ queryKey: ["job-descriptions", jobId] });
+    },
+  });
+}
+
 export function useCriteria(jobId: number) {
   return useQuery({
     queryKey: ["scoring-criteria", jobId],

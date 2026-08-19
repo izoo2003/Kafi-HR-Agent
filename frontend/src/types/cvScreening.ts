@@ -20,6 +20,7 @@ export interface JobDescription {
   descriptionText: string;
   requirementsText: string | null;
   filePath: string | null;
+  imagePaths: string[];
   status: "draft" | "open" | "closed" | string;
   createdBy: number;
   createdAt: string;

@@ -1,6 +1,7 @@
 """Employee document file intake (PDF / images) — Supabase Storage when configured."""
 from __future__ import annotations
 
+import logging
 import mimetypes
 from pathlib import Path
 from uuid import uuid4
@@ -8,6 +9,8 @@ from uuid import uuid4
 from app.core.config import get_settings
 from app.core.exceptions import EntityNotFound, ValidationFailed
 from app.core import supabase_storage
+
+logger = logging.getLogger(__name__)
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif"}
 PDF_SUFFIXES = {".pdf"}
@@ -84,6 +87,55 @@ def store_employee_file(
     return str(dest), mime
 
 
+def store_letter_file(
+    *,
+    employee_id: int,
+    filename: str,
+    content: bytes,
+) -> tuple[str, str | None]:
+    """Store a generated Word letter (.docx)."""
+    raw_name = (filename or "").strip() or "letter.docx"
+    suffix = Path(raw_name).suffix.lower()
+    if suffix != ".docx":
+        raw_name = f"{Path(raw_name).stem}.docx"
+        suffix = ".docx"
+    if not content:
+        raise ValidationFailed("Letter file is empty")
+    if len(content) > MAX_BYTES:
+        raise ValidationFailed("File exceeds 15MB limit")
+
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    settings = get_settings()
+    safe = _safe_name(raw_name)
+    object_name = f"{uuid4().hex[:10]}_{safe}"
+    relative = f"emp_{employee_id}/letters/{object_name}"
+
+    if supabase_storage.storage_configured(settings):
+        try:
+            uri = supabase_storage.upload_bytes(
+                object_path=relative,
+                content=content,
+                content_type=mime,
+                settings=settings,
+            )
+            return uri, mime
+        except Exception as exc:
+            logger.warning("Letter Storage upload failed, saving locally: %s", exc)
+
+    dest_dir = settings.uploads_employees_dir / f"emp_{employee_id}" / "letters"
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / object_name
+        dest.write_bytes(content)
+    except OSError as exc:
+        raise ValidationFailed(
+            f"Could not store letter on server disk ({exc}). "
+            "Configure SUPABASE_URL + SUPABASE_SECRET_KEY for cloud Storage, "
+            "or ensure data/uploads is writable."
+        ) from exc
+    return str(dest), mime
+
+
 def read_stored_file(file_path: str) -> bytes:
     """Load file bytes from Supabase Storage URI or local disk path."""
     if supabase_storage.is_supabase_uri(file_path):
@@ -92,6 +144,49 @@ def read_stored_file(file_path: str) -> bytes:
     if not path.is_file():
         raise EntityNotFound("File not found on disk")
     return path.read_bytes()
+
+
+def store_job_image(
+    *,
+    job_id: int,
+    filename: str,
+    content: bytes,
+) -> tuple[str, str | None]:
+    raw_name = (filename or "").strip() or "image.jpg"
+    suffix = Path(raw_name).suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        raise ValidationFailed("Job posting attachments must be images (PNG, JPG, WEBP, or GIF)")
+    if not content:
+        raise ValidationFailed("Uploaded image is empty")
+    if len(content) > MAX_BYTES:
+        raise ValidationFailed("File exceeds 15MB limit")
+
+    mime = mimetypes.guess_type(raw_name)[0] or "image/jpeg"
+    settings = get_settings()
+    safe = _safe_name(raw_name)
+    object_name = f"{uuid4().hex[:10]}_{safe}"
+    relative = f"jobs/{job_id}/images/{object_name}"
+
+    if supabase_storage.storage_configured(settings):
+        try:
+            uri = supabase_storage.upload_bytes(
+                object_path=relative,
+                content=content,
+                content_type=mime,
+                settings=settings,
+            )
+            return uri, mime
+        except Exception as exc:
+            logger.warning("Job image Storage upload failed, saving locally: %s", exc)
+
+    dest_dir = settings.data_dir / "uploads" / "jobs" / f"job_{job_id}" / "images"
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / object_name
+        dest.write_bytes(content)
+    except OSError as exc:
+        raise ValidationFailed(f"Could not store job image ({exc}).") from exc
+    return str(dest), mime
 
 
 def delete_stored_file(file_path: str | None) -> None:

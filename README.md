@@ -54,7 +54,7 @@ copy .env.example .env
 npm run dev
 ```
 
-Open http://localhost:5288. Seed admin is in `backend/.env` (default `admin@kafi-group.com` / `ChangeMeAdmin123!`).
+Open http://localhost:5288. Seed admin is in `backend/.env` (default `admin@kafi-group.com` / `Admin123`).
 
 ## Deploy notes
 

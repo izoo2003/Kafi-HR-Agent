@@ -151,7 +151,7 @@ export function VerifyCnicPage() {
               style={{
                 display: "grid",
                 gap: "var(--space-3)",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
               }}
             >
               <div>

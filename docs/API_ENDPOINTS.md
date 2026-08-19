@@ -28,7 +28,7 @@
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/users` | List users (paginated, filterable by role/status). Includes `username`, `email`, `login_identifier`. Stored passwords are never returned. |
+| GET | `/users` | List users (paginated). Includes `username`, `login_identifier`, and `login_pin` so an admin can view stored PINs. |
 | POST | `/users/{id}/set-password` | Admin sets a new password/PIN; response includes the new password once so it can be shared |
 | POST | `/users` | Create user |
 | GET | `/users/{id}` | Get user detail |
@@ -52,11 +52,16 @@
 | GET | `/departments` | List departments (any signed-in user; needed for self-service KPI/attendance) |
 | POST | `/departments` | Create department |
 | PATCH | `/departments/{id}` | Update department |
+| DELETE | `/departments/{id}` | Remove department (blocked if employees or other records still use it) |
 | GET | `/employees` | List employees (filter by department, status) |
 | POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
 | POST | `/cnic/verify` | Verify typed CNIC + front/back card images (format + OCR match; images only, not NADRA). Prefer this path. |
 | POST | `/employees/cnic/verify` | Deprecated alias of `/cnic/verify` |
 | GET | `/employees/{id}` | Employee detail incl. documents + references |
+| GET | `/employees/{id}/letters/appointment` | Download stored appointment letter (404 if not created yet) |
+| GET | `/employees/{id}/letters/contract` | Download stored employment contract (404 if not created yet) |
+| POST | `/employees/{id}/letters/appointment` | Generate, store, and download appointment letter Word file |
+| POST | `/employees/{id}/letters/contract` | Generate, store, and download employment contract Word file |
 | PATCH | `/employees/{id}` | Update employee profile fields |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |
 | POST | `/employees/{id}/documents` | Upload document(s) (multipart: `category`, optional `title`, `files[]`) — PDF/images; binaries go to Supabase Storage when configured |
@@ -79,10 +84,13 @@
 | POST | `/job-descriptions` | Create job description (auto-appends Google Form apply link if missing) |
 | GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
 | GET | `/job-descriptions/linkedin-accounts` | Configured LinkedIn profile names/labels for the Open-job picker (no tokens) |
-| POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description + requirements + skills from title + department; appends Google Form link |
-| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count`, `application_form_url`, `linkedin_posts` with `post_url` when posted) |
+| POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description (with hashtags) + requirements + skills; appends Google Form link |
+| GET | `/job-descriptions/{id}` | Detail (includes `applicants_count`, `application_form_url`, `image_paths`, `linkedin_posts`) |
 | PATCH | `/job-descriptions/{id}` | Update; setting status to `open` with `linkedin_account_names` posts to those LinkedIn accounts |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
+| POST | `/job-descriptions/{id}/images` | Upload posting image(s) (multipart, PNG/JPG/WEBP/GIF, max 8) |
+| GET | `/job-descriptions/{id}/images/{index}/file` | Download posting image by index |
+| DELETE | `/job-descriptions/{id}/images/{index}` | Remove posting image |
 | GET | `/job-descriptions/{id}/export` | Export as Word/PDF |
 | GET | `/job-descriptions/{id}/scoring-criteria` | Get scoring rubric for this role |
 | POST | `/job-descriptions/{id}/scoring-criteria` | Add/replace scoring criteria |

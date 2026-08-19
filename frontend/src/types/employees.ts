@@ -11,6 +11,11 @@ export interface DepartmentCreate {
   headEmployeeId?: number | null;
 }
 
+export interface DepartmentUpdate {
+  name?: string;
+  headEmployeeId?: number | null;
+}
+
 export type EmployeeDocumentCategory =
   | "cnic"
   | "cnic_front"
@@ -18,7 +23,9 @@ export type EmployeeDocumentCategory =
   | "education"
   | "other"
   | "photo"
-  | "client";
+  | "client"
+  | "appointment_letter"
+  | "contract_letter";
 
 export interface EmployeeDocument {
   id: number;
@@ -106,6 +113,8 @@ export interface Employee {
 
   createdAt: string;
   updatedAt: string;
+  hasAppointmentLetter?: boolean;
+  hasContractLetter?: boolean;
 }
 
 export interface EmployeeDetail extends Employee {

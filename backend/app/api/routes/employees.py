@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Path, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 from urllib.parse import quote
 
@@ -27,7 +27,7 @@ from app.schemas.employees import (
     EmployeeReferenceUpdate,
     EmployeeUpdate,
 )
-from app.services import department_service, employee_service
+from app.services import department_service, employee_letter_service, employee_service
 
 router = APIRouter(tags=["employees"])
 
@@ -60,6 +60,16 @@ def patch_department(
     return DepartmentRead.model_validate(
         department_service.update_department(db, auth, department_id, payload)
     )
+
+
+@router.delete("/departments/{department_id}", status_code=204)
+def delete_department(
+    department_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    department_service.delete_department(db, auth, department_id)
+    return Response(status_code=204)
 
 
 @router.get("/employees", response_model=PaginatedResponse[EmployeeRead])
@@ -105,6 +115,37 @@ async def verify_employee_cnic_legacy(
         back_image=back_image,
         image=image,
     )
+
+
+def _letter_response(content: bytes, filename: str) -> Response:
+    safe = quote(filename or "letter.docx")
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe}"},
+    )
+
+
+@router.get("/employees/{employee_id}/letters/{kind}")
+def view_employee_letter(
+    employee_id: int,
+    kind: Annotated[str, Path(pattern="^(appointment|contract)$")],
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
+) -> Response:
+    content, filename = employee_letter_service.view_stored_letter(db, employee_id, kind)
+    return _letter_response(content, filename)
+
+
+@router.post("/employees/{employee_id}/letters/{kind}")
+def create_employee_letter(
+    employee_id: int,
+    kind: Annotated[str, Path(pattern="^(appointment|contract)$")],
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    content, filename = employee_letter_service.generate_letter(db, auth, employee_id, kind)
+    return _letter_response(content, filename)
 
 
 @router.get("/employees/{employee_id}", response_model=EmployeeDetailRead)

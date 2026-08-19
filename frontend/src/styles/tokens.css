@@ -81,6 +81,7 @@
   --radius-none: 0px;
 
   --sidebar-width: 240px;
+  --sidebar-collapsed-width: 72px;
   --content-max-width: 1440px;
   --table-row-height: 44px;
 }
