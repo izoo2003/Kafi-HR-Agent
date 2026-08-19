@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessRuleViolation, EntityNotFound
+from app.ingestion.cv_intake import ensure_cv_bytes
 from app.models.cv_screening import Candidate, CandidateScore, ScoringCriteria
 from app.models.payroll import PayrollRun
 from app.parsing.cv_parser import parse_cv
@@ -18,6 +19,16 @@ def run_cv_pipeline(candidate_id: int, db: Session) -> Candidate:
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).one_or_none()
     if candidate is None:
         raise EntityNotFound(f"Candidate {candidate_id} not found")
+
+    try:
+        ensure_cv_bytes(candidate)
+        db.flush()
+    except EntityNotFound:
+        candidate.status = "uploaded"
+        db.flush()
+        raise BusinessRuleViolation(
+            "CV file is missing — it may have been stored on a previous server"
+        ) from None
 
     parsed = parse_cv(candidate.cv_file_path)
     if not (parsed.get("raw_text") or "").strip():

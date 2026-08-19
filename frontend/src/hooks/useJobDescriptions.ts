@@ -59,6 +59,19 @@ export function useUpdateJobDescription(id: number) {
   });
 }
 
+export function useDeleteJobDescription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => jdApi.deleteJobDescription(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job-descriptions"] });
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      qc.invalidateQueries({ queryKey: ["ranking"] });
+      qc.invalidateQueries({ queryKey: ["admin", "dashboard"] });
+    },
+  });
+}
+
 export function useCriteria(jobId: number) {
   return useQuery({
     queryKey: ["scoring-criteria", jobId],

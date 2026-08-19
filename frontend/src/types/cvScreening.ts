@@ -140,6 +140,7 @@ export interface CvSyncResult {
   autoMatched: number;
   unassigned: number;
   duplicatesSkipped: number;
+  restoredFiles?: number;
   candidates: Candidate[];
 }
 

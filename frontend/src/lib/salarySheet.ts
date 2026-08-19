@@ -6,7 +6,6 @@ export type SheetDraft = {
   daysAbsent: string;
   daysLate: string;
   daysHalfDay: string;
-  overtimeBonusDays: string;
   allowanceAmount: string;
   loanDeductionAmount: string;
   advanceAmount: string;
@@ -29,8 +28,6 @@ export type LiveRow = {
   daysLate: number;
   daysHalfDay: number;
   lateOffDays: number;
-  overtimeBonusDays: number;
-  overtimeAmount: number;
   allowance: number;
   gross: number;
   lateDed: number;
@@ -80,7 +77,6 @@ export function computeLiveRow(
   const daysPresent = d ? n(d.daysPresent) : n(emp.daysPresent);
   const daysLate = d ? n(d.daysLate) : n(emp.daysLate);
   const daysHalfDay = d ? n(d.daysHalfDay) : n(emp.daysHalfDay);
-  const overtimeBonusDays = d ? n(d.overtimeBonusDays) : n(emp.overtimeBonusDays);
   const allowance = d ? n(d.allowanceAmount) : n(emp.allowanceAmount);
   const loan = d ? n(d.loanDeductionAmount) : n(emp.loanDeductionAmount);
   const advance = d ? n(d.advanceAmount) : n(emp.advanceAmount);
@@ -88,8 +84,7 @@ export function computeLiveRow(
   const lateOffDays = Math.floor(daysLate / latesPerOff);
   const lateDed = round2(lateOffDays * perDay);
   const halfDed = round2(daysHalfDay * perDay * 0.5);
-  const overtimeAmount = round2(overtimeBonusDays * perDay);
-  const gross = round2(perDay * daysPresent + allowance + overtimeAmount);
+  const gross = round2(perDay * daysPresent + allowance);
   const taxComputed = monthlyTaxFromGross(gross, opts.slabs);
   const tax = d?.taxManual ? n(d.monthlyTax) : taxComputed;
   const net = Math.max(0, round2(gross - lateDed - loan - halfDed - advance - tax));
@@ -106,8 +101,6 @@ export function computeLiveRow(
     daysLate,
     daysHalfDay,
     lateOffDays,
-    overtimeBonusDays,
-    overtimeAmount,
     allowance,
     gross,
     lateDed,
@@ -130,7 +123,6 @@ export function draftFromEmployee(e: PayrollComputeRow): SheetDraft {
     daysAbsent: String(e.absentsAfterLeave ?? 0),
     daysLate: String(e.daysLate ?? 0),
     daysHalfDay: String(e.daysHalfDay ?? 0),
-    overtimeBonusDays: String(e.overtimeBonusDays ?? 0),
     allowanceAmount: String(e.allowanceAmount ?? 0),
     loanDeductionAmount: String(e.loanDeductionAmount ?? 0),
     advanceAmount: String(e.advanceAmount ?? 0),
@@ -150,27 +142,28 @@ export function draftFromResult(result: PayrollComputeResult): Record<number, Sh
 }
 
 export function applyAttendancePatch(
-  _current: SheetDraft,
+  current: SheetDraft,
   patch: Partial<SheetDraft>,
   monthDays: number,
+  latesPerOff = 3,
 ): Partial<SheetDraft> {
   const next = { ...patch };
   const days = monthDays || 30;
+
+  if (patch.daysLate != null && patch.daysAbsent == null) {
+    const prevLateOff = Math.floor(n(current.daysLate) / latesPerOff);
+    const nextLateOff = Math.floor(n(patch.daysLate) / latesPerOff);
+    const baseAbsent = Math.max(0, n(current.daysAbsent) - prevLateOff);
+    next.daysAbsent = String(Math.max(0, baseAbsent + nextLateOff));
+  }
+
   if (patch.daysAbsent != null && patch.daysPresent == null) {
     next.daysPresent = String(Math.max(0, days - n(patch.daysAbsent)));
   }
   if (patch.daysPresent != null && patch.daysAbsent == null) {
     next.daysAbsent = String(Math.max(0, days - n(patch.daysPresent)));
   }
-  const calcInputs = [
-    "baseSalary",
-    "daysPresent",
-    "daysAbsent",
-    "daysLate",
-    "daysHalfDay",
-    "overtimeBonusDays",
-    "allowanceAmount",
-  ];
+  const calcInputs = ["baseSalary", "daysPresent", "daysAbsent", "daysLate", "daysHalfDay", "allowanceAmount"];
   if (calcInputs.some((k) => k in patch)) {
     next.taxManual = false;
   }

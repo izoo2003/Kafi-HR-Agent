@@ -105,8 +105,61 @@ def read_cv_bytes(stored: str) -> bytes:
         return supabase_storage.download_bytes(raw)
     path = _resolve_local_cv(raw)
     if path is None:
+        found = supabase_storage.find_by_filename(stored_cv_filename(raw))
+        if found:
+            return supabase_storage.download_bytes(found)
         raise EntityNotFound("CV file is missing — it may have been stored on a previous server")
     return path.read_bytes()
+
+
+def cv_file_available(stored: str) -> bool:
+    raw = (stored or "").strip()
+    if not raw:
+        return False
+    if supabase_storage.is_supabase_uri(raw):
+        return supabase_storage.object_exists(raw)
+    if _resolve_local_cv(raw) is not None:
+        return True
+    return supabase_storage.find_by_filename(stored_cv_filename(raw)) is not None
+
+
+def ensure_cv_bytes(candidate: Candidate) -> tuple[bytes, str]:
+    """Load CV bytes, restoring from the original source and re-uploading if needed."""
+    from app.ingestion.cv_restore import restore_missing_cv
+
+    raw = (candidate.cv_file_path or "").strip()
+    filename = stored_cv_filename(raw) if raw else "cv.bin"
+    data: bytes | None = None
+    if raw:
+        try:
+            data = read_cv_bytes(raw)
+        except EntityNotFound:
+            data = None
+
+    if data is None:
+        restored = restore_missing_cv(candidate)
+        if not restored:
+            raise EntityNotFound(
+                "CV file is missing — it may have been stored on a previous server"
+            )
+        filename, data = restored
+        stored = persist_cv_bytes(
+            filename=filename,
+            content=data,
+            key_prefix=candidate.source or f"cand{candidate.id}",
+        )
+        candidate.cv_file_path = stored
+        return data, stored_cv_filename(stored)
+
+    if raw and not supabase_storage.is_supabase_uri(raw) and supabase_storage.storage_configured():
+        migrated = persist_cv_bytes(
+            filename=filename,
+            content=data,
+            key_prefix=candidate.source or f"cand{candidate.id}",
+        )
+        candidate.cv_file_path = migrated
+        filename = stored_cv_filename(migrated)
+    return data, filename
 
 
 def store_cv_upload(

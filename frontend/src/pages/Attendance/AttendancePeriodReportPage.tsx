@@ -40,7 +40,7 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
           Tenure: <span className="num">{emp.tenureMonths}</span> months
         </div>
         <div>
-          Late → off days: <span className="num">{emp.lateOffDays}</span>
+          Late → absent days: <span className="num">{emp.lateOffDays}</span>
         </div>
         <div>
           Absents after leave: <span className="num">{emp.absentsAfterLeave}</span>
@@ -129,15 +129,15 @@ export function AttendancePeriodReportPage() {
       const res = await analyze.mutateAsync(files[0]);
       setReport(res);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Period report failed");
+      setError(err instanceof ApiError ? err.message : "Import failed");
     }
   }
 
   return (
     <>
       <PageHeader
-        title="Attendance period report"
-        breadcrumb="Attendance / Period report"
+        title="Import Excel file for attendance"
+        breadcrumb="Attendance / Import Excel"
         actions={
           <Link to="/attendance/records">
             <Button variant="secondary">Records</Button>
@@ -154,7 +154,7 @@ export function AttendancePeriodReportPage() {
             this app&apos;s employee code and First Name = full name so we can pull{" "}
             <strong>base salary</strong> and save attendance. First Punch only drives late /
             half-day / presence. Rules: on time until 09:40, late from 09:41, after 11:30 = late +
-            half day, Sunday off, Saturday/auto holiday when ≥80% absent, 3 lates = 1 off.
+            half day, Sunday off, Saturday/auto holiday when ≥80% absent, 3 lates = 1 absent day.
           </p>
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             <input
@@ -206,7 +206,7 @@ export function AttendancePeriodReportPage() {
                 {" · "}late after <span className="num">{report.lateAfter}</span>
                 {" · "}half day after <span className="num">{report.halfDayAfter}</span>
                 {" · "}
-                <span className="num">{report.latesPerOff}</span> lates = 1 off
+                <span className="num">{report.latesPerOff}</span> lates = 1 absent
                 {" · "}month days <span className="num">{report.monthDays}</span>
                 {" · "}imported <span className="num">{report.importedRows}</span> rows
               </p>

@@ -76,6 +76,18 @@ def publish_job_if_open(
         logger.exception("LinkedIn publish failed for job %s", job.id)
 
 
+_HOW_TO_APPLY_RE = re.compile(r"\n\nHow to apply\s*[\s\S]*$", re.IGNORECASE)
+
+
+def _normalize_apply_url(url: str | None) -> str | None:
+    raw = (url or "").strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("http://") or raw.lower().startswith("https://"):
+        return raw
+    return "https://" + raw.lstrip("/")
+
+
 def list_public_accounts() -> list[dict[str, str]]:
     """Labels only — never tokens — for the Open-job picker."""
     accounts = _env_accounts(get_settings())
@@ -118,7 +130,7 @@ def _publish(
 
     existing = list(job.linkedin_posts or [])
     by_name = {str(row.get("account") or "default"): row for row in existing}
-    apply_url = (settings.google_form_url or "").strip() or None
+    apply_url = _normalize_apply_url(settings.google_form_url)
     commentary = _build_commentary(job, apply_url)
     changed = False
 
@@ -401,11 +413,15 @@ def _create_post(
         "isReshareDisabledByAuthor": False,
     }
     if apply_url and apply_url.startswith("http"):
+        # LinkedIn card description should not contain the raw apply URL.
+        # We keep the "Apply here:" line in commentary (plain text) and set
+        # the card source explicitly via `content.article.source`.
+        description_no_cta = _HOW_TO_APPLY_RE.sub("", description or "").strip()
         body["content"] = {
             "article": {
                 "source": apply_url,
                 "title": f"We're hiring: {title}"[:200],
-                "description": re.sub(r"\s+", " ", description).strip()[:256],
+                "description": re.sub(r"\s+", " ", description_no_cta).strip()[:256],
             }
         }
     response = _post_with_version_fallback(token=token, version=version, body=body)
@@ -523,19 +539,35 @@ def _post_with_version_fallback(
 
 
 def _build_commentary(job: JobDescription, apply_url: str | None) -> str:
+    apply_line = f"Apply here: {apply_url}" if apply_url else ""
+
     parts = [f"We're hiring: {job.title.strip()}"]
-    desc = re.sub(r"\s+", " ", (job.description_text or "").strip())
+    # Avoid including the apply CTA (raw Google Form URL) in the description
+    # we paste into commentary; we add it once via the dedicated "Apply here"
+    # line.
+    desc_clean = _HOW_TO_APPLY_RE.sub("", job.description_text or "").strip()
+    desc = re.sub(r"\s+", " ", desc_clean)
     if desc:
         parts.append(desc[:1200])
     req = re.sub(r"\s+", " ", (job.requirements_text or "").strip())
     if req:
         parts.append(f"Requirements: {req[:600]}")
-    if apply_url:
-        parts.append(f"Apply here: {apply_url}")
-    text = "\n\n".join(parts).strip()
-    if len(text) > COMMENTARY_MAX:
-        text = text[: COMMENTARY_MAX - 1] + "…"
-    return text
+
+    base_text = "\n\n".join(parts).strip()
+
+    if not apply_line:
+        text = base_text
+        if len(text) > COMMENTARY_MAX:
+            text = text[: COMMENTARY_MAX - 1] + "…"
+        return text
+
+    # Ensure the apply line is never truncated away.
+    glue = "\n\n"
+    max_base = COMMENTARY_MAX - len(glue) - len(apply_line) - 1  # reserve 1 char for ellipsis
+    if len(base_text) > max_base:
+        base_text = base_text[: max_base - 1].rstrip() + "…"
+
+    return (base_text + glue + apply_line).strip()
 
 
 def _linkedin_error(response: requests.Response, action: str) -> str:

@@ -201,6 +201,43 @@ def archive_job_description(db: Session, auth: AuthContext, job_id: int) -> JobD
     )
 
 
+def delete_job_description(db: Session, auth: AuthContext, job_id: int) -> None:
+    """Permanently remove a job posting and its criteria, candidates, and rankings."""
+    from app.ingestion.employee_docs import delete_stored_file
+    from app.services.cv_screening_service import delete_candidate
+
+    job = get_job_description(db, job_id)
+    before = {"title": job.title, "status": job.status, "department_id": job.department_id}
+
+    candidate_ids = [
+        row[0]
+        for row in db.query(Candidate.id).filter(Candidate.job_description_id == job_id).all()
+    ]
+    for candidate_id in candidate_ids:
+        delete_candidate(db, auth, candidate_id)
+
+    db.query(CandidateRanking).filter(CandidateRanking.job_description_id == job_id).delete(
+        synchronize_session=False
+    )
+    db.query(ScoringCriteria).filter(ScoringCriteria.job_description_id == job_id).delete(
+        synchronize_session=False
+    )
+
+    if job.file_path:
+        delete_stored_file(job.file_path)
+
+    db.delete(job)
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="job_description.deleted",
+        entity_type="job_description",
+        entity_id=job_id,
+        before_state=before,
+    )
+
+
 def list_criteria(db: Session, job_id: int) -> list[ScoringCriteria]:
     get_job_description(db, job_id)
     return (

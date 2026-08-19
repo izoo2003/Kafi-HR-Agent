@@ -13,6 +13,7 @@ from typing import Any
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ValidationFailed
+from app.core.gemini_client import generate_content_with_fallback
 from app.schemas.cnic import CnicExtractedFields, CnicVerificationChecks, CnicVerificationResult
 
 logger = logging.getLogger(__name__)
@@ -74,21 +75,12 @@ def _extract_with_gemini(
     typed_cnic: str,
     settings: Settings,
 ) -> dict[str, Any]:
-    api_key = (settings.gemini_cnic_api_key or settings.gemini_api_key or "").strip()
-    if not api_key or api_key.startswith("your_"):
+    api_keys = settings.resolved_gemini_cnic_api_keys()
+    if not api_keys:
         raise ValidationFailed(
             "CNIC image verification requires GEMINI_CNIC_API_KEY or GEMINI_API_KEY on the backend. "
             "Format check alone is available without it."
         )
-    try:
-        import google.generativeai as genai
-    except ImportError as exc:
-        raise ValidationFailed("google-generativeai is not installed on the server") from exc
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        settings.gemini_cnic_model or settings.gemini_model or "gemini-flash-latest"
-    )
     prompt = f"""You are verifying a Pakistan NADRA Computerized National Identity Card (CNIC) image for an HR system.
 
 The user typed this CNIC number: {typed_cnic}
@@ -114,11 +106,14 @@ Rules:
 - Prefer digits only in extracted_cnic (13 digits). Do not invent fields you cannot see.
 - This is document OCR / consistency checking, not a government database lookup.
 """
-    response = model.generate_content(
-        [
+    response = generate_content_with_fallback(
+        api_keys=api_keys,
+        models=settings.resolved_gemini_cnic_models(),
+        prompt=[
             prompt,
             {"mime_type": mime_type or "image/jpeg", "data": image_bytes},
-        ]
+        ],
+        pool_id="cnic",
     )
     return _parse_gemini_json(getattr(response, "text", "") or "")
 

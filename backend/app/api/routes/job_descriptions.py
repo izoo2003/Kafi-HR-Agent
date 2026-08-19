@@ -103,14 +103,14 @@ def patch_job(
     return jd_service.get_job_description_read(db, job_id)
 
 
-@router.delete("/job-descriptions/{job_id}", response_model=JobDescriptionRead)
-def close_job(
+@router.delete("/job-descriptions/{job_id}", response_model=MessageResponse)
+def delete_job(
     job_id: int,
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
-) -> JobDescriptionRead:
-    job = jd_service.archive_job_description(db, auth, job_id)
-    return jd_service.get_job_description_read(db, job.id)
+) -> MessageResponse:
+    jd_service.delete_job_description(db, auth, job_id)
+    return MessageResponse(message="Job posting deleted")
 
 
 @router.get("/job-descriptions/{job_id}/export")

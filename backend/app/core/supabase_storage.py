@@ -155,6 +155,22 @@ def upload_bytes(
     return make_storage_uri(bucket, object_path)
 
 
+def object_exists(uri: str, settings: Settings | None = None) -> bool:
+    s = settings or get_settings()
+    if not is_supabase_uri(uri) or not storage_configured(s):
+        return False
+    bucket, object_path = parse_storage_uri(uri)
+    encoded = "/".join(quote(seg, safe="") for seg in object_path.split("/"))
+    url = f"{_base_url(s)}/storage/v1/object/{bucket}/{encoded}"
+    headers = _headers(s)
+    headers["Range"] = "bytes=0-0"
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+        return resp.status_code in {200, 206}
+    except requests.RequestException:
+        return False
+
+
 def download_bytes(uri: str) -> bytes:
     s = get_settings()
     if not storage_configured(s):
@@ -170,6 +186,39 @@ def download_bytes(uri: str) -> bytes:
     if not resp.content:
         raise EntityNotFound("File not found in Supabase Storage")
     return resp.content
+
+
+def find_by_filename(filename: str, settings: Settings | None = None) -> str | None:
+    """Look up a CV already in Storage by basename (legacy local-path rows)."""
+    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name or not storage_configured(settings):
+        return None
+    s = settings or get_settings()
+    bucket = ensure_employee_documents_bucket(s)
+    prefixes = ["cvs/", "cvs/webmail/", "cvs/gmail/", "cvs/google_form/", "cvs/form/", "cvs/outlook/", "cvs/whatsapp/", "cvs/inbox/"]
+    try:
+        for prefix in prefixes:
+            resp = requests.post(
+                f"{_base_url(s)}/storage/v1/object/list/{bucket}",
+                headers=_headers(s, content_type="application/json"),
+                json={"prefix": prefix, "limit": 1000},
+                timeout=30,
+            )
+            if not resp.ok:
+                continue
+            for item in resp.json() or []:
+                if not isinstance(item, dict):
+                    continue
+                item_name = str(item.get("name") or "").replace("\\", "/").rsplit("/", 1)[-1]
+                if item_name == name:
+                    rel = f"{prefix.rstrip('/')}/{item_name}" if "/" not in str(item.get("name") or "") else f"{prefix}{item.get('name')}"
+                    # list API returns name relative to prefix or just the file name
+                    listed = str(item.get("name") or "")
+                    object_path = listed if listed.startswith("cvs/") else f"{prefix.rstrip('/')}/{listed}".replace("//", "/")
+                    return make_storage_uri(bucket, object_path.lstrip("/"))
+    except requests.RequestException:
+        return None
+    return None
 
 
 def delete_object(uri: str) -> None:

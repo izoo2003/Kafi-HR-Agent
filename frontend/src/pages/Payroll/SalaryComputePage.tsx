@@ -65,7 +65,6 @@ export function SalaryComputePage() {
             daysAbsent: Number(d?.daysAbsent ?? e.absentsAfterLeave),
             daysLate: Number(d?.daysLate ?? e.daysLate),
             daysHalfDay: Number(d?.daysHalfDay ?? e.daysHalfDay),
-            overtimeBonusDays: Number(d?.overtimeBonusDays ?? e.overtimeBonusDays),
             allowanceAmount: Number(d?.allowanceAmount ?? e.allowanceAmount ?? 0),
             loanDeductionAmount: Number(d?.loanDeductionAmount ?? e.loanDeductionAmount ?? 0),
             advanceAmount: Number(d?.advanceAmount ?? e.advanceAmount ?? 0),
@@ -125,7 +124,7 @@ export function SalaryComputePage() {
               <Button variant="secondary">Tax slabs</Button>
             </Link>
             <Link to="/attendance/period-report">
-              <Button variant="secondary">Attendance Excel</Button>
+              <Button variant="secondary">Import Excel file for attendance</Button>
             </Link>
           </>
         }
@@ -134,7 +133,7 @@ export function SalaryComputePage() {
         <Card>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
             Edit this sheet like Excel. Changing base salary, absents, lates, or half-days immediately
-            recalculates per-day rate, late offs (3 lates = 1 day), half-day deduction, tax, and net
+            recalculates per-day rate, late offs (3 lates = 1 absent day), half-day deduction, tax, and net
             payable. Present and absent stay on a 30-day month. Save to keep this month&apos;s figures.
           </p>
           <div

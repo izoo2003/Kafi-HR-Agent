@@ -17,6 +17,7 @@ from app.models.kpi import KpiDefinition, KpiEntry
 from app.models.system import SystemConfig
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.core.config import get_settings
+from app.core.gemini_client import generate_content_with_fallback
 from app.schemas.kpi import (
     DepartmentEmployeeKpiSummary,
     DepartmentKpiSummary,
@@ -591,8 +592,8 @@ def ai_suggest_entry(
         raise ValidationFailed("Employee must belong to the selected department")
 
     settings = get_settings()
-    api_key = (settings.gemini_api_key or "").strip()
-    if not api_key or api_key.startswith("your_"):
+    api_keys = settings.resolved_gemini_api_keys()
+    if not api_keys:
         other = next((d for d in defs if d.name == OTHER_KPI_NAME), defs[-1])
         approx = float(min(max(payload.text.count("\n") + 1, 1), float(other.target_value or 10)))
         return KpiAiSuggestResponse(
@@ -603,8 +604,6 @@ def ai_suggest_entry(
 
     import json
     import re
-
-    import google.generativeai as genai
 
     catalog = [
         {
@@ -636,9 +635,12 @@ Rules:
 - actual_value should be realistic vs that KPI's target/unit (e.g. % 0-150, score_1_5 1-5, counts >= 0).
 """
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
-        response = model.generate_content(prompt)
+        response = generate_content_with_fallback(
+            api_keys=api_keys,
+            models=settings.resolved_gemini_models(),
+            prompt=prompt,
+            pool_id="general",
+        )
         raw = (response.text or "").strip()
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -683,12 +685,12 @@ def _ai_format_work_submission(
     headroom = max(0.0, float(WORK_LOG_TARGET) - current)
 
     settings = get_settings()
-    api_key = (settings.gemini_api_key or "").strip()
+    api_keys = settings.resolved_gemini_api_keys()
     raw_text = payload.text.strip()
     if not raw_text:
         raise ValidationFailed("Describe the work done before analyzing")
 
-    if not api_key or api_key.startswith("your_"):
+    if not api_keys:
         formatted = raw_text.strip()
         if not formatted.endswith("."):
             formatted += "."
@@ -701,8 +703,6 @@ def _ai_format_work_submission(
 
     import json
     import re
-
-    import google.generativeai as genai
 
     prompt = f"""You help employees log work for a daily KPI journal (0–10 rating scale, max 10 per day).
 
@@ -723,9 +723,12 @@ Rules:
 - If headroom is 0, set points_to_add to 0 and explain in reasoning.
 """
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
-        response = model.generate_content(prompt)
+        response = generate_content_with_fallback(
+            api_keys=api_keys,
+            models=settings.resolved_gemini_models(),
+            prompt=prompt,
+            pool_id="general",
+        )
         raw = (response.text or "").strip()
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)

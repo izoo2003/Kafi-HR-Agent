@@ -7,7 +7,7 @@ import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
-import { useJobDescriptions } from "../../hooks/useJobDescriptions";
+import { useJobDescriptions, useDeleteJobDescription } from "../../hooks/useJobDescriptions";
 import { useDepartments, useEmployees, useUpdateEmployee } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import { useAuth } from "../../hooks/useAuth";
@@ -149,7 +149,31 @@ function JobDescriptionsView() {
 
 function JobPostingsView() {
   const { page, pageSize, setPage, params } = usePagination();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("job_descriptions", "write");
   const jobs = useJobDescriptions(params);
+  const deleteJob = useDeleteJobDescription();
+  const [error, setError] = useState<string | null>(null);
+
+  async function onDelete(id: number, title: string, applicants: number) {
+    const applicantNote =
+      applicants > 0
+        ? ` This will also remove ${applicants} candidate(s) and their CVs.`
+        : "";
+    if (
+      !window.confirm(
+        `Delete job posting "${title}"? This cannot be undone.${applicantNote}`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await deleteJob.mutateAsync(id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete job posting");
+    }
+  }
 
   if (jobs.isLoading) return <Spinner label="Loading job postings" />;
 
@@ -168,6 +192,7 @@ function JobPostingsView() {
 
   return (
     <>
+      {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
       <Table headers={["Title", "Department", "Status", "Applicants", "Actions"]}>
         {(jobs.data?.items ?? []).map((j) => (
           <tr
@@ -190,6 +215,27 @@ function JobPostingsView() {
               <Link to={`/job-descriptions/${j.id}/candidates`}>Candidates</Link>
               {" · "}
               <Link to={`/job-descriptions/${j.id}/ranking`}>Ranking</Link>
+              {canWrite ? (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={() => void onDelete(j.id, j.title, j.applicantsCount ?? 0)}
+                    disabled={deleteJob.isPending}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      color: "var(--color-status-critical)",
+                      cursor: deleteJob.isPending ? "not-allowed" : "pointer",
+                      font: "inherit",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : null}
             </td>
           </tr>
         ))}

@@ -89,7 +89,7 @@ export function AttendanceOverviewPage() {
           <>
             {canWrite ? (
               <Link to="/attendance/period-report">
-                <Button variant="primary">Excel period report</Button>
+                <Button variant="primary">Import Excel file for attendance</Button>
               </Link>
             ) : null}
             <Link to="/attendance/records">

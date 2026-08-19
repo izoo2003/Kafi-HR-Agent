@@ -52,6 +52,9 @@ export function CvScreeningHubPage() {
       };
       let msg = `Fetched ${result.totalFetched} — ${result.autoMatched} matched, ${result.unassigned} unassigned`;
       if (result.duplicatesSkipped > 0) msg += `, ${result.duplicatesSkipped} duplicates skipped`;
+      if ((result.restoredFiles ?? 0) > 0) {
+        msg += `, restored ${result.restoredFiles} missing CV file(s)`;
+      }
       const notConfigured = result.sources.filter((s) => !s.configured);
       if (notConfigured.length > 0) {
         msg += `. Not connected: ${notConfigured.map((s) => sourceLabel[s.source] ?? s.source).join(", ")}.`;

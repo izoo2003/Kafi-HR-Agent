@@ -52,6 +52,10 @@ export async function updateJobDescription(
   return apiRequest<JobDescription>(`/job-descriptions/${id}`, { method: "PATCH", body: payload });
 }
 
+export async function deleteJobDescription(id: number): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>(`/job-descriptions/${id}`, { method: "DELETE" });
+}
+
 export async function listCriteria(jobId: number): Promise<ScoringCriteria[]> {
   return apiRequest<ScoringCriteria[]>(`/job-descriptions/${jobId}/scoring-criteria`);
 }

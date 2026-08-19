@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.config import Settings
+from app.core.gemini_client import generate_content_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def evaluate_cv_against_job(
     heuristic_strengths: list[str] | None = None,
     heuristic_gaps: list[str] | None = None,
 ) -> CvJobEvaluationResult:
-    if settings.gemini_api_key and not settings.gemini_api_key.startswith("your_"):
+    if settings.resolved_gemini_api_keys():
         try:
             return _evaluate_with_gemini(
                 cv_text=cv_text,
@@ -66,11 +67,6 @@ def _evaluate_with_gemini(
     requirements_text: str,
     settings: Settings,
 ) -> CvJobEvaluationResult:
-    import google.generativeai as genai
-
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel(settings.gemini_model)
-
     prompt = f"""You are an HR screening assistant. Compare this candidate's CV against the job posting.
 
 Job title: {job_title}
@@ -104,7 +100,12 @@ Rules:
 - recommendation: shortlist if strong fit (roughly 7+), consider if partial (roughly 4-6.9), reject if weak (<4).
 """
 
-    response = model.generate_content(prompt)
+    response = generate_content_with_fallback(
+        api_keys=settings.resolved_gemini_api_keys(),
+        models=settings.resolved_gemini_models(),
+        prompt=prompt,
+        pool_id="general",
+    )
     data = _parse_json_response(response.text)
 
     rating = float(data.get("rating_out_of_10") or 0)

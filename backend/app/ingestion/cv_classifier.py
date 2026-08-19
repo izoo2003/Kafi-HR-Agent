@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import Settings
+from app.core.gemini_client import generate_content_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -264,18 +265,17 @@ def _ocr_image_text(content: bytes, filename: str, settings: Settings | None) ->
     if not settings or not _gemini_key(settings):
         return ""
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.gemini_api_key.strip())
-        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
         mime = _image_mime(filename)
         prompt = (
             "Extract all readable text from this image. If it is a CV/resume, transcribe "
             "the full visible content. If it is a logo, signature, icon, or photo of a person "
             "with little or no document text, reply with exactly: NOT_A_DOCUMENT"
         )
-        response = model.generate_content(
-            [prompt, {"mime_type": mime, "data": content[:4_000_000]}]
+        response = generate_content_with_fallback(
+            api_keys=settings.resolved_gemini_api_keys(),
+            models=settings.resolved_gemini_models(),
+            prompt=[prompt, {"mime_type": mime, "data": content[:4_000_000]}],
+            pool_id="general",
         )
         raw = (response.text or "").strip()
         if not raw or raw.upper().startswith("NOT_A_DOCUMENT"):
@@ -292,10 +292,6 @@ def _gemini_classify_image(
     if not settings or not _gemini_key(settings):
         return None
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.gemini_api_key.strip())
-        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
         mime = _image_mime(filename)
         prompt = f"""Decide if this IMAGE is a job-seeker CV/resume (a photographed or scanned document
 with sections like experience, education, skills).
@@ -308,8 +304,11 @@ screenshots that are not a resume, or any image that is not a CV.
 Respond with STRICT JSON only:
 {{"is_cv": true or false, "reason": "short explanation"}}
 """
-        response = model.generate_content(
-            [prompt, {"mime_type": mime, "data": content[:4_000_000]}]
+        response = generate_content_with_fallback(
+            api_keys=settings.resolved_gemini_api_keys(),
+            models=settings.resolved_gemini_models(),
+            prompt=[prompt, {"mime_type": mime, "data": content[:4_000_000]}],
+            pool_id="general",
         )
         raw = (response.text or "").strip()
         if raw.startswith("```"):
@@ -339,10 +338,8 @@ def _image_mime(filename: str) -> str:
 
 
 def _gemini_key(settings: Settings) -> str:
-    key = (settings.gemini_api_key or "").strip()
-    if not key or key.startswith("your_"):
-        return ""
-    return key
+    keys = settings.resolved_gemini_api_keys()
+    return keys[0] if keys else ""
 
 
 def _extract_text_from_bytes(filename: str, content: bytes) -> str:
@@ -416,10 +413,6 @@ def _heuristic_score(text: str) -> tuple[int, list[str]]:
 
 def _gemini_classify_text(text: str, filename: str, settings: Settings) -> CvClassification | None:
     try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.gemini_api_key.strip())
-        model = genai.GenerativeModel(settings.gemini_model or "gemini-flash-latest")
         prompt = f"""Decide if this document is a job-seeker CV/resume (not an invoice, letter, brochure, or random PDF).
 
 Filename: {filename}
@@ -432,7 +425,12 @@ Document text (excerpt):
 Respond with STRICT JSON only:
 {{"is_cv": true or false, "reason": "short explanation"}}
 """
-        response = model.generate_content(prompt)
+        response = generate_content_with_fallback(
+            api_keys=settings.resolved_gemini_api_keys(),
+            models=settings.resolved_gemini_models(),
+            prompt=prompt,
+            pool_id="general",
+        )
         raw = (response.text or "").strip()
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)

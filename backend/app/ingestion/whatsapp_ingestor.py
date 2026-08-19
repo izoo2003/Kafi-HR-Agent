@@ -153,6 +153,30 @@ def _download_media(
     return safe, file_resp.content
 
 
+def restore_whatsapp_cv(wa_message_id: str, settings: Settings) -> tuple[str, bytes] | None:
+    """Re-download WhatsApp media if Meta still has the file (media ids expire)."""
+    ref = (wa_message_id or "").strip()
+    token = (settings.whatsapp_access_token or "").strip()
+    if not ref or not token:
+        return None
+    try:
+        from app.core.db import get_session_factory
+
+        SessionLocal = get_session_factory()
+        with SessionLocal() as db:
+            row = (
+                db.query(WhatsAppInboundMessage)
+                .filter(WhatsAppInboundMessage.wa_message_id == ref)
+                .one_or_none()
+            )
+            if row is None or not (row.media_id or "").strip():
+                return None
+            return _download_media(settings, row.media_id, row.filename)
+    except Exception:
+        logger.warning("WhatsApp CV restore failed for %s", ref, exc_info=True)
+        return None
+
+
 def _display_name_from_phone(phone: str) -> str:
     digits = re.sub(r"\D", "", phone or "")
     return f"WhatsApp {digits[-4:]}" if digits else "WhatsApp applicant"

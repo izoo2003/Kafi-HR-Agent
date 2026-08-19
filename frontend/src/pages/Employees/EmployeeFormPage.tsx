@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -33,6 +33,13 @@ import type {
   EmployeeReferenceCreate,
   EmployeeUpdate,
 } from "../../types/employees";
+import {
+  clearEmployeeFormDraft,
+  hasMeaningfulEmployeeDraft,
+  loadEmployeeFormDraft,
+  saveEmployeeFormDraft,
+  type StoredReferralDraft,
+} from "../../lib/employeeFormDraft";
 
 type ClientReferralDraft = {
   fullName: string;
@@ -142,6 +149,40 @@ async function openBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function referralToStored(draft: ClientReferralDraft): StoredReferralDraft {
+  return {
+    fullName: draft.fullName,
+    cnic: draft.cnic,
+    relation: draft.relation,
+    phone: draft.phone,
+  };
+}
+
+function storedToReferral(stored: StoredReferralDraft): ClientReferralDraft {
+  return { ...stored, files: [] };
+}
+
+function readDraftBootstrap(isNew: boolean, employeeId: number | undefined) {
+  const draftKey: number | "new" = isNew ? "new" : (employeeId ?? "new");
+  const draft = loadEmployeeFormDraft(draftKey);
+  if (!draft) {
+    return {
+      draftKey,
+      restored: false,
+      form: emptyForm,
+      refForm: emptyReferralDraft(),
+      pendingReferrals: [] as ClientReferralDraft[],
+    };
+  }
+  return {
+    draftKey,
+    restored: true,
+    form: { ...emptyForm, ...draft.form } as FormState,
+    refForm: storedToReferral(draft.refForm),
+    pendingReferrals: draft.pendingReferrals.map(storedToReferral),
+  };
+}
+
 export function EmployeeFormPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -151,6 +192,13 @@ export function EmployeeFormPage() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("employees", "write");
+
+  const draftBootstrap = useMemo(
+    () => readDraftBootstrap(isNew, employeeId),
+    [isNew, employeeId],
+  );
+  const draftRestoredRef = useRef(draftBootstrap.restored);
+  const skipPersistRef = useRef(true);
 
   const departments = useDepartments();
   const employee = useEmployee(employeeId);
@@ -165,9 +213,13 @@ export function EmployeeFormPage() {
   const uploadRefDocs = useUploadReferenceDocuments(employeeId ?? 0);
   const deleteRefDoc = useDeleteReferenceDocument(employeeId ?? 0);
 
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(draftBootstrap.form);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    draftBootstrap.restored
+      ? "Restored unsaved employee details from your last session. Re-attach any files if you had picked them."
+      : null,
+  );
 
   const [docCategory, setDocCategory] = useState<EmployeeDocumentCategory>("education");
   const [docTitle, setDocTitle] = useState("");
@@ -177,9 +229,11 @@ export function EmployeeFormPage() {
   const [clientDocTitle, setClientDocTitle] = useState("");
   const [clientDocFiles, setClientDocFiles] = useState<FileList | null>(null);
 
-  const [refForm, setRefForm] = useState<ClientReferralDraft>(emptyReferralDraft);
+  const [refForm, setRefForm] = useState<ClientReferralDraft>(draftBootstrap.refForm);
   /** Drafts collected on Add employee before the profile exists in the API. */
-  const [pendingReferrals, setPendingReferrals] = useState<ClientReferralDraft[]>([]);
+  const [pendingReferrals, setPendingReferrals] = useState<ClientReferralDraft[]>(
+    draftBootstrap.pendingReferrals,
+  );
   const [editingRefId, setEditingRefId] = useState<number | null>(null);
   const [editRefForm, setEditRefForm] = useState({
     fullName: "",
@@ -189,7 +243,7 @@ export function EmployeeFormPage() {
   });
 
   useEffect(() => {
-    if (!employee.data) return;
+    if (!employee.data || draftRestoredRef.current) return;
     const e = employee.data;
     setForm({
       employeeCode: e.employeeCode ?? "",
@@ -218,6 +272,28 @@ export function EmployeeFormPage() {
       baseSalary: e.baseSalary != null ? String(e.baseSalary) : "",
     });
   }, [employee.data]);
+
+  useEffect(() => {
+    if (viewOnly || !canWrite) return;
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+    const storedRef = referralToStored(refForm);
+    const storedPending = pendingReferrals.map(referralToStored);
+    if (!hasMeaningfulEmployeeDraft(form, storedRef, storedPending, emptyForm)) {
+      clearEmployeeFormDraft(draftBootstrap.draftKey);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      saveEmployeeFormDraft(draftBootstrap.draftKey, {
+        form,
+        refForm: storedRef,
+        pendingReferrals: storedPending,
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [form, refForm, pendingReferrals, viewOnly, canWrite, draftBootstrap.draftKey]);
 
   const selectedDeptName = useMemo(() => {
     const d = (departments.data ?? []).find((x) => String(x.id) === form.departmentId);
@@ -298,6 +374,7 @@ export function EmployeeFormPage() {
           }
         }
         setPendingReferrals([]);
+        clearEmployeeFormDraft("new");
         setMessage(
           refsSaved > 0
             ? `Employee created with ${refsSaved} client referral(s)${
@@ -308,6 +385,7 @@ export function EmployeeFormPage() {
         navigate(`/employees/${created.id}`, { replace: true });
       } else if (employeeId != null) {
         await updateEmp.mutateAsync({ id: employeeId, payload: buildPayload() });
+        clearEmployeeFormDraft(employeeId);
         setMessage("Employee profile saved");
       }
     } catch (err) {

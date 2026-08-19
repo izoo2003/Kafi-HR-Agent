@@ -1,17 +1,19 @@
-"""Admin audit log — skeleton."""
+"""Admin panel routes — audit log and dashboard."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
 from app.models.audit import AuditLog
+from app.schemas.admin import AdminDashboardRead
 from app.schemas.common import AuthContext, PaginatedResponse
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from app.services import admin_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -44,8 +46,9 @@ def list_audit_logs(
     )
 
 
-@router.get("/dashboard", response_model=dict)
+@router.get("/dashboard", response_model=AdminDashboardRead)
 def dashboard(
+    db: Annotated[Session, Depends(get_db)],
     _: Annotated[AuthContext, Depends(require_permission("admin_panel", "read"))],
-) -> dict:
-    return {"status": "ok", "message": "Admin dashboard scaffolded — implement with FEATURE_ADMIN_PANEL.md."}
+) -> AdminDashboardRead:
+    return admin_service.get_dashboard(db)

@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.config import Settings
+from app.core.gemini_client import generate_content_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +46,10 @@ def match_candidate_to_job(
             reasoning="No job descriptions to match against.",
         )
 
-    api_key = settings.resolved_gemini_cv_match_api_key()
-    if api_key:
+    api_keys = settings.resolved_gemini_cv_match_api_keys()
+    if api_keys:
         try:
-            return _match_with_gemini(cv_text, position_hint, jobs, settings, api_key)
+            return _match_with_gemini(cv_text, position_hint, jobs, settings, api_keys)
         except Exception as exc:  # noqa: BLE001 — fall back rather than fail the whole sync
             logger.warning("Gemini CV-job match failed, falling back to keyword match: %s", exc)
 
@@ -60,13 +61,8 @@ def _match_with_gemini(
     position_hint: str,
     jobs: list[OpenJobSummary],
     settings: Settings,
-    api_key: str,
+    api_keys: list[str],
 ) -> CvJobMatchResult:
-    import google.generativeai as genai
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(settings.resolved_gemini_cv_match_model())
-
     jobs_payload = [
         {
             "id": job.id,
@@ -96,7 +92,12 @@ Respond with STRICT JSON only, no markdown fences, in this exact shape:
 {{"job_description_id": <int or null>, "confidence": <float 0-1>, "reasoning": "<one short sentence>"}}
 """
 
-    response = model.generate_content(prompt)
+    response = generate_content_with_fallback(
+        api_keys=api_keys,
+        models=settings.resolved_gemini_cv_match_models(),
+        prompt=prompt,
+        pool_id="cv_match",
+    )
     data = _parse_json_response(response.text)
 
     job_id = data.get("job_description_id")

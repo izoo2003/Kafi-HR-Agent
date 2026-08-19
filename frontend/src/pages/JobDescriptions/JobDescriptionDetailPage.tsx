@@ -1,17 +1,46 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { LinkedInPostResults } from "../../components/domain/LinkedInPostResults";
-import { useCriteria, useJobDescription } from "../../hooks/useJobDescriptions";
+import { useAuth } from "../../hooks/useAuth";
+import { useCriteria, useDeleteJobDescription, useJobDescription } from "../../hooks/useJobDescriptions";
+import { ApiError } from "../../api/client";
+import { useState } from "react";
 
 export function JobDescriptionDetailPage() {
   const { id } = useParams();
   const jobId = Number(id);
+  const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canWrite = hasPermission("job_descriptions", "write");
   const job = useJobDescription(jobId);
   const criteria = useCriteria(jobId);
+  const deleteJob = useDeleteJobDescription();
+  const [error, setError] = useState<string | null>(null);
+
+  async function onDelete() {
+    if (!job.data) return;
+    const applicants = job.data.applicantsCount ?? 0;
+    const applicantNote =
+      applicants > 0 ? ` This will also remove ${applicants} candidate(s) and their CVs.` : "";
+    if (
+      !window.confirm(
+        `Delete job posting "${job.data.title}"? This cannot be undone.${applicantNote}`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await deleteJob.mutateAsync(jobId);
+      navigate("/job-descriptions", { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete job posting");
+    }
+  }
 
   if (job.isLoading) {
     return (
@@ -22,6 +51,18 @@ export function JobDescriptionDetailPage() {
   }
   if (!job.data) {
     return <div className="page">Job not found.</div>;
+  }
+
+  const applicationFormUrl = job.data.applicationFormUrl;
+
+  // Description may include a generated "How to apply" block with a raw URL.
+  // We show the Google Form URL via the dedicated clickable link below,
+  // so strip that block here to avoid a non-clickable "link-looking" text.
+  function stripHowToApplyCta(text: string) {
+    // If we don't have the dedicated applicationFormUrl, keep the CTA block
+    // as a fallback (at least the text will still show the URL).
+    if (!applicationFormUrl) return text;
+    return (text || "").replace(/\n\nHow to apply\s*[\s\S]*$/i, "").trimEnd();
   }
 
   return (
@@ -37,10 +78,22 @@ export function JobDescriptionDetailPage() {
             <Link to={`/job-descriptions/${jobId}/edit`}>
               <Button variant="secondary">Edit</Button>
             </Link>
+            {canWrite ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={deleteJob.isPending}
+                onClick={() => void onDelete()}
+                style={{ color: "var(--color-status-critical)" }}
+              >
+                {deleteJob.isPending ? "Deleting…" : "Delete Posting"}
+              </Button>
+            ) : null}
           </>
         }
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-4)" }}>
+        {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
         <Card status={job.data.status === "open" ? "positive" : "neutral"}>
           <div
             style={{
@@ -58,7 +111,7 @@ export function JobDescriptionDetailPage() {
               Applicants: {job.data.applicantsCount ?? 0}
             </span>
           </div>
-          <p style={{ whiteSpace: "pre-wrap" }}>{job.data.descriptionText}</p>
+          <p style={{ whiteSpace: "pre-wrap" }}>{stripHowToApplyCta(job.data.descriptionText)}</p>
           {job.data.requirementsText ? (
             <>
               <h3>Requirements</h3>

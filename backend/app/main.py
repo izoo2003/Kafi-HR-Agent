@@ -50,8 +50,20 @@ async def lifespan(_app: FastAPI):
                 "[startup] Supabase Storage not configured — employee files stay on local disk",
                 flush=True,
             )
+            if settings.environment.lower() == "production":
+                print(
+                    "[startup] WARNING: production without Supabase — CV files will be lost on "
+                    "every Railway redeploy. Set SUPABASE_URL and SUPABASE_SECRET_KEY.",
+                    flush=True,
+                )
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] Supabase Storage setup skipped: {exc}", flush=True)
+
+    from app.ingestion.imap_ingestor import probe_imap_connection
+
+    imap_ok, imap_msg = probe_imap_connection(settings)
+    level = "ready" if imap_ok else "WARNING"
+    print(f"[startup] Webmail IMAP {level}: {imap_msg}", flush=True)
 
     db_kind = "Supabase Postgres" if settings.database_url.startswith("postgresql") else "SQLite"
     print(f"[startup] Connecting to {db_kind}…", flush=True)

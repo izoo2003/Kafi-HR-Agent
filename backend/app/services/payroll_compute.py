@@ -219,14 +219,17 @@ def compute_payroll_for_month(
         tenure_m = _tenure_months(emp.date_joined, period_end)
         leave_allowance = monthly_leave if tenure_m >= leave_after_months else 0
         leave_used = min(leave_allowance, days_absent)
-        absents_after_leave = max(0, days_absent - leave_used)
+        raw_absents_after_leave = max(0, days_absent - leave_used)
+        # 3 lates = 1 off day — counts in absent tally for reporting
+        absents_after_leave_reported = raw_absents_after_leave + late_off_days
+        days_absent_reported = days_absent + late_off_days
         ot_days_final = ot_days
 
         adj = adjustments.get(emp.id)
         if adj is not None:
             if adj.days_absent is not None:
-                absents_after_leave = max(0, adj.days_absent)
-                days_absent = absents_after_leave
+                absents_after_leave_reported = max(0, adj.days_absent)
+                days_absent_reported = absents_after_leave_reported
             if adj.days_late is not None:
                 days_late = max(0, adj.days_late)
                 late_off_days = days_late // lates_per_off
@@ -238,7 +241,7 @@ def compute_payroll_for_month(
         days_present = (
             adj.days_present
             if adj is not None and adj.days_present is not None
-            else max(0, month_days - absents_after_leave)
+            else max(0, month_days - raw_absents_after_leave)
         )
 
         overtime_amount = (Decimal(ot_days_final) * per_day).quantize(Decimal("0.01"))
@@ -248,7 +251,7 @@ def compute_payroll_for_month(
         late_deduction_amount = (Decimal(late_off_days) * per_day).quantize(Decimal("0.01"))
         half_day_deduction = (Decimal(days_half) * per_day * Decimal("0.5")).quantize(Decimal("0.01"))
         attendance_deduction = (
-            Decimal(absents_after_leave) * per_day + late_deduction_amount + half_day_deduction
+            Decimal(raw_absents_after_leave) * per_day + late_deduction_amount + half_day_deduction
         ).quantize(Decimal("0.01"))
         gross_salary = (
             per_day * Decimal(days_present) + allowance + overtime_amount
@@ -288,13 +291,13 @@ def compute_payroll_for_month(
                 base_salary=base,
                 per_day_rate=per_day,
                 days_present=days_present,
-                days_absent=days_absent,
+                days_absent=days_absent_reported,
                 days_late=days_late,
                 days_half_day=days_half,
                 late_off_days=late_off_days,
                 leave_allowance=leave_allowance,
                 leave_used=leave_used,
-                absents_after_leave=absents_after_leave,
+                absents_after_leave=absents_after_leave_reported,
                 overtime_bonus_days=ot_days_final,
                 attendance_deduction=attendance_deduction,
                 overtime_amount=overtime_amount,

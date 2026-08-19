@@ -508,9 +508,12 @@ def analyze_period_file(
         tenure_m = _tenure_months(emp.date_joined, period_end) if emp else 0
         leave_allowance = monthly_leave if emp and tenure_m >= leave_after_months else 0
         leave_used = min(leave_allowance, days_absent)
-        absents_after_leave = max(0, days_absent - leave_used)
+        raw_absents_after_leave = max(0, days_absent - leave_used)
+        # 3 lates = 1 off day — counts in absent tally for reporting
+        days_absent_reported = days_absent + late_off_days
+        absents_after_leave_reported = raw_absents_after_leave + late_off_days
         deduction_days = (
-            Decimal(absents_after_leave)
+            Decimal(raw_absents_after_leave)
             + Decimal(late_off_days)
             + (Decimal(days_half) * Decimal("0.5"))
         )
@@ -534,8 +537,8 @@ def analyze_period_file(
                 days_present=days_present,
                 days_late=days_late,
                 days_half_day=days_half,
-                days_absent=days_absent,
-                absents_after_leave=absents_after_leave,
+                days_absent=days_absent_reported,
+                absents_after_leave=absents_after_leave_reported,
                 late_off_days=late_off_days,
                 overtime_bonus_days=ot_days,
                 deduction_days=float(deduction_days),

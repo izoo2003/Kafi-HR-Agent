@@ -6,18 +6,15 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core import supabase_storage
 from app.core.config import get_settings
 from app.core.exceptions import BusinessRuleViolation, ConflictError, EntityNotFound, ValidationFailed
 from app.ingestion.cv_intake import (
+    cv_file_available,
     cv_mime_for,
-    persist_cv_bytes,
-    read_cv_bytes,
+    ensure_cv_bytes,
     store_cv_upload,
     store_fetched_cv,
-    stored_cv_filename,
 )
-from app.ingestion.cv_restore import restore_missing_cv
 from app.ingestion.employee_docs import delete_stored_file
 from app.ingestion.gmail_ingestor import fetch_gmail_submissions
 from app.ingestion.imap_ingestor import fetch_imap_submissions
@@ -81,36 +78,8 @@ def get_candidate(db: Session, candidate_id: int) -> Candidate:
 def get_candidate_cv_file(db: Session, candidate_id: int) -> tuple[bytes, str, str]:
     """Returns (file bytes, mime type, download filename) for the stored CV."""
     cand = get_candidate(db, candidate_id)
-    raw = (cand.cv_file_path or "").strip()
-    if not raw:
-        raise EntityNotFound(f"Candidate {candidate_id} has no CV file")
-    filename = stored_cv_filename(raw)
-    try:
-        data = read_cv_bytes(raw)
-    except EntityNotFound:
-        restored = restore_missing_cv(cand)
-        if not restored:
-            raise EntityNotFound(
-                "CV file is missing — it may have been stored on a previous server"
-            ) from None
-        filename, data = restored
-        raw = persist_cv_bytes(
-            filename=filename,
-            content=data,
-            key_prefix=cand.source or f"cand{cand.id}",
-        )
-        cand.cv_file_path = raw
-        db.flush()
-    else:
-        if not supabase_storage.is_supabase_uri(raw) and supabase_storage.storage_configured():
-            migrated = persist_cv_bytes(
-                filename=filename,
-                content=data,
-                key_prefix=cand.source or f"cand{cand.id}",
-            )
-            cand.cv_file_path = migrated
-            db.flush()
-            filename = stored_cv_filename(migrated)
+    data, filename = ensure_cv_bytes(cand)
+    db.flush()
     mime = cv_mime_for(filename)
     return data, mime, filename
 
@@ -449,6 +418,30 @@ def _enabled_cv_sources(settings) -> list[str]:
     return out or ["webmail", "google_form"]
 
 
+def _repair_missing_candidate_cvs(db: Session, *, limit: int = 40) -> int:
+    """Re-fetch CVs whose files were lost on a previous server (Railway local disk)."""
+    rows = (
+        db.query(Candidate)
+        .filter(Candidate.source_ref.isnot(None), Candidate.source_ref != "")
+        .order_by(Candidate.id.desc())
+        .limit(200)
+        .all()
+    )
+    repaired = 0
+    for cand in rows:
+        if repaired >= limit:
+            break
+        if cv_file_available(cand.cv_file_path or ""):
+            continue
+        try:
+            ensure_cv_bytes(cand)
+            db.flush()
+            repaired += 1
+        except Exception:
+            continue
+    return repaired
+
+
 def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     """Fetches new CVs from enabled sources (default: HR webmail + Google Form),
     dedupes, stores them unassigned, then AI-matches each against all job
@@ -483,6 +476,8 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     auto_matched = 0
     unassigned = 0
     duplicates_skipped = 0
+
+    restored_files = _repair_missing_candidate_cvs(db, limit=40)
 
     for fetch_result in fetch_results:
         fetched_count = 0
@@ -589,6 +584,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
             "auto_matched": auto_matched,
             "unassigned": unassigned,
             "duplicates_skipped": duplicates_skipped,
+            "restored_files": restored_files,
             "sources": [r.model_dump() for r in source_results],
         },
     )
@@ -599,6 +595,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
         auto_matched=auto_matched,
         unassigned=unassigned,
         duplicates_skipped=duplicates_skipped,
+        restored_files=restored_files,
         candidates=[CandidateRead.model_validate(c) for c in all_candidates],
     )
 

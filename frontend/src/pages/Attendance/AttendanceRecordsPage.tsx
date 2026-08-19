@@ -44,6 +44,7 @@ export function AttendanceRecordsPage() {
     date: new Date().toISOString().slice(0, 10),
     checkIn: "09:00",
     checkOut: "18:00",
+    markAbsent: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
@@ -57,9 +58,10 @@ export function AttendanceRecordsPage() {
       await create.mutateAsync({
         employeeId: Number(form.employeeId),
         date,
-        checkIn: `${date}T${form.checkIn}:00+05:00`,
-        checkOut: `${date}T${form.checkOut}:00+05:00`,
+        checkIn: form.markAbsent ? null : `${date}T${form.checkIn}:00+05:00`,
+        checkOut: form.markAbsent ? null : `${date}T${form.checkOut}:00+05:00`,
       });
+      setForm((prev) => ({ ...prev, markAbsent: false }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create record");
     }
@@ -141,21 +143,38 @@ export function AttendanceRecordsPage() {
               onChange={(e) => setForm({ ...form, date: e.target.value })}
               required
             />
-            <FormField
-              label="Check in"
-              type="time"
-              value={form.checkIn}
-              onChange={(e) => setForm({ ...form, checkIn: e.target.value })}
-            />
-            <FormField
-              label="Check out"
-              type="time"
-              value={form.checkOut}
-              onChange={(e) => setForm({ ...form, checkOut: e.target.value })}
-            />
+            <label className="form-field" style={{ alignSelf: "end" }}>
+              <span className="form-field__label">Mark absent</span>
+              <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minHeight: 38 }}>
+                <input
+                  type="checkbox"
+                  checked={form.markAbsent}
+                  onChange={(e) => setForm({ ...form, markAbsent: e.target.checked })}
+                />
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                  No check-in/out — record as absent
+                </span>
+              </label>
+            </label>
+            {!form.markAbsent ? (
+              <>
+                <FormField
+                  label="Check in"
+                  type="time"
+                  value={form.checkIn}
+                  onChange={(e) => setForm({ ...form, checkIn: e.target.value })}
+                />
+                <FormField
+                  label="Check out"
+                  type="time"
+                  value={form.checkOut}
+                  onChange={(e) => setForm({ ...form, checkOut: e.target.value })}
+                />
+              </>
+            ) : null}
             <div style={{ alignSelf: "end" }}>
               <Button type="submit" variant="primary">
-                Add Attendance Record
+                {form.markAbsent ? "Mark Absent" : "Add Attendance Record"}
               </Button>
             </div>
           </form>
@@ -163,7 +182,7 @@ export function AttendanceRecordsPage() {
 
         <section className="card" style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <Link to="/attendance/period-report">
-            <Button variant="primary">Excel period report</Button>
+            <Button variant="primary">Import Excel file for attendance</Button>
           </Link>
           <Button variant="secondary" onClick={() => fileRef.current?.click()}>
             Import CSV/Excel

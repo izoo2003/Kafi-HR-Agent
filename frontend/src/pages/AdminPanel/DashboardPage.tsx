@@ -1,27 +1,83 @@
-import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
-import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { FormField } from "../../components/ui/FormField";
 import { Spinner } from "../../components/ui/Spinner";
-import { Table } from "../../components/ui/Table";
-import { Pagination } from "../../components/ui/Pagination";
 import { StatusBadge } from "../../components/ui/Badge";
-import { useAdminDashboard, useAuditLogs } from "../../hooks/useAdmin";
-import { useSetUserPassword, useUsers } from "../../hooks/useUsers";
-import { usePagination } from "../../hooks/usePagination";
-import { useAuth } from "../../hooks/useAuth";
+import { useAdminDashboard } from "../../hooks/useAdmin";
 import { ApiError } from "../../api/client";
-import type { User } from "../../types/users";
+import type { AdminDashboard } from "../../types/admin";
+
+function MetricCard({
+  label,
+  value,
+  hint,
+  to,
+  status,
+}: {
+  label: string;
+  value: number | string;
+  hint?: string;
+  to?: string;
+  status?: string;
+}) {
+  const body = (
+    <Card status={status}>
+      <div
+        style={{
+          fontSize: "var(--text-xs)",
+          color: "var(--color-text-secondary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.02em",
+          fontWeight: "var(--weight-semibold)",
+        }}
+      >
+        {label}
+      </div>
+      <div className="font-data" style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-2)" }}>
+        {value}
+      </div>
+      {hint ? (
+        <p style={{ margin: "var(--space-2) 0 0", fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
+          {hint}
+        </p>
+      ) : null}
+    </Card>
+  );
+
+  if (!to) return body;
+
+  return (
+    <Link
+      to={to}
+      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+      className="dashboard-metric-link"
+    >
+      {body}
+    </Link>
+  );
+}
+
+function agentStatusLabel(status: AdminDashboard["agentStatus"]): string {
+  if (status === "ok") return "Healthy";
+  if (status === "degraded") return "Degraded";
+  return "Down";
+}
+
+function agentStatusRail(status: AdminDashboard["agentStatus"]): string {
+  if (status === "ok") return "positive";
+  if (status === "degraded") return "warning";
+  return "critical";
+}
 
 export function DashboardPage() {
   const dash = useAdminDashboard();
+
   return (
     <>
       <PageHeader title="Admin Dashboard" breadcrumb="Admin / Dashboard" />
-      <div className="page">
-        {dash.isLoading ? <Spinner /> : null}
+      <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
+        {dash.isLoading ? <Spinner label="Loading dashboard" /> : null}
         {dash.isError ? (
           <EmptyState
             title="Could not load dashboard"
@@ -32,27 +88,151 @@ export function DashboardPage() {
             }
           />
         ) : null}
+
         {dash.data ? (
-          <div style={{ display: "grid", gap: "var(--space-4)", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            <Card status="info">
-              <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
-                Status
+          <>
+            <section
+              style={{
+                display: "grid",
+                gap: "var(--space-4)",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              }}
+            >
+              <MetricCard
+                label="Registered employees"
+                value={dash.data.registeredEmployeesActive}
+                hint="Self-service signups only (username + PIN)"
+                to="/admin/users"
+                status="positive"
+              />
+              <MetricCard
+                label="Staff accounts"
+                value={dash.data.staffUsersActive}
+                hint="HR admin, auditor, payroll, recruiter, etc."
+                to="/admin/users"
+                status="info"
+              />
+              <MetricCard
+                label="HR employee records"
+                value={dash.data.hrEmployeeRecordsActive}
+                hint="Roster maintained in Employees module"
+                to="/employees"
+              />
+              <MetricCard
+                label="Departments"
+                value={dash.data.departments}
+                to="/employees"
+              />
+              <MetricCard
+                label="Agent status"
+                value={agentStatusLabel(dash.data.agentStatus)}
+                hint={dash.data.agentMode === "standalone" ? "Standalone mode" : "Registered with orchestrator"}
+                status={agentStatusRail(dash.data.agentStatus)}
+              />
+            </section>
+
+            <section>
+              <h2 style={{ margin: "0 0 var(--space-3)", fontSize: "var(--text-lg)" }}>Needs attention</h2>
+              <div
+                style={{
+                  display: "grid",
+                  gap: "var(--space-4)",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                }}
+              >
+                <MetricCard
+                  label="Open job postings"
+                  value={dash.data.openJobDescriptions}
+                  to="/job-descriptions"
+                  status={dash.data.openJobDescriptions > 0 ? "info" : undefined}
+                />
+                <MetricCard
+                  label="CVs pending review"
+                  value={dash.data.candidatesPendingReview}
+                  to="/cv-screening"
+                  status={dash.data.candidatesPendingReview > 0 ? "warning" : undefined}
+                />
+                <MetricCard
+                  label="Leave requests"
+                  value={dash.data.leaveRequestsPending}
+                  hint="Awaiting approval"
+                  to="/attendance/leave-requests"
+                  status={dash.data.leaveRequestsPending > 0 ? "warning" : undefined}
+                />
+                <MetricCard
+                  label="Payroll awaiting approval"
+                  value={dash.data.payrollRunsPendingApproval}
+                  to="/payroll/runs"
+                  status={dash.data.payrollRunsPendingApproval > 0 ? "warning" : undefined}
+                />
               </div>
-              <div className="font-data" style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-2)" }}>
-                {dash.data.status}
+            </section>
+
+            <section>
+              <h2 style={{ margin: "0 0 var(--space-3)", fontSize: "var(--text-lg)" }}>
+                Attendance today
+              </h2>
+              <div
+                style={{
+                  display: "grid",
+                  gap: "var(--space-4)",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                }}
+              >
+                <MetricCard
+                  label="Present"
+                  value={dash.data.attendanceToday.present}
+                  to="/attendance"
+                  status="positive"
+                />
+                <MetricCard
+                  label="Late"
+                  value={dash.data.attendanceToday.late}
+                  to="/attendance"
+                  status="warning"
+                />
+                <MetricCard
+                  label="Absent"
+                  value={dash.data.attendanceToday.absent}
+                  to="/attendance"
+                  status="critical"
+                />
+                <MetricCard
+                  label="On leave"
+                  value={dash.data.attendanceToday.onLeave}
+                  to="/attendance/leave-requests"
+                  status="info"
+                />
+                <MetricCard
+                  label="Half day"
+                  value={dash.data.attendanceToday.halfDay}
+                  to="/attendance"
+                />
+                <MetricCard
+                  label="Marked today"
+                  value={dash.data.attendanceToday.totalMarked}
+                  hint="Records logged for today"
+                  to="/attendance/records"
+                />
               </div>
-            </Card>
-            <Card>
-              <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
-                {dash.data.message ?? "Module scaffolds are ready. Feature packs will fill metrics."}
-              </p>
-            </Card>
-          </div>
+            </section>
+          </>
         ) : null}
       </div>
     </>
   );
 }
+
+import { useState, type FormEvent } from "react";
+import { Button } from "../../components/ui/Button";
+import { FormField } from "../../components/ui/FormField";
+import { Table } from "../../components/ui/Table";
+import { Pagination } from "../../components/ui/Pagination";
+import { useAuditLogs } from "../../hooks/useAdmin";
+import { useSetUserPassword, useUsers } from "../../hooks/useUsers";
+import { usePagination } from "../../hooks/usePagination";
+import { useAuth } from "../../hooks/useAuth";
+import type { User } from "../../types/users";
 
 export function UserManagementPage() {
   const { hasPermission } = useAuth();

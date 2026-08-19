@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BASE_DIR = Path(__file__).resolve().parents[2]  # backend/
 
 
+from app.core.gemini_client import parse_model_chain
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".env"),
@@ -56,17 +59,26 @@ class Settings(BaseSettings):
 
     # --- Optional LLM ---
     # CV parse/score/evaluation + optional mail CV-vs-not-CV classifier
+    # Primary + rotation key: when one is quota-exhausted, switch to the other.
     gemini_api_key: str = ""
+    gemini_api_key_2: str = ""
     gemini_model: str = "gemini-flash-latest"
+    gemini_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
     # Sync CVs: route a fetched CV to the best matching job (any status)
     gemini_cv_match_api_key: str = ""
+    gemini_cv_match_api_key_2: str = ""
     gemini_cv_match_model: str = "gemini-flash-latest"
-    # CNIC image verification (falls back to gemini_api_key)
+    gemini_cv_match_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    # CNIC image verification (falls back to gemini_api_key pool)
     gemini_cnic_api_key: str = ""
+    gemini_cnic_api_key_2: str = ""
     gemini_cnic_model: str = "gemini-flash-latest"
+    gemini_cnic_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
+    gemini_job_posting_api_key_2: str = ""
     gemini_job_posting_model: str = "gemini-flash-latest"
+    gemini_job_posting_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
 
     # LinkedIn feed post when a job description is set to Open (reuse the same
     # developer app client id/secret + member tokens from a previous agent).
@@ -121,9 +133,10 @@ class Settings(BaseSettings):
     imap_password: str = ""
     imap_ssl: bool = True
     # TCP target when imap_host is Cloudflare-proxied (IMAP cannot use orange-cloud DNS).
-    # Leave blank to auto-detect via MX of the mailbox domain.
-    imap_connect_host: str = ""
-    imap_tls_server_name: str = ""
+    # Default is the cPanel origin MX for kafi-group.com — required on Railway where UDP
+    # DNS to 8.8.8.8 may fail and mail.kafi-group.com only resolves to Cloudflare.
+    imap_connect_host: str = "_dc-mx.32098f035483.kafi-group.com"
+    imap_tls_server_name: str = "mail.kafi-group.com"
 
     @field_validator(
         "imap_password",
@@ -180,15 +193,82 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    @staticmethod
+    def _valid_keys(*candidates: str) -> list[str]:
+        out: list[str] = []
+        for raw in candidates:
+            key = (raw or "").strip()
+            if not key or key.startswith("your_"):
+                continue
+            if key not in out:
+                out.append(key)
+        return out
+
+    def resolved_gemini_api_key(self) -> str:
+        keys = self.resolved_gemini_api_keys()
+        return keys[0] if keys else ""
+
+    def resolved_gemini_api_keys(self) -> list[str]:
+        return self._valid_keys(self.gemini_api_key, self.gemini_api_key_2)
+
     def resolved_gemini_cv_match_api_key(self) -> str:
-        """Dedicated match key, then GEMINI_API_KEY. Empty if still a placeholder."""
-        key = (self.gemini_cv_match_api_key or self.gemini_api_key or "").strip()
-        if not key or key.startswith("your_"):
-            return ""
-        return key
+        keys = self.resolved_gemini_cv_match_api_keys()
+        return keys[0] if keys else ""
+
+    def resolved_gemini_cv_match_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_cv_match_api_key, self.gemini_cv_match_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
 
     def resolved_gemini_cv_match_model(self) -> str:
         return (self.gemini_cv_match_model or self.gemini_model or "gemini-flash-latest").strip()
+
+    def resolved_gemini_models(self) -> list[str]:
+        primary = (self.gemini_model or "gemini-flash-latest").strip()
+        return parse_model_chain(primary, self.gemini_model_fallbacks)
+
+    def resolved_gemini_cv_match_models(self) -> list[str]:
+        primary = self.resolved_gemini_cv_match_model()
+        fallbacks = self.gemini_cv_match_model_fallbacks or self.gemini_model_fallbacks
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_cnic_api_key(self) -> str:
+        keys = self.resolved_gemini_cnic_api_keys()
+        return keys[0] if keys else ""
+
+    def resolved_gemini_cnic_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(self.gemini_cnic_api_key, self.gemini_cnic_api_key_2)
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_cnic_models(self) -> list[str]:
+        primary = (
+            self.gemini_cnic_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = self.gemini_cnic_model_fallbacks or self.gemini_model_fallbacks
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_job_posting_api_key(self) -> str:
+        keys = self.resolved_gemini_job_posting_api_keys()
+        return keys[0] if keys else ""
+
+    def resolved_gemini_job_posting_api_keys(self) -> list[str]:
+        return self._valid_keys(
+            self.gemini_job_posting_api_key, self.gemini_job_posting_api_key_2
+        )
+
+    def resolved_gemini_job_posting_models(self) -> list[str]:
+        primary = (
+            self.gemini_job_posting_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = (
+            self.gemini_job_posting_model_fallbacks or self.gemini_model_fallbacks
+        )
+        return parse_model_chain(primary, fallbacks)
 
     def sqlite_path(self) -> Path | None:
         if self.database_url.startswith("sqlite:///"):

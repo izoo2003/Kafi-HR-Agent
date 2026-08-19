@@ -125,6 +125,7 @@ class CvSyncResult(BaseModel):
     auto_matched: int
     unassigned: int
     duplicates_skipped: int
+    restored_files: int = 0
     candidates: list[CandidateRead]
 
 

@@ -149,6 +149,26 @@ def _decode_dns_name(msg: bytes, offset: int) -> tuple[str, int]:
     return ".".join(labels), end
 
 
+def _system_dns_nameservers() -> list[str]:
+    """Best-effort resolver list: platform resolv.conf first, then public DNS."""
+    servers: list[str] = []
+    try:
+        resolv = Path("/etc/resolv.conf")
+        if resolv.is_file():
+            for line in resolv.read_text(encoding="utf-8", errors="ignore").splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    ip = parts[1].strip()
+                    if ip and ip not in servers:
+                        servers.append(ip)
+    except OSError:
+        pass
+    for fallback in ("8.8.8.8", "1.1.1.1", "8.8.4.4"):
+        if fallback not in servers:
+            servers.append(fallback)
+    return servers
+
+
 def _lookup_mx(domain: str, dns_server: str = "8.8.8.8") -> str | None:
     """Lowest-preference MX host via UDP DNS (stdlib only — no dnspython)."""
     labels = domain.strip(".").encode("ascii", "ignore").split(b".")
@@ -196,6 +216,22 @@ def _lookup_mx(domain: str, dns_server: str = "8.8.8.8") -> str | None:
     return best[1] if best else None
 
 
+def _lookup_mx_any(domain: str) -> str | None:
+    for server in _system_dns_nameservers():
+        found = _lookup_mx(domain, dns_server=server)
+        if found:
+            return found
+    return None
+
+
+def _known_mail_origin(domain: str) -> str | None:
+    """Hard-coded origin MX when DNS lookup is unavailable (e.g. Railway UDP blocked)."""
+    known = {
+        "kafi-group.com": "_dc-mx.32098f035483.kafi-group.com",
+    }
+    return known.get(domain.strip().lower().rstrip("."))
+
+
 def _imap_endpoint(settings: Settings, named_host: str) -> tuple[str, str]:
     """TCP host + TLS server name.
 
@@ -215,7 +251,7 @@ def _imap_endpoint(settings: Settings, named_host: str) -> tuple[str, str]:
             domain = user.split("@", 1)[1]
         elif named_host.lower().startswith("mail."):
             domain = named_host[5:]
-        mx = _lookup_mx(domain)
+        mx = _lookup_mx_any(domain) or _known_mail_origin(domain)
         if mx:
             logger.warning(
                 "IMAP host %s is Cloudflare-proxied; connecting via MX %s (TLS SNI %s)",
@@ -230,6 +266,30 @@ def _imap_endpoint(settings: Settings, named_host: str) -> tuple[str, str]:
             "mail server (MX hostname or hosting IP from SPF)."
         )
     return named_host, sni
+
+
+def probe_imap_connection(settings: Settings) -> tuple[bool, str]:
+    """Quick login test for startup / ops diagnostics. Never raises."""
+    host = (settings.imap_host or "").strip()
+    user = (settings.imap_user or "").strip()
+    password = (settings.imap_password or "").strip()
+    if not host or not user or not password:
+        return False, "IMAP not configured — set IMAP_USER and IMAP_PASSWORD on Railway"
+    client: imaplib.IMAP4 | None = None
+    try:
+        connect_host, tls_name = _imap_endpoint(settings, host)
+        client = _open_imap_client(settings)
+        client.logout()
+        client = None
+        return True, f"IMAP OK ({user} via {connect_host}, TLS SNI {tls_name})"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"IMAP probe failed: {exc}"
+    finally:
+        if client is not None:
+            try:
+                client.logout()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
@@ -318,23 +378,31 @@ def fetch_imap_submissions(settings: Settings) -> SourceFetchResult:
         )
 
 
-def _fetch(
-    settings: Settings, host: str, port: int, user: str, password: str
-) -> list[CvSubmission]:
-    # Avoid hanging Sync for ~60s when the host blocks this network (common on local ISP/firewall).
+def _open_imap_client(settings: Settings) -> imaplib.IMAP4:
+    host = (settings.imap_host or "").strip()
+    user = (settings.imap_user or "").strip()
+    password = settings.imap_password or ""
+    port = int(settings.imap_port or 993)
     timeout_s = 20.0
     connect_host, tls_name = _imap_endpoint(settings, host)
-    # Force IPv4: mail.kafi-group.com has Cloudflare AAAA records; Railway often
-    # cannot route IPv6 → "[Errno 101] Network is unreachable".
     if settings.imap_ssl:
         client: imaplib.IMAP4 = IMAP4_SSL_IPv4(
             connect_host, port, timeout=timeout_s, tls_server_name=tls_name
         )
     else:
         client = IMAP4_IPv4(connect_host, port, timeout=timeout_s)
+    client.login(user, password)
+    return client
+
+
+def _fetch(
+    settings: Settings, host: str, port: int, user: str, password: str
+) -> list[CvSubmission]:
+    # Avoid hanging Sync for ~60s when the host blocks this network (common on local ISP/firewall).
+    _ = (host, port, user, password)
+    client = _open_imap_client(settings)
 
     try:
-        client.login(user, password)
         typ, _ = client.select("INBOX")
         if typ != "OK":
             raise RuntimeError("Could not select INBOX")
@@ -384,6 +452,79 @@ def _fetch(
             client.logout()
         except Exception:  # noqa: BLE001
             pass
+
+
+def restore_imap_cv(message_id: str, settings: Settings) -> tuple[str, bytes] | None:
+    """Re-download a webmail CV by Message-ID or imap-uid-{n}."""
+    ref = (message_id or "").strip()
+    host = (settings.imap_host or "").strip()
+    user = (settings.imap_user or "").strip()
+    password = settings.imap_password or ""
+    if not ref or not host or not user or not password.strip():
+        return None
+    client: imaplib.IMAP4 | None = None
+    try:
+        client = _open_imap_client(settings)
+        typ, _ = client.select("INBOX")
+        if typ != "OK":
+            return None
+        uid = _imap_uid_from_ref(ref)
+        if uid is None:
+            uid = _search_imap_message_id(client, ref)
+        if uid is None:
+            return None
+        typ, msg_data = client.fetch(uid.encode() if isinstance(uid, str) else uid, "(RFC822)")
+        if typ != "OK" or not msg_data or not msg_data[0]:
+            return None
+        raw = msg_data[0][1]
+        if not isinstance(raw, (bytes, bytearray)):
+            return None
+        msg = email.message_from_bytes(bytes(raw))
+        filename, file_bytes = _best_cv_attachment(msg, settings)
+        if file_bytes and filename:
+            return filename, file_bytes
+        return None
+    except Exception:
+        logger.warning("IMAP CV restore failed for %s", ref, exc_info=True)
+        return None
+    finally:
+        if client is not None:
+            try:
+                client.logout()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _imap_uid_from_ref(ref: str) -> str | None:
+    match = re.fullmatch(r"imap-uid-(\d+)", ref.strip(), flags=re.I)
+    return match.group(1) if match else None
+
+
+def _search_imap_message_id(client: imaplib.IMAP4, message_id: str) -> str | None:
+    raw = message_id.strip()
+    bare = raw.strip("<>").strip()
+    candidates = [raw]
+    if bare and f"<{bare}>" not in candidates:
+        candidates.append(f"<{bare}>")
+    if bare and bare not in candidates:
+        candidates.append(bare)
+    for value in candidates:
+        quoted = value.replace("\\", "\\\\").replace('"', '\\"')
+        for charset, query in (
+            (None, ("HEADER", "Message-ID", value)),
+            (None, ("HEADER", "Message-ID", f'"{quoted}"')),
+        ):
+            try:
+                typ, data = client.search(charset, *query)
+            except Exception:  # noqa: BLE001
+                continue
+            if typ != "OK" or not data or not data[0]:
+                continue
+            uids = data[0].split()
+            if uids:
+                uid = uids[-1]
+                return uid.decode() if isinstance(uid, bytes) else str(uid)
+    return None
 
 
 def _message_to_submission(
