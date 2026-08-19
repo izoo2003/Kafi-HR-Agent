@@ -146,13 +146,18 @@ def _fetch_new_rows(sheets, drive, settings: Settings) -> tuple[list[CvSubmissio
 
     submissions: list[CvSubmission] = []
     new_last_processed = last_processed
+    imported_this_run = 0
     for row_idx, row in enumerate(rows[1:], start=2):  # sheet rows are 1-indexed w/ header
         if row_idx <= last_processed:
             continue
+        if imported_this_run >= 8:
+            warnings.append("more Google Form rows remain — click Sync CVs again")
+            break
         submission, skip_reason = _row_to_submission(drive, row_idx, row, header_map, settings)
         if submission:
             submissions.append(submission)
             new_last_processed = row_idx
+            imported_this_run += 1
         elif skip_reason == "no_cv":
             new_last_processed = row_idx
         elif skip_reason:

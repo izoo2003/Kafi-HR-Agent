@@ -82,7 +82,15 @@ export function CvScreeningHubPage() {
       setSyncMessage(msg);
       setDuplicates(result.duplicates ?? []);
     } catch (err) {
-      setSyncError(err instanceof ApiError ? err.message : "Sync failed");
+      if (err instanceof ApiError) {
+        setSyncError(err.message);
+      } else if (err instanceof TypeError) {
+        setSyncError(
+          "Sync timed out or lost connection. Click Sync CVs again — Google Form and webmail import in smaller batches now.",
+        );
+      } else {
+        setSyncError(err instanceof Error ? err.message : "Sync failed");
+      }
     }
   }
 

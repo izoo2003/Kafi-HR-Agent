@@ -23,6 +23,7 @@ from app.schemas.cv_screening import (
     CandidateRead,
     CandidateScoreRead,
     CandidateUpdate,
+    CvSourceResult,
     CvSyncResult,
     HireRequest,
     RankingRow,
@@ -121,7 +122,26 @@ def sync_cv_sources(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("cv_screening", "write"))],
 ) -> CvSyncResult:
-    return cv_service.sync_cv_sources(db, auth)
+    try:
+        return cv_service.sync_cv_sources(db, auth)
+    except Exception as exc:  # noqa: BLE001
+        return CvSyncResult(
+            sources=[
+                CvSourceResult(
+                    source="webmail",
+                    configured=True,
+                    fetched=0,
+                    message=f"Sync failed: {exc}",
+                )
+            ],
+            total_fetched=0,
+            auto_matched=0,
+            unassigned=0,
+            duplicates_skipped=0,
+            restored_files=0,
+            duplicates=[],
+            candidates=[],
+        )
 
 
 @router.get("/candidates/unassigned", response_model=PaginatedResponse[CandidateRead])

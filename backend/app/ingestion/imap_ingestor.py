@@ -27,7 +27,7 @@ from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 
 logger = logging.getLogger(__name__)
 
-MAX_MESSAGES_PER_RUN = 30
+MAX_MESSAGES_PER_RUN = 8
 LOOKBACK_DAYS = 30
 STATE_FILENAME = "imap_processed_uids.json"
 
@@ -427,22 +427,26 @@ def _fetch(
             uid_s = uid.decode() if isinstance(uid, bytes) else str(uid)
             if uid_s in done:
                 continue
+            try:
+                typ, msg_data = client.fetch(uid, "(RFC822)")
+                if typ != "OK" or not msg_data or not msg_data[0]:
+                    done.add(uid_s)
+                    continue
 
-            typ, msg_data = client.fetch(uid, "(RFC822)")
-            if typ != "OK" or not msg_data or not msg_data[0]:
+                raw = msg_data[0][1]
+                if not isinstance(raw, (bytes, bytearray)):
+                    done.add(uid_s)
+                    continue
+
+                msg = email.message_from_bytes(bytes(raw))
+                submission = _message_to_submission(msg, uid_s, settings)
+                done.add(uid_s)
+                if submission:
+                    submissions.append(submission)
+            except Exception:
+                logger.warning("IMAP skip uid %s", uid_s, exc_info=True)
                 done.add(uid_s)
                 continue
-
-            raw = msg_data[0][1]
-            if not isinstance(raw, (bytes, bytearray)):
-                done.add(uid_s)
-                continue
-
-            msg = email.message_from_bytes(bytes(raw))
-            submission = _message_to_submission(msg, uid_s, settings)
-            done.add(uid_s)
-            if submission:
-                submissions.append(submission)
 
         state[mailbox_key] = sorted(done)[-5000:]  # cap growth
         _save_state(settings, state)

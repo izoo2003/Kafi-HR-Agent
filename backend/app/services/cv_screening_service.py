@@ -1,6 +1,8 @@
 """CV screening service — upload, overrides, ranking, hire."""
 from __future__ import annotations
 
+import logging
+import time
 from datetime import date
 from decimal import Decimal
 
@@ -21,6 +23,7 @@ from app.ingestion.imap_ingestor import fetch_imap_submissions
 from app.ingestion.outlook_ingestor import fetch_outlook_submissions
 from app.ingestion.whatsapp_ingestor import fetch_whatsapp_submissions
 from app.ingestion.google_form_ingestor import fetch_form_submissions
+from app.ingestion.cv_submission import SourceFetchResult
 from app.integration.event_bus_stub import publish_event
 from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription
 from app.models.employees import Employee
@@ -44,6 +47,9 @@ from app.scoring.cv_job_evaluator import evaluate_cv_against_job
 from app.scoring.cv_job_matcher import OpenJobSummary, match_candidate_to_job
 from app.scoring.cv_scorer import _max_points_for_rule
 from app.services import audit_service
+
+logger = logging.getLogger(__name__)
+_SYNC_TIME_BUDGET_SECONDS = 45.0
 
 
 def list_candidates(
@@ -416,7 +422,11 @@ def _enabled_cv_sources(settings) -> list[str]:
         name = part.strip().lower()
         if name in allowed and name not in out:
             out.append(name)
-    return out or ["webmail", "google_form"]
+    if not out:
+        out = ["webmail", "google_form"]
+    # Google Form first so a slow IMAP inbox cannot starve form imports.
+    preferred = ["google_form", "webmail", "gmail", "outlook", "whatsapp"]
+    return [name for name in preferred if name in out] + [n for n in out if n not in preferred]
 
 
 def _repair_missing_candidate_cvs(db: Session, *, limit: int = 40) -> int:
@@ -470,7 +480,6 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
         "gmail": lambda: fetch_gmail_submissions(settings),
         "google_form": lambda: fetch_form_submissions(settings),
     }
-    fetch_results = [fetchers[name]() for name in _enabled_cv_sources(settings) if name in fetchers]
 
     source_results: list[CvSourceResult] = []
     all_candidates: list[Candidate] = []
@@ -480,19 +489,50 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     duplicate_candidates: list[CvDuplicateCandidateRead] = []
     DUPLICATE_DETAILS_LIMIT = 25
 
-    restored_files = _repair_missing_candidate_cvs(db, limit=40)
+    deadline = time.monotonic() + _SYNC_TIME_BUDGET_SECONDS
+    fetch_results: list[SourceFetchResult] = []
+    for name in _enabled_cv_sources(settings):
+        if name not in fetchers:
+            continue
+        if time.monotonic() >= deadline:
+            fetch_results.append(
+                SourceFetchResult(
+                    source=name,  # type: ignore[arg-type]
+                    configured=True,
+                    submissions=[],
+                    message="Skipped this round — sync time budget reached. Click Sync CVs again.",
+                )
+            )
+            continue
+        try:
+            fetch_results.append(fetchers[name]())
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("CV source %s failed", name)
+            fetch_results.append(
+                SourceFetchResult(
+                    source=name,  # type: ignore[arg-type]
+                    configured=True,
+                    submissions=[],
+                    message=f"{name} fetch failed: {exc}",
+                )
+            )
 
     for fetch_result in fetch_results:
         fetched_count = 0
         validation_skipped: list[str] = []
         for submission in fetch_result.submissions:
+            if time.monotonic() >= deadline:
+                validation_skipped.append(
+                    "stopped early — click Sync CVs again to continue importing"
+                )
+                break
             existing = (
                 db.query(Candidate)
                 .filter(
                     Candidate.source == fetch_result.source,
                     Candidate.source_ref == submission.source_ref,
                 )
-                .one_or_none()
+                .first()
             )
             if existing:
                 duplicates_skipped += 1
@@ -528,7 +568,11 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
                 validation_skipped.append(
                     f"{submission.source_ref}: {exc.message if hasattr(exc, 'message') else exc}"
                 )
-                continue  # unreadable/oversized/unsupported file — skip, don't fail the whole sync
+                continue
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed storing CV %s", submission.source_ref)
+                validation_skipped.append(f"{submission.source_ref}: {exc}")
+                continue
 
             try:
                 run_cv_pipeline(candidate.id, db)  # parse-only: job_description_id is still None
@@ -590,6 +634,10 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
             )
         )
 
+    restored_files = 0
+    if time.monotonic() < deadline:
+        restored_files = _repair_missing_candidate_cvs(db, limit=3)
+
     audit_service.log_from_auth(
         db,
         auth,
@@ -614,7 +662,8 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
         duplicates_skipped=duplicates_skipped,
         restored_files=restored_files,
         duplicates=duplicate_candidates,
-        candidates=[CandidateRead.model_validate(c) for c in all_candidates],
+        # Slim payload: parsed CV text can exceed proxy timeouts if we return every new candidate.
+        candidates=[],
     )
 
 
