@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import require_permission
 from app.schemas.attendance import (
+    AttendanceEmployeesFromExcelCreate,
+    AttendanceEmployeesFromExcelResult,
     AttendanceImportResult,
     AttendancePeriodReport,
     AttendanceRecordCreate,
@@ -26,7 +28,7 @@ from app.schemas.attendance import (
 )
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.services import attendance_service as svc
-from app.services.attendance_period_report import analyze_period_file
+from app.services.attendance_period_report import analyze_period_file, create_employees_from_excel
 
 router = APIRouter(tags=["attendance"])
 
@@ -125,6 +127,18 @@ async def attendance_period_report(
     content = await file.read()
     name = file.filename or "attendance.xlsx"
     return analyze_period_file(db, auth, content, name, persist=True)
+
+
+@router.post(
+    "/attendance/period-report/create-employees",
+    response_model=AttendanceEmployeesFromExcelResult,
+)
+def create_employees_from_attendance_excel(
+    payload: AttendanceEmployeesFromExcelCreate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
+) -> AttendanceEmployeesFromExcelResult:
+    return create_employees_from_excel(db, auth, payload)
 
 
 @router.post("/attendance/sync-biometric", response_model=BiometricSyncResult)

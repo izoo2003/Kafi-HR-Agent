@@ -24,7 +24,7 @@ def _office_policy(db: Session) -> dict:
     defaults = {
         "late_after": "09:40",
         "half_day_after": "11:30",
-        "majority_absent_threshold": 0.8,
+        "majority_absent_threshold": 0.9,
         "lates_per_off": 3,
         "month_days": 30,
         "leave_after_months": 6,

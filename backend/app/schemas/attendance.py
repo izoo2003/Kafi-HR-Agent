@@ -139,9 +139,25 @@ class DayClassification(BaseModel):
     weekday: str
 
 
+class UnmatchedAttendancePerson(BaseModel):
+    full_name: str
+    excel_employee_id: str | None = None
+
+
+class AttendanceEmployeesFromExcelCreate(BaseModel):
+    people: list[UnmatchedAttendancePerson]
+
+
+class AttendanceEmployeesFromExcelResult(BaseModel):
+    created: int = 0
+    skipped: list[str] = []
+    employees: list[UnmatchedAttendancePerson] = []
+
+
 class PeriodEmployeeReport(BaseModel):
     employee_id: int | None = None
     employee_code: str | None = None
+    excel_employee_id: str | None = None
     full_name: str
     matched_employee: bool = False
     base_salary: Decimal | None = None
@@ -151,6 +167,7 @@ class PeriodEmployeeReport(BaseModel):
     days_present: int = 0
     days_late: int = 0
     days_half_day: int = 0
+    days_sunday_present: int = 0
     days_absent: int = 0
     absents_after_leave: int = 0
     late_off_days: int = 0
@@ -162,6 +179,7 @@ class PeriodEmployeeReport(BaseModel):
     estimated_net_salary: float = 0
     late_events: list[LateEvent] = []
     half_day_dates: list[date] = []
+    sunday_dates: list[date] = []
     absent_dates: list[date] = []
     overtime_dates: list[date] = []
 
@@ -170,7 +188,7 @@ class AttendancePeriodReport(BaseModel):
     period_start: date
     period_end: date
     month_days: int = 30
-    majority_absent_threshold: float = 0.8
+    majority_absent_threshold: float = 0.9
     late_after: str = "09:40"
     half_day_after: str = "11:30"
     lates_per_off: int = 3
@@ -178,3 +196,4 @@ class AttendancePeriodReport(BaseModel):
     errors: list[ImportErrorRow] = []
     non_working_days: list[DayClassification] = []
     employees: list[PeriodEmployeeReport] = []
+    unmatched_people: list[UnmatchedAttendancePerson] = []

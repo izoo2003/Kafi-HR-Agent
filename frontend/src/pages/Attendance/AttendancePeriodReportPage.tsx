@@ -1,11 +1,14 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
-import { useAttendancePeriodReport } from "../../hooks/useAttendance";
+import {
+  useAttendancePeriodReport,
+  useCreateEmployeesFromAttendanceExcel,
+} from "../../hooks/useAttendance";
 import { attendanceImportTemplateCsv } from "../../api/attendance";
 import { ApiError } from "../../api/client";
 import type { AttendancePeriodReport, PeriodEmployeeReport } from "../../types/attendance";
@@ -13,8 +16,8 @@ import type { AttendancePeriodReport, PeriodEmployeeReport } from "../../types/a
 function dayTypeLabel(t: string): string {
   const map: Record<string, string> = {
     sunday_off: "Sunday off",
-    saturday_off: "Saturday off (majority absent)",
-    auto_holiday: "Auto holiday (≥80% absent)",
+    saturday_off: "Saturday off (≥90% absent)",
+    auto_holiday: "Company off (≥90% absent)",
     configured_holiday: "Configured holiday",
   };
   return map[t] ?? t;
@@ -33,6 +36,9 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
     >
       <div style={{ display: "grid", gap: 4, gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
         <div>
+          Excel ID: <span className="num">{emp.excelEmployeeId ?? "—"}</span>
+        </div>
+        <div>
           Leave allowance: <span className="num">{emp.leaveAllowance}</span> (used{" "}
           <span className="num">{emp.leaveUsed}</span>)
         </div>
@@ -46,7 +52,10 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
           Absents after leave: <span className="num">{emp.absentsAfterLeave}</span>
         </div>
         <div>
-          OT bonus days: <span className="num">{emp.overtimeBonusDays}</span>
+          Sundays present: <span className="num">{emp.daysSundayPresent}</span>
+        </div>
+        <div>
+          OT days: <span className="num">{emp.overtimeBonusDays}</span>
         </div>
         <div>
           Deduction days: <span className="num">{emp.deductionDays}</span>
@@ -85,16 +94,25 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
 
       {emp.halfDayDates.length > 0 ? (
         <div>
-          <strong>Half days (after 11:30)</strong>
+          <strong>Half days (after 11:30) — still counted as present</strong>
           <p style={{ margin: "4px 0 0" }} className="num">
             {emp.halfDayDates.join(", ")}
           </p>
         </div>
       ) : null}
 
+      {(emp.sundayDates ?? []).length > 0 ? (
+        <div>
+          <strong>Sundays present (OT, not present)</strong>
+          <p style={{ margin: "4px 0 0" }} className="num">
+            {emp.sundayDates.join(", ")}
+          </p>
+        </div>
+      ) : null}
+
       {emp.absentDates.length > 0 ? (
         <div>
-          <strong>Absent dates</strong>
+          <strong>Absent dates (working days only)</strong>
           <p style={{ margin: "4px 0 0" }} className="num">
             {emp.absentDates.join(", ")}
           </p>
@@ -103,7 +121,7 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
 
       {emp.overtimeDates.length > 0 ? (
         <div>
-          <strong>OT days (present on holiday / Saturday off)</strong>
+          <strong>OT days (present on Sunday / ≥90% off day)</strong>
           <p style={{ margin: "4px 0 0" }} className="num">
             {emp.overtimeDates.join(", ")}
           </p>
@@ -115,21 +133,63 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
 
 export function AttendancePeriodReportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const lastFileRef = useRef<File | null>(null);
   const analyze = useAttendancePeriodReport();
+  const addEmployees = useCreateEmployeesFromAttendanceExcel();
   const [report, setReport] = useState<AttendancePeriodReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const unmatched = report?.unmatchedPeople ?? [];
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  const selectedPeople = useMemo(
+    () => unmatched.filter((p) => selected[`${p.fullName}|${p.excelEmployeeId ?? ""}`] !== false),
+    [unmatched, selected],
+  );
 
   async function onUpload(files: FileList | null) {
     if (!files?.[0]) return;
+    lastFileRef.current = files[0];
     setError(null);
+    setInfo(null);
     setReport(null);
     setExpanded(null);
     try {
       const res = await analyze.mutateAsync(files[0]);
       setReport(res);
+      const next: Record<string, boolean> = {};
+      for (const p of res.unmatchedPeople ?? []) {
+        next[`${p.fullName}|${p.excelEmployeeId ?? ""}`] = true;
+      }
+      setSelected(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed");
+    }
+  }
+
+  async function onAddEmployees() {
+    if (selectedPeople.length === 0) return;
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await addEmployees.mutateAsync(selectedPeople);
+      const skipNote = res.skipped.length ? ` Skipped: ${res.skipped.join("; ")}` : "";
+      setInfo(
+        `Added ${res.created} employee(s) with Excel IDs as employee codes.${skipNote} Re-upload the same file to save their attendance.`,
+      );
+      const file = lastFileRef.current;
+      if (file && res.created > 0) {
+        const again = await analyze.mutateAsync(file);
+        setReport(again);
+        const next: Record<string, boolean> = {};
+        for (const p of again.unmatchedPeople ?? []) {
+          next[`${p.fullName}|${p.excelEmployeeId ?? ""}`] = true;
+        }
+        setSelected(next);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add employees");
     }
   }
 
@@ -148,13 +208,13 @@ export function AttendancePeriodReportPage() {
         <Card>
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Upload Excel / CSV</h2>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-            Upload the WebHR attendance export as-is (
+            Upload the WebHR attendance export (
             <strong>Employee ID</strong>, <strong>First Name</strong>, <strong>Date</strong>,{" "}
-            <strong>First Punch</strong>). Period comes from dates in the file. Keep Employee ID =
-            this app&apos;s employee code and First Name = full name so we can pull{" "}
-            <strong>base salary</strong> and save attendance. First Punch only drives late /
-            half-day / presence. Rules: on time until 09:40, late from 09:41, after 11:30 = late +
-            half day, Sunday off, Saturday/auto holiday when ≥80% absent, 3 lates = 1 absent day.
+            <strong>First Punch</strong>). Late and half-day count as <strong>present</strong>. Sundays
+            are official off and never count as absent — Sunday punches go to the Sunday / OT
+            columns. If ≥90% of people have no punch on a Mon–Sat, that day is off (covers the
+            unknown Saturday holiday). Anyone present that day gets +1 OT, not present. 3 lates = 1
+            extra absent day.
           </p>
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             <input
@@ -194,7 +254,57 @@ export function AttendancePeriodReportPage() {
         </Card>
 
         {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
+        {info ? <p style={{ color: "var(--color-status-info)", margin: 0 }}>{info}</p> : null}
         {analyze.isPending ? <Spinner label="Processing attendance file" /> : null}
+
+        {report && unmatched.length > 0 ? (
+          <Card status="warning">
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>New names in this file</h2>
+            <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+              These people are not in Employees yet. Add them to create a record with the Excel
+              Employee ID as their ID. You can fill salary and other details later.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+              {unmatched.map((p) => {
+                const key = `${p.fullName}|${p.excelEmployeeId ?? ""}`;
+                return (
+                  <li key={key} style={{ marginBottom: "var(--space-2)" }}>
+                    <label style={{ display: "inline-flex", gap: "var(--space-2)", alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={selected[key] !== false}
+                        onChange={(e) => setSelected((prev) => ({ ...prev, [key]: e.target.checked }))}
+                      />
+                      <span>
+                        {p.fullName}
+                        {p.excelEmployeeId ? (
+                          <>
+                            {" "}
+                            — ID <span className="num">{p.excelEmployeeId}</span>
+                          </>
+                        ) : (
+                          " — no Excel ID"
+                        )}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={addEmployees.isPending || selectedPeople.length === 0}
+                onClick={() => void onAddEmployees()}
+              >
+                {addEmployees.isPending
+                  ? "Adding…"
+                  : `Add ${selectedPeople.length} employee${selectedPeople.length === 1 ? "" : "s"}`}
+              </Button>
+            </div>
+          </Card>
+        ) : null}
 
         {report ? (
           <>
@@ -207,6 +317,9 @@ export function AttendancePeriodReportPage() {
                 {" · "}half day after <span className="num">{report.halfDayAfter}</span>
                 {" · "}
                 <span className="num">{report.latesPerOff}</span> lates = 1 absent
+                {" · "}off if ≥{" "}
+                <span className="num">{Math.round((report.majorityAbsentThreshold || 0.9) * 100)}</span>%
+                absent
                 {" · "}month days <span className="num">{report.monthDays}</span>
                 {" · "}imported <span className="num">{report.importedRows}</span> rows
               </p>
@@ -220,14 +333,9 @@ export function AttendancePeriodReportPage() {
                 </ul>
               ) : (
                 <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                  No auto Saturday-off / holiday days detected in this file.
+                  No Sunday / Saturday-off / majority-absent days detected in this file.
                 </p>
               )}
-              {report.errors.length > 0 ? (
-                <p style={{ color: "var(--color-status-warning)", fontSize: "var(--text-sm)" }}>
-                  Row errors: {report.errors.map((e) => `R${e.row}: ${e.message}`).join("; ")}
-                </p>
-              ) : null}
             </Card>
 
             <Table
@@ -236,26 +344,28 @@ export function AttendancePeriodReportPage() {
                 "Present",
                 "Late",
                 "Half day",
+                "Sunday",
                 "Absent",
-                "OT days",
+                "OT",
                 "Est. net",
                 "Details",
               ]}
             >
               {report.employees.map((emp) => (
-                <Fragment key={emp.fullName}>
+                <Fragment key={`${emp.fullName}-${emp.excelEmployeeId ?? emp.employeeId ?? ""}`}>
                   <tr data-status={emp.daysAbsent > 0 ? "warning" : "positive"}>
                     <td>
                       <div>{emp.fullName}</div>
                       <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
                         {emp.matchedEmployee
                           ? emp.employeeCode || "Linked employee"
-                          : "Excel name only (no employee link)"}
+                          : "Not in Employees yet"}
                       </div>
                     </td>
                     <td className="num">{emp.daysPresent}</td>
                     <td className="num">{emp.daysLate}</td>
                     <td className="num">{emp.daysHalfDay}</td>
+                    <td className="num">{emp.daysSundayPresent}</td>
                     <td className="num">{emp.daysAbsent}</td>
                     <td className="num">{emp.overtimeBonusDays}</td>
                     <td className="num">{emp.estimatedNetSalary.toFixed(2)}</td>
@@ -273,7 +383,7 @@ export function AttendancePeriodReportPage() {
                   </tr>
                   {expanded === emp.fullName ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmployeeDetail emp={emp} />
                       </td>
                     </tr>

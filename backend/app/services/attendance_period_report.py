@@ -10,13 +10,12 @@ Canonical upload format (WebHR-style export):
 - Excel L / WAVE flags ignored (own calculations are source of truth)
 
 Policy (Kafi office):
-- Working week: Mon–Sat; Sunday always off
-- One Saturday off/month: Saturday where ≥80% have no punch → company off
-- Auto holiday: any Mon–Fri where ≥80% have no punch → holiday
-- On time if check-in ≤ 09:40; late from 09:41; after 11:30 = late + half day
-- 3 lates = 1 off day
+- Working week: Mon–Sat; Sunday always official off (never counts as absent)
+- Late and half-day still count as present (they showed up); tracked separately
+- One Saturday off / company holiday: any Mon–Sat where ≥90% have no punch → off
+- Presence on those off days (or Sunday) → +1 OT, not present
+- 3 lates = 1 extra absent day
 - Tenure ≥ 6 months → 1 leave allowance / month (only when name matches an Employee)
-- Presence on auto-holiday / Saturday-off → +1 day salary (OT credit)
 - Salary math uses fixed 30-day month (base from matched Employee when available)
 """
 from __future__ import annotations
@@ -34,14 +33,17 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationFailed
 from app.models.attendance import AttendanceRecord
-from app.models.employees import Employee
+from app.models.employees import Department, Employee
 from app.models.system import SystemConfig
 from app.schemas.attendance import (
+    AttendanceEmployeesFromExcelCreate,
+    AttendanceEmployeesFromExcelResult,
     AttendancePeriodReport,
     DayClassification,
     ImportErrorRow,
     LateEvent,
     PeriodEmployeeReport,
+    UnmatchedAttendancePerson,
 )
 from app.schemas.common import AuthContext
 from app.services import audit_service
@@ -55,7 +57,7 @@ from app.services.attendance_service import (
 
 LATE_AFTER = time(9, 40)
 HALF_DAY_AFTER = time(11, 30)
-MAJORITY_ABSENT = 0.80
+MAJORITY_ABSENT = 0.90
 LATES_PER_OFF = 3
 MONTH_DAYS = 30
 LEAVE_AFTER_MONTHS = 6
@@ -129,6 +131,15 @@ def _find_col(field_map: dict[str, str], aliases: tuple[str, ...]) -> str | None
         if key in field_map:
             return field_map[key]
     return None
+
+
+def _normalize_excel_id(raw: str) -> str:
+    s = (raw or "").strip()
+    if re.fullmatch(r"\d+\.0+", s):
+        s = s.split(".", 1)[0]
+    if s.isdigit():
+        s = s.lstrip("0") or "0"
+    return s
 
 
 def _norm_name(name: str) -> str:
@@ -339,6 +350,7 @@ def analyze_period_file(
     # person_key -> date -> first punch (check_out stored only for persist)
     punches: dict[str, dict[date, dict[str, datetime | None]]] = defaultdict(dict)
     display_names: dict[str, str] = {}
+    excel_ids: dict[str, str] = {}
     linked_employee: dict[str, Employee] = {}
 
     for idx, raw in enumerate(rows, start=2):
@@ -354,6 +366,9 @@ def analyze_period_file(
             emp = match_employee(code=code, name=display or None, email=email or None, indexes=indexes)
             key = f"id:{emp.id}" if emp is not None else f"name:{_norm_name(display or code)}"
             display_names.setdefault(key, emp.full_name if emp is not None else display or code)
+            excel_id = _normalize_excel_id(code)
+            if excel_id and key not in excel_ids:
+                excel_ids[key] = excel_id
             if emp is not None:
                 linked_employee[key] = emp
 
@@ -422,7 +437,8 @@ def analyze_period_file(
         absent_dates: list[date] = []
         present_dates: list[date] = []
         ot_dates: list[date] = []
-        days_late = days_half = days_absent = days_present = 0
+        sunday_dates: list[date] = []
+        days_late = days_half = days_absent = days_present = days_sunday = 0
 
         d = period_start
         while d <= period_end:
@@ -435,13 +451,20 @@ def analyze_period_file(
             status: str
             notes: str | None = None
 
-            if dtype in ("sunday_off", "saturday_off", "configured_holiday", "auto_holiday"):
+            if dtype == "sunday_off":
                 if cin is not None:
-                    status = "present"
-                    notes = f"OT credit — worked on {dtype.replace('_', ' ')}"
+                    status = "holiday"
+                    notes = "Sunday present — OT (not counted as present)"
                     ot_dates.append(d)
-                    days_present += 1
-                    present_dates.append(d)
+                    sunday_dates.append(d)
+                    days_sunday += 1
+                else:
+                    status = "holiday"
+            elif dtype in ("saturday_off", "configured_holiday", "auto_holiday"):
+                if cin is not None:
+                    status = "holiday"
+                    notes = f"OT — worked on {dtype.replace('_', ' ')} (≥90% absent / off)"
+                    ot_dates.append(d)
                 else:
                     status = "holiday"
             else:
@@ -453,6 +476,8 @@ def analyze_period_file(
                     status = "half_day"
                     days_half += 1
                     days_late += 1
+                    days_present += 1
+                    present_dates.append(d)
                     half_day_dates.append(d)
                     late_events.append(
                         LateEvent(date=d, check_in_time=local_in.strftime("%H:%M"))
@@ -460,6 +485,8 @@ def analyze_period_file(
                 elif local_in and local_in > late_after:
                     status = "late"
                     days_late += 1
+                    days_present += 1
+                    present_dates.append(d)
                     late_events.append(
                         LateEvent(date=d, check_in_time=local_in.strftime("%H:%M"))
                     )
@@ -518,6 +545,7 @@ def analyze_period_file(
             + (Decimal(days_half) * Decimal("0.5"))
         )
         ot_days = len(ot_dates)
+        excel_id = excel_ids.get(key)
         base = Decimal(str(emp.base_salary or 0)) if emp and emp.base_salary is not None else Decimal("0")
         per_day = (base / Decimal(month_days)) if base else Decimal("0")
         estimated_deduction = (deduction_days * per_day).quantize(Decimal("0.01"))
@@ -527,7 +555,8 @@ def analyze_period_file(
         employee_reports.append(
             PeriodEmployeeReport(
                 employee_id=emp.id if emp else None,
-                employee_code=emp.employee_code if emp else None,
+                employee_code=emp.employee_code if emp else excel_id,
+                excel_employee_id=excel_id,
                 full_name=display,
                 matched_employee=emp is not None,
                 base_salary=base if emp and emp.base_salary is not None else None,
@@ -537,6 +566,7 @@ def analyze_period_file(
                 days_present=days_present,
                 days_late=days_late,
                 days_half_day=days_half,
+                days_sunday_present=days_sunday,
                 days_absent=days_absent_reported,
                 absents_after_leave=absents_after_leave_reported,
                 late_off_days=late_off_days,
@@ -548,23 +578,31 @@ def analyze_period_file(
                 estimated_net_salary=float(estimated_net),
                 late_events=late_events,
                 half_day_dates=half_day_dates,
+                sunday_dates=sunday_dates,
                 absent_dates=absent_dates,
                 overtime_dates=ot_dates,
             )
         )
 
+    unmatched: list[UnmatchedAttendancePerson] = []
     for key in roster_keys:
-        if key not in linked_employee:
-            errors.append(
-                ImportErrorRow(
-                    row=0,
-                    message=(
-                        f"{display_names.get(key, key)} is in the Excel file but did not match "
-                        "an employee already in the agent — attendance was not saved for them. "
-                        "Check employee code / full name on the Employees page."
-                    ),
-                )
+        if key in linked_employee:
+            continue
+        unmatched.append(
+            UnmatchedAttendancePerson(
+                full_name=display_names.get(key, key),
+                excel_employee_id=excel_ids.get(key),
             )
+        )
+        errors.append(
+            ImportErrorRow(
+                row=0,
+                message=(
+                    f"{display_names.get(key, key)} is in the Excel file but is not in Employees yet. "
+                    "Use Add employees below, then re-upload so attendance can be saved."
+                ),
+            )
+        )
 
     if persist:
         db.flush()
@@ -606,22 +644,84 @@ def analyze_period_file(
         errors=errors,
         non_working_days=day_classifications,
         employees=employee_reports,
+        unmatched_people=unmatched,
     )
 
 
 def ensure_office_policy_config(db: Session) -> None:
-    if db.query(SystemConfig).filter_by(key="attendance.office_policy").one_or_none() is None:
-        db.add(
-            SystemConfig(
-                key="attendance.office_policy",
-                value={
-                    "late_after": "09:40",
-                    "half_day_after": "11:30",
-                    "majority_absent_threshold": 0.8,
-                    "lates_per_off": 3,
-                    "month_days": 30,
-                    "leave_after_months": 6,
-                    "monthly_leave_allowance": 1,
-                },
-            )
+    row = db.query(SystemConfig).filter_by(key="attendance.office_policy").one_or_none()
+    defaults = {
+        "late_after": "09:40",
+        "half_day_after": "11:30",
+        "majority_absent_threshold": 0.9,
+        "lates_per_off": 3,
+        "month_days": 30,
+        "leave_after_months": 6,
+        "monthly_leave_allowance": 1,
+    }
+    if row is None:
+        db.add(SystemConfig(key="attendance.office_policy", value=defaults))
+        return
+    if isinstance(row.value, dict):
+        merged = {**defaults, **row.value, "majority_absent_threshold": 0.9}
+        row.value = merged
+
+
+def create_employees_from_excel(
+    db: Session, auth: AuthContext, payload: AttendanceEmployeesFromExcelCreate
+) -> AttendanceEmployeesFromExcelResult:
+    """Create stub employees from unmatched Excel names. Code = Excel Employee ID."""
+    from app.services.seed_service import seed_default_department
+
+    seed_default_department(db)
+    dept = db.query(Department).order_by(Department.id).first()
+    if dept is None:
+        raise ValidationFailed("No department exists — create one before adding employees")
+
+    created: list[UnmatchedAttendancePerson] = []
+    skipped: list[str] = []
+    indexes = build_employee_indexes(db)
+
+    for person in payload.people:
+        name = (person.full_name or "").strip()
+        if not name:
+            skipped.append("(empty name)")
+            continue
+        code = _normalize_excel_id(person.excel_employee_id or "")
+        existing = match_employee(code=code or None, name=name, email=None, indexes=indexes)
+        if existing is not None:
+            skipped.append(f"{name} — already exists as {existing.employee_code}")
+            continue
+        if not code:
+            skipped.append(f"{name} — Excel Employee ID is missing")
+            continue
+        taken = db.query(Employee).filter(Employee.employee_code == code).one_or_none()
+        if taken is not None:
+            skipped.append(f"{name} — employee ID {code} is already used by {taken.full_name}")
+            continue
+        emp = Employee(
+            employee_code=code,
+            full_name=name,
+            department_id=dept.id,
+            role_title=dept.name or "Employee",
+            employment_type="full_time",
+            status="active",
         )
+        db.add(emp)
+        db.flush()
+        audit_service.log_from_auth(
+            db,
+            auth,
+            action="employee.created",
+            entity_type="employee",
+            entity_id=emp.id,
+            after_state={"employee_code": code, "full_name": name, "source": "attendance_excel"},
+        )
+        created.append(UnmatchedAttendancePerson(full_name=name, excel_employee_id=code))
+        indexes = build_employee_indexes(db)
+
+    return AttendanceEmployeesFromExcelResult(
+        created=len(created),
+        skipped=skipped,
+        employees=created,
+    )

@@ -48,6 +48,17 @@ export function useAttendancePeriodReport() {
   });
 }
 
+export function useCreateEmployeesFromAttendanceExcel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (people: { fullName: string; excelEmployeeId: string | null }[]) =>
+      api.createEmployeesFromAttendanceExcel(people),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
+  });
+}
+
 export function useLeaveRequests(
   params: PaginationParams & { employeeId?: number; status?: string; departmentId?: number },
 ) {

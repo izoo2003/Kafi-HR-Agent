@@ -77,9 +77,15 @@ export interface DayClassification {
   weekday: string;
 }
 
+export interface UnmatchedAttendancePerson {
+  fullName: string;
+  excelEmployeeId: string | null;
+}
+
 export interface PeriodEmployeeReport {
   employeeId: number | null;
   employeeCode: string | null;
+  excelEmployeeId: string | null;
   fullName: string;
   matchedEmployee: boolean;
   baseSalary: string | number | null;
@@ -89,6 +95,7 @@ export interface PeriodEmployeeReport {
   daysPresent: number;
   daysLate: number;
   daysHalfDay: number;
+  daysSundayPresent: number;
   daysAbsent: number;
   absentsAfterLeave: number;
   lateOffDays: number;
@@ -100,6 +107,7 @@ export interface PeriodEmployeeReport {
   estimatedNetSalary: number;
   lateEvents: LateEvent[];
   halfDayDates: string[];
+  sundayDates: string[];
   absentDates: string[];
   overtimeDates: string[];
 }
@@ -116,4 +124,5 @@ export interface AttendancePeriodReport {
   errors: { row: number; message: string }[];
   nonWorkingDays: DayClassification[];
   employees: PeriodEmployeeReport[];
+  unmatchedPeople: UnmatchedAttendancePerson[];
 }

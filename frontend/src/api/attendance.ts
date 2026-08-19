@@ -9,6 +9,7 @@ import type {
   AttendanceSummary,
   LeaveRequest,
   LeaveRequestCreate,
+  UnmatchedAttendancePerson,
 } from "../types/attendance";
 
 export async function listAttendanceRules(): Promise<AttendanceRule[]> {
@@ -65,6 +66,15 @@ export async function uploadAttendancePeriodReport(file: File): Promise<Attendan
   return apiRequest<AttendancePeriodReport>("/attendance/period-report", {
     method: "POST",
     formData: form,
+  });
+}
+
+export async function createEmployeesFromAttendanceExcel(
+  people: UnmatchedAttendancePerson[],
+): Promise<{ created: number; skipped: string[]; employees: UnmatchedAttendancePerson[] }> {
+  return apiRequest("/attendance/period-report/create-employees", {
+    method: "POST",
+    body: { people },
   });
 }
 
