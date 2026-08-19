@@ -1,22 +1,21 @@
 """Auth service — login, register, refresh, me."""
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.deps import build_auth_context
-from app.core.exceptions import ConflictError, InvalidAuthContext, PermissionDenied, ValidationFailed
+from app.core.exceptions import InvalidAuthContext, PermissionDenied
 from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
     verify_password,
 )
-from app.models.employees import Department, Employee
-from app.models.identity import Role, User
+from app.models.employees import Department
+from app.models.identity import User
 from app.schemas.auth import RegisterOptionsDepartment, RegisterOptionsResponse, RegisterRequest, TokenResponse
 from app.schemas.common import AuthContext
 from app.services import audit_service
@@ -35,6 +34,8 @@ def ensure_self_service_schema(db: Session) -> None:
         if user_cols and "username" not in user_cols:
             db.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR"))
             db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+        if user_cols and "login_pin" not in user_cols:
+            db.execute(text("ALTER TABLE users ADD COLUMN login_pin VARCHAR"))
         kpi_cols = {
             row[1] for row in db.execute(text("PRAGMA table_info(kpi_definitions)")).fetchall()
         }
@@ -63,6 +64,8 @@ def ensure_self_service_schema(db: Session) -> None:
         if not _has_column("users", "username"):
             db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR"))
         db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username)"))
+        if not _has_column("users", "login_pin"):
+            db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS login_pin VARCHAR"))
         if not _has_column("kpi_definitions", "owner_employee_id"):
             db.execute(
                 text(
@@ -143,62 +146,7 @@ def _issue_tokens(db: Session, user: User, *, ip_address: str | None = None) -> 
 
 
 def register(db: Session, payload: RegisterRequest, *, ip_address: str | None = None) -> TokenResponse:
-    dept = db.query(Department).filter(Department.id == payload.department_id).one_or_none()
-    if dept is None:
-        raise ValidationFailed("department_id does not exist")
-
-    if db.query(User).filter(User.username == payload.username).one_or_none():
-        raise ConflictError("That username is already taken")
-
-    email = f"{payload.username}@{SELF_SERVICE_EMAIL_DOMAIN}"
-    if db.query(User).filter(User.email == email).one_or_none():
-        raise ConflictError("That username is already taken")
-
-    role = db.query(Role).filter(Role.name == "employee").one_or_none()
-    if role is None:
-        raise ValidationFailed("Employee role is not seeded")
-
-    user = User(
-        email=email,
-        username=payload.username,
-        password_hash=hash_password(payload.pin),
-        full_name=payload.full_name.strip(),
-        is_active=True,
-    )
-    user.roles.append(role)
-    db.add(user)
-    db.flush()
-
-    employee = Employee(
-        user_id=user.id,
-        employee_code=f"S{user.id:05d}",
-        full_name=user.full_name,
-        department_id=dept.id,
-        role_title="Employee",
-        employment_type="full_time",
-        date_joined=date.today(),
-        status="active",
-        email=email,
-    )
-    db.add(employee)
-    db.flush()
-
-    audit_service.log_action(
-        db,
-        user_id=user.id,
-        action="user.created",
-        entity_type="user",
-        entity_id=user.id,
-        after_state={
-            "username": user.username,
-            "full_name": user.full_name,
-            "department_id": dept.id,
-            "employee_id": employee.id,
-            "self_registered": True,
-        },
-        ip_address=ip_address,
-    )
-    return _issue_tokens(db, user, ip_address=ip_address)
+    raise PermissionDenied("Accounts are created by an administrator — ask HR to set up your username and PIN.")
 
 
 def refresh_tokens(db: Session, refresh_token: str) -> TokenResponse:

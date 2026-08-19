@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserRead(BaseModel):
@@ -20,8 +20,33 @@ class UserRead(BaseModel):
     linked_employee_id: int | None = None
     is_self_registered: bool = False
     login_identifier: str | None = None
+    login_pin: str | None = None
     last_login_at: datetime | None = None
     created_at: datetime | None = None
+
+
+class UserCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
+    username: str = Field(min_length=3, max_length=32)
+    pin: str = Field(min_length=4, max_length=8)
+    department_id: int
+
+    @field_validator("username")
+    @classmethod
+    def username_format(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if not cleaned.replace(".", "").replace("_", "").replace("-", "").isalnum():
+            raise ValueError(
+                "Username may only contain letters, numbers, dots, underscores, and hyphens"
+            )
+        return cleaned
+
+    @field_validator("pin")
+    @classmethod
+    def pin_digits(cls, value: str) -> str:
+        if not value.isdigit() or not (4 <= len(value) <= 8):
+            raise ValueError("PIN must be 4–8 digits")
+        return value
 
 
 class UserSetPassword(BaseModel):

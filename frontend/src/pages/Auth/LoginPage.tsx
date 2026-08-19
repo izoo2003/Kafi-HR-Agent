@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
@@ -73,9 +73,6 @@ export function LoginPage() {
         <Button type="submit" variant="primary" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
         </Button>
-        <p className="login__footer">
-          New here? <Link to="/register">Create an account</Link>
-        </p>
       </form>
     </div>
   );

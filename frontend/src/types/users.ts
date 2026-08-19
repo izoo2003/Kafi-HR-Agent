@@ -10,6 +10,7 @@ export interface User {
   linkedEmployeeId: number | null;
   isSelfRegistered: boolean;
   loginIdentifier: string | null;
+  loginPin: string | null;
   lastLoginAt: string | null;
   createdAt: string | null;
 }

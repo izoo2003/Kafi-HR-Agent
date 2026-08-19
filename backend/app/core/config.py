@@ -18,6 +18,7 @@ class Settings(BaseSettings):
         env_file=str(BASE_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # --- API ---
@@ -65,8 +66,21 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-flash-latest"
     gemini_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
     # Sync CVs: route a fetched CV to the best matching job (any status)
-    gemini_cv_match_api_key: str = ""
-    gemini_cv_match_api_key_2: str = ""
+    gemini_cv_match_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GEMINI_CV_MATCH_API_KEY",
+            "gemini_cv_match_api_key",
+            "GEMINI_CV_MATCH_KEY",
+        ),
+    )
+    gemini_cv_match_api_key_2: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GEMINI_CV_MATCH_API_KEY_2",
+            "gemini_cv_match_api_key_2",
+        ),
+    )
     gemini_cv_match_model: str = "gemini-flash-latest"
     gemini_cv_match_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
     # CNIC image verification (falls back to gemini_api_key pool)
@@ -198,6 +212,8 @@ class Settings(BaseSettings):
         out: list[str] = []
         for raw in candidates:
             key = (raw or "").strip()
+            if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+                key = key[1:-1].strip()
             if not key or key.startswith("your_"):
                 continue
             if key not in out:
@@ -216,8 +232,13 @@ class Settings(BaseSettings):
         return keys[0] if keys else ""
 
     def resolved_gemini_cv_match_api_keys(self) -> list[str]:
+        import os
+
         dedicated = self._valid_keys(
-            self.gemini_cv_match_api_key, self.gemini_cv_match_api_key_2
+            self.gemini_cv_match_api_key,
+            self.gemini_cv_match_api_key_2,
+            os.environ.get("GEMINI_CV_MATCH_API_KEY", ""),
+            os.environ.get("GEMINI_CV_MATCH_API_KEY_2", ""),
         )
         if dedicated:
             return dedicated

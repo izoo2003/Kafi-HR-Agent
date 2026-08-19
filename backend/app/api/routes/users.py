@@ -10,7 +10,7 @@ from app.core.db import get_db
 from app.core.deps import require_permission
 from app.models.identity import Role
 from app.schemas.common import AuthContext, PaginatedResponse
-from app.schemas.users import RoleRead, UserPasswordSetResponse, UserRead, UserSetPassword
+from app.schemas.users import RoleRead, UserCreate, UserPasswordSetResponse, UserRead, UserSetPassword
 from app.services import user_service
 
 router = APIRouter(tags=["users"])
@@ -32,6 +32,15 @@ def list_users(
         is_active=is_active,
         self_registered_only=self_registered_only,
     )
+
+
+@router.post("/users", response_model=UserRead, status_code=201)
+def create_user(
+    payload: UserCreate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("users", "write"))],
+) -> UserRead:
+    return user_service.create_user(db, auth, payload)
 
 
 @router.get("/roles", response_model=list[RoleRead])

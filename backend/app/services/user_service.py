@@ -1,16 +1,27 @@
 """User directory for admin panel."""
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.exceptions import EntityNotFound
+from app.core.exceptions import ConflictError, EntityNotFound, ValidationFailed
 from app.core.security import hash_password
 from app.models.employees import Department, Employee
-from app.models.identity import User
+from app.models.identity import Role, User
 from app.schemas.common import AuthContext, PaginatedResponse
-from app.schemas.users import UserPasswordSetResponse, UserRead
+from app.schemas.users import UserCreate, UserPasswordSetResponse, UserRead
 from app.services import audit_service
 from app.services.auth_service import SELF_SERVICE_EMAIL_DOMAIN
+
+_STAFF_ROLES = {
+    "super_admin",
+    "hr_manager",
+    "payroll_officer",
+    "department_head",
+    "recruiter",
+    "readonly_auditor",
+}
 
 
 def _serialize_user(user: User, employee: Employee | None, department: Department | None) -> UserRead:
@@ -28,9 +39,15 @@ def _serialize_user(user: User, employee: Employee | None, department: Departmen
         linked_employee_id=employee.id if employee else None,
         is_self_registered=email.endswith(f"@{SELF_SERVICE_EMAIL_DOMAIN}") or bool(user.username),
         login_identifier=ident,
+        login_pin=user.login_pin,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
     )
+
+
+def _is_staff_account(user: User) -> bool:
+    names = {r.name for r in (user.roles or [])}
+    return bool(names & _STAFF_ROLES)
 
 
 def list_users(
@@ -47,17 +64,14 @@ def list_users(
     if self_registered_only:
         q = q.filter(User.email.like(f"%@{SELF_SERVICE_EMAIL_DOMAIN}"))
 
-    total = q.count()
-    rows = (
-        q.order_by(User.created_at.desc(), User.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    rows = q.order_by(User.created_at.desc(), User.id.desc()).all()
+    rows = [u for u in rows if not _is_staff_account(u)]
+    total = len(rows)
+    page_rows = rows[(page - 1) * page_size : (page - 1) * page_size + page_size]
 
     employee_by_user: dict[int, Employee] = {}
-    if rows:
-        user_ids = [u.id for u in rows]
+    if page_rows:
+        user_ids = [u.id for u in page_rows]
         employees = db.query(Employee).filter(Employee.user_id.in_(user_ids)).all()
         employee_by_user = {e.user_id: e for e in employees if e.user_id is not None}
 
@@ -69,7 +83,7 @@ def list_users(
         }
 
     items: list[UserRead] = []
-    for user in rows:
+    for user in page_rows:
         employee = employee_by_user.get(user.id)
         department = departments.get(employee.department_id) if employee else None
         items.append(_serialize_user(user, employee, department))
@@ -82,6 +96,73 @@ def list_users(
     )
 
 
+def create_user(db: Session, auth: AuthContext, payload: UserCreate) -> UserRead:
+    from app.schemas.auth import RegisterRequest
+
+    cleaned = RegisterRequest(
+        full_name=payload.full_name,
+        username=payload.username,
+        pin=payload.pin,
+        department_id=payload.department_id,
+    )
+    dept = db.query(Department).filter(Department.id == cleaned.department_id).one_or_none()
+    if dept is None:
+        raise ValidationFailed("department_id does not exist")
+
+    if db.query(User).filter(User.username == cleaned.username).one_or_none():
+        raise ConflictError("That username is already taken")
+
+    email = f"{cleaned.username}@{SELF_SERVICE_EMAIL_DOMAIN}"
+    if db.query(User).filter(User.email == email).one_or_none():
+        raise ConflictError("That username is already taken")
+
+    role = db.query(Role).filter(Role.name == "employee").one_or_none()
+    if role is None:
+        raise ValidationFailed("Employee role is not seeded")
+
+    user = User(
+        email=email,
+        username=cleaned.username,
+        password_hash=hash_password(cleaned.pin),
+        login_pin=cleaned.pin,
+        full_name=cleaned.full_name.strip(),
+        is_active=True,
+    )
+    user.roles.append(role)
+    db.add(user)
+    db.flush()
+
+    employee = Employee(
+        user_id=user.id,
+        employee_code=f"S{user.id:05d}",
+        full_name=user.full_name,
+        department_id=dept.id,
+        role_title=dept.name or "Employee",
+        employment_type="full_time",
+        date_joined=date.today(),
+        status="active",
+        email=email,
+    )
+    db.add(employee)
+    db.flush()
+
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="user.created",
+        entity_type="user",
+        entity_id=user.id,
+        after_state={
+            "username": user.username,
+            "full_name": user.full_name,
+            "department_id": dept.id,
+            "employee_id": employee.id,
+            "created_by_admin": True,
+        },
+    )
+    return _serialize_user(user, employee, dept)
+
+
 def set_password(
     db: Session, auth: AuthContext, user_id: int, new_password: str
 ) -> UserPasswordSetResponse:
@@ -89,6 +170,7 @@ def set_password(
     if user is None:
         raise EntityNotFound(f"User {user_id} not found")
     user.password_hash = hash_password(new_password)
+    user.login_pin = new_password
     db.flush()
     ident = (user.username or "").strip() or user.email
     audit_service.log_from_auth(

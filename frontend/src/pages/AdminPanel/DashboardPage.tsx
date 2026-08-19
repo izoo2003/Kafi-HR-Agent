@@ -229,44 +229,61 @@ import { FormField } from "../../components/ui/FormField";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
 import { useAuditLogs } from "../../hooks/useAdmin";
-import { useSetUserPassword, useUsers } from "../../hooks/useUsers";
+import { useCreateUser, useSetUserPassword, useUsers } from "../../hooks/useUsers";
+import { useDepartments } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import { useAuth } from "../../hooks/useAuth";
 import type { User } from "../../types/users";
 
 export function UserManagementPage() {
   const { hasPermission } = useAuth();
-  const canSetPassword = hasPermission("users", "write");
+  const canWrite = hasPermission("users", "write");
   const { page, pageSize, setPage, params } = usePagination(1, 50);
   const users = useUsers(params);
+  const departments = useDepartments(canWrite);
+  const createUser = useCreateUser();
   const setPasswordMut = useSetUserPassword();
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
-  const [revealed, setRevealed] = useState<{
-    fullName: string;
-    loginIdentifier: string;
-    password: string;
-  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!canWrite) return;
+    setError(null);
+    try {
+      await createUser.mutateAsync({
+        fullName: fullName.trim(),
+        username: username.trim().toLowerCase(),
+        pin,
+        departmentId: Number(departmentId),
+      });
+      setFullName("");
+      setUsername("");
+      setPin("");
+      setDepartmentId("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create user");
+    }
+  }
 
   async function onSetPassword(e: FormEvent) {
     e.preventDefault();
     if (!resetUser) return;
     setError(null);
     try {
-      const res = await setPasswordMut.mutateAsync({
+      await setPasswordMut.mutateAsync({
         userId: resetUser.id,
         password: newPassword,
-      });
-      setRevealed({
-        fullName: res.fullName,
-        loginIdentifier: res.loginIdentifier,
-        password: res.password,
       });
       setResetUser(null);
       setNewPassword("");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not set password");
+      setError(err instanceof ApiError ? err.message : "Could not set PIN");
     }
   }
 
@@ -275,49 +292,96 @@ export function UserManagementPage() {
       <PageHeader title="Users" breadcrumb="Admin / Users" />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-          Login IDs are shown below. Passwords are stored hashed and cannot be looked up — set a new
-          password to share with the user (staff log in with email; self-registered employees use
-          username + PIN).
+          Only an administrator can create login accounts. Set a username, 4–8 digit PIN, and
+          department. That person can then sign in. Usernames and PINs stay visible here because you
+          issued them.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
-        {revealed ? (
-          <Card status="info">
-            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Share these credentials once</h2>
-            <p style={{ margin: 0 }}>
-              <strong>{revealed.fullName}</strong>
-            </p>
-            <p className="font-data" style={{ margin: "var(--space-2) 0 0" }}>
-              Login: {revealed.loginIdentifier}
-            </p>
-            <p className="font-data" style={{ margin: "var(--space-1) 0 0" }}>
-              Password / PIN: {revealed.password}
-            </p>
-            <div style={{ marginTop: "var(--space-3)" }}>
-              <Button type="button" variant="secondary" onClick={() => setRevealed(null)}>
-                Hide
+
+        {canWrite ? (
+          <Card>
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Create user</h2>
+            <form
+              onSubmit={onCreate}
+              style={{ display: "grid", gap: "var(--space-3)", maxWidth: 420 }}
+            >
+              <FormField
+                label="Full name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+              />
+              <FormField
+                label="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                minLength={3}
+                hint="Letters, numbers, dots, underscores, hyphens."
+              />
+              <FormField
+                label="PIN"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                required
+                minLength={4}
+                maxLength={8}
+                hint="4–8 digits. Shown in the table after save."
+              />
+              <label style={{ display: "grid", gap: "var(--space-1)" }}>
+                <span style={{ fontSize: "var(--text-sm)", fontWeight: "var(--weight-medium)", color: "var(--color-text-secondary)" }}>
+                  Department
+                </span>
+                <select
+                  required
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  style={{
+                    padding: "var(--space-2) var(--space-3)",
+                    border: "1px solid var(--color-border-strong)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-surface)",
+                  }}
+                >
+                  <option value="">Select department</option>
+                  {(departments.data ?? []).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button type="submit" variant="primary" disabled={createUser.isPending}>
+                {createUser.isPending ? "Creating…" : "Create account"}
               </Button>
-            </div>
+            </form>
           </Card>
         ) : null}
+
         {resetUser ? (
           <Card>
             <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>
-              Set password for {resetUser.fullName}
+              Change PIN for {resetUser.fullName}
             </h2>
             <form onSubmit={onSetPassword} style={{ display: "grid", gap: "var(--space-3)", maxWidth: 360 }}>
               <FormField
-                label="New password or PIN"
+                label="New PIN"
                 type="text"
-                autoComplete="new-password"
+                inputMode="numeric"
+                autoComplete="off"
                 minLength={4}
+                maxLength={8}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                hint="Self-service accounts use a 4–8 digit PIN. Staff accounts can use a longer password."
+                hint="4–8 digits. It will stay visible in this list."
               />
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
                 <Button type="submit" variant="primary" disabled={setPasswordMut.isPending}>
-                  Save password
+                  Save PIN
                 </Button>
                 <Button
                   type="button"
@@ -333,6 +397,7 @@ export function UserManagementPage() {
             </form>
           </Card>
         ) : null}
+
         {users.isLoading ? <Spinner label="Loading users" /> : null}
         {users.isError ? (
           <EmptyState
@@ -344,50 +409,28 @@ export function UserManagementPage() {
           <>
             {users.data.items.length === 0 ? (
               <EmptyState
-                title="No users yet"
-                description="When someone creates a personal account from the register page, they will show up in this list."
+                title="No employee logins yet"
+                description="Create a username, PIN, and department above. Staff admin accounts are not listed here."
               />
             ) : (
-              <Table
-                headers={[
-                  "Name",
-                  "Username",
-                  "Email",
-                  "Login with",
-                  "Department",
-                  "Roles",
-                  "Active",
-                  "Password",
-                ]}
-              >
+              <Table headers={["Name", "Username", "PIN", "Department", "Active", ""]}>
                 {users.data.items.map((u) => (
                   <tr key={u.id} data-status={u.isActive ? "positive" : "neutral"}>
-                    <td>
-                      {u.fullName}
-                      {u.isSelfRegistered ? (
-                        <div style={{ marginTop: "var(--space-1)" }}>
-                          <StatusBadge status="info">Self-registered</StatusBadge>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="font-data">{u.username ?? "—"}</td>
-                    <td className="font-data">{u.email}</td>
-                    <td className="font-data">{u.loginIdentifier ?? u.username ?? u.email}</td>
+                    <td>{u.fullName}</td>
+                    <td className="font-data">{u.username ?? u.loginIdentifier ?? "—"}</td>
+                    <td className="font-data">{u.loginPin ?? "—"}</td>
                     <td>{u.departmentName ?? "—"}</td>
-                    <td>{u.roles.length ? u.roles.join(", ") : "—"}</td>
                     <td>
                       <StatusBadge status={u.isActive ? "approved" : "draft"}>
                         {u.isActive ? "Active" : "Inactive"}
                       </StatusBadge>
                     </td>
                     <td>
-                      {canSetPassword ? (
+                      {canWrite ? (
                         <Button type="button" variant="secondary" onClick={() => setResetUser(u)}>
-                          Set password
+                          Change PIN
                         </Button>
-                      ) : (
-                        <span style={{ color: "var(--color-text-muted)" }}>Hashed — not viewable</span>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 ))}

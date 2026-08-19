@@ -52,8 +52,19 @@ def match_candidate_to_job(
             return _match_with_gemini(cv_text, position_hint, jobs, settings, api_keys)
         except Exception as exc:  # noqa: BLE001 — fall back rather than fail the whole sync
             logger.warning("Gemini CV-job match failed, falling back to keyword match: %s", exc)
+            fallback = _match_with_keywords(cv_text, position_hint, jobs)
+            fallback.reasoning = (
+                f"{fallback.reasoning.rstrip('.')} "
+                f"(Gemini match failed: {exc})."
+            )
+            return fallback
 
-    return _match_with_keywords(cv_text, position_hint, jobs)
+    fallback = _match_with_keywords(cv_text, position_hint, jobs)
+    fallback.reasoning = (
+        f"{fallback.reasoning.rstrip('.')} "
+        "(GEMINI_CV_MATCH_API_KEY not configured, using fallback matcher)."
+    )
+    return fallback
 
 
 def _match_with_gemini(
@@ -171,8 +182,5 @@ def _match_with_keywords(
     return CvJobMatchResult(
         job_description_id=best_job.id,
         confidence=confidence,
-        reasoning=(
-            f"Keyword overlap with '{best_job.title}' "
-            "(GEMINI_CV_MATCH_API_KEY not configured, using fallback matcher)."
-        ),
+        reasoning=f"Keyword overlap with '{best_job.title}'",
     )

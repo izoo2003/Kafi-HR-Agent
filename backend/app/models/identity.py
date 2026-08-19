@@ -16,6 +16,8 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     username: Mapped[str | None] = mapped_column(String, unique=True, nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Admin-visible PIN/password for accounts they create (login still uses password_hash).
+    login_pin: Mapped[str | None] = mapped_column(String(128), nullable=True)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

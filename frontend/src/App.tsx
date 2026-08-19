@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { RequireAuth, RequirePermission } from "./components/layout/RequirePermission";
 import { LoginPage } from "./pages/Auth/LoginPage";
-import { RegisterPage } from "./pages/Auth/RegisterPage";
 import { JobDescriptionListPage } from "./pages/JobDescriptions/JobDescriptionListPage";
 import { JobDescriptionDetailPage } from "./pages/JobDescriptions/JobDescriptionDetailPage";
 import { JobDescriptionFormPage } from "./pages/JobDescriptions/JobDescriptionFormPage";
@@ -46,7 +45,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
 
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>

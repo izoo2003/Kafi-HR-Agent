@@ -8,6 +8,15 @@ export async function listUsers(
   return apiRequest<PaginatedResponse<User>>("/users", { params });
 }
 
+export async function createUser(payload: {
+  fullName: string;
+  username: string;
+  pin: string;
+  departmentId: number;
+}): Promise<User> {
+  return apiRequest<User>("/users", { method: "POST", body: payload });
+}
+
 export async function listRoles(): Promise<Role[]> {
   return apiRequest<Role[]>("/roles");
 }
