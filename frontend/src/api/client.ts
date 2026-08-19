@@ -180,9 +180,6 @@ export async function fetchBlob(path: string, options: RequestOptions = {}): Pro
   } else if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(keysToSnake(options.body));
-  } else if ((options.method ?? "GET").toUpperCase() === "POST") {
-    headers["Content-Type"] = "application/json";
-    body = "{}";
   }
 
   const response = await fetch(buildUrl(path, options.params), {

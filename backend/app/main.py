@@ -85,6 +85,17 @@ async def lifespan(_app: FastAPI):
     from app.services.kpi_scheduler import start_kpi_reminder_scheduler, stop_kpi_reminder_scheduler
 
     start_kpi_reminder_scheduler()
+    try:
+        from app.reporting.employee_letters import letter_kinds, _template_path
+
+        for kind in letter_kinds():
+            path = _template_path(kind)
+            print(
+                f"[startup] Letter template {kind}: {'ok' if path.is_file() else 'MISSING'} ({path})",
+                flush=True,
+            )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] Letter templates check skipped: {exc}", flush=True)
     print("[startup] Ready.", flush=True)
 
     yield

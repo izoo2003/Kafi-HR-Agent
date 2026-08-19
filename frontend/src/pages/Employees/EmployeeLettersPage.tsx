@@ -57,7 +57,7 @@ function fileName(kind: LetterKind, emp: Employee) {
 export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("employees", "write");
-  const { page, pageSize, setPage, params } = usePagination();
+  const { page, pageSize, setPage, params } = usePagination(1, 100);
   const [statusFilter, setStatusFilter] = useState<"active" | "terminated" | "all">("active");
   const departments = useDepartments();
   const employees = useEmployees({
