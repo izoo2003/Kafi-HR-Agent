@@ -15,6 +15,7 @@ import {
 } from "../../hooks/useJobDescriptions";
 import { usePagination } from "../../hooks/usePagination";
 import { ApiError } from "../../api/client";
+import { formatCvMatchGuess } from "../../lib/cvMatch";
 import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 import { useAuth } from "../../hooks/useAuth";
 import type { Candidate } from "../../types/cvScreening";
@@ -139,7 +140,9 @@ export function UnassignedCandidatesPage() {
         {unassigned.data && unassigned.data.items.length > 0 ? (
           <>
             <Table headers={["Candidate", "Source", "Submitted", "Best guess", "Actions"]}>
-              {unassigned.data.items.map((c) => (
+              {unassigned.data.items.map((c) => {
+                const guess = formatCvMatchGuess(c.matchReasoning, c.matchConfidence);
+                return (
                 <tr key={c.id} data-status="warning">
                   <td>
                     <Link to={`/candidates/${c.id}`}>{c.fullName ?? `Candidate #${c.id}`}</Link>
@@ -153,17 +156,8 @@ export function UnassignedCandidatesPage() {
                   <td className="font-data">
                     {c.submittedAt ? new Date(c.submittedAt).toLocaleDateString() : "—"}
                   </td>
-                  <td>
-                    {c.matchReasoning ? (
-                      <span style={{ fontSize: "var(--text-xs)" }}>
-                        {c.matchReasoning}
-                        {c.matchConfidence != null ? (
-                          <span className="font-data"> ({Math.round(c.matchConfidence * 100)}%)</span>
-                        ) : null}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
+                  <td className="font-data" style={{ fontSize: "var(--text-xs)" }}>
+                    {guess ?? "—"}
                   </td>
                   <td>
                     <div className="table-actions" style={{ minWidth: 250, alignItems: "start" }}>
@@ -183,7 +177,8 @@ export function UnassignedCandidatesPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </Table>
             <Pagination
               page={page}

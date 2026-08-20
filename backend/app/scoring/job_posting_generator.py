@@ -102,7 +102,7 @@ Write a clear, professional job posting for:
 
 Respond with STRICT JSON only (no markdown fences), exact shape:
 {{
-    "description_text": "<2-4 short paragraphs: role overview, day-to-day responsibilities, how the role fits the department. Plain text, use newlines between paragraphs. End with a hashtag line. Do NOT include application instructions or any form URLs — those are added by the system.>",
+  "description_text": "<ONE short paragraph: 2–4 sentences, about 50–80 words. What the role is and why it exists. Plain text. Then a blank line and a hashtag line. Do NOT include duties, requirements, application instructions, or any form URLs — those are added separately.>",
   "requirements_text": "<bullet-style plain text of requirements: education, experience, soft skills. Use lines starting with '- '. Keep it realistic for this title and department.>",
   "skills": [
     {{"name": "<specific skill name>", "level": <integer 1-10>}}
@@ -112,9 +112,10 @@ Respond with STRICT JSON only (no markdown fences), exact shape:
 Rules:
 - Tailor content specifically to the title and department — do not invent a different role.
 - Keep language precise and suitable for an internal HR tool (not marketing fluff).
+- description_text MUST stay short: one paragraph only, 2–4 sentences, no more than 80 words before the hashtags. No second paragraph. Do not list day-to-day tasks, responsibilities, or qualifications in the description — those belong in requirements_text.
 - Do not include salary, equal-opportunity boilerplate, or application instructions.
 - End description_text with a single line of 6–10 relevant hashtags (CamelCase, no spaces), e.g. #Hiring #KafiGroup #Sales #Karachi #NowHiring. Hashtags must relate to the title, department, location (Pakistan / Karachi when relevant), and core skills. Do not put hashtags in requirements_text.
-- description_text must be at least 2 sentences; requirements_text must list at least 5 concrete requirements.
+- requirements_text must list at least 5 concrete requirements.
 - skills: return 5–10 concrete, scorable skills for this title (tools, languages, frameworks, domain skills).
 - level: required proficiency from 1 (very low / nice-to-have) to 10 (expert / must-have core skill).
 - Prefer specific skill names (e.g. "Python", "React", "Financial modeling") over vague ones ("hard work").

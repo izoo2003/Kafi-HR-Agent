@@ -17,6 +17,7 @@ import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import { useState } from "react";
+import { formatCvMatchGuess } from "../../lib/cvMatch";
 import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 
 function recommendationStatus(rec: string): string {
@@ -97,6 +98,10 @@ export function CandidateDetailPage() {
   const parsed = candidate.data.parsedData ?? {};
   const ev = evaluation.data;
   const cardStatus = ev ? recommendationStatus(ev.recommendation) : candidate.data.status;
+  const matchGuess = formatCvMatchGuess(
+    candidate.data.matchReasoning,
+    candidate.data.matchConfidence,
+  );
 
   return (
     <>
@@ -149,12 +154,9 @@ export function CandidateDetailPage() {
                 and hasn't been matched to a job yet.
               </span>
             </div>
-            {candidate.data.matchReasoning ? (
-              <p style={{ marginBottom: 0 }}>
-                AI best guess: {candidate.data.matchReasoning}
-                {candidate.data.matchConfidence != null ? (
-                  <span className="font-data"> ({Math.round(candidate.data.matchConfidence * 100)}% confidence)</span>
-                ) : null}
+            {matchGuess ? (
+              <p className="font-data" style={{ marginBottom: 0 }}>
+                {matchGuess}
               </p>
             ) : null}
             <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>

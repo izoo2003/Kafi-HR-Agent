@@ -181,7 +181,7 @@ Per-role CV scoring rubric (in-scope item 2).
 | source | TEXT | `manual`, `gmail`, `google_form` — how this CV entered the system |
 | source_ref | TEXT NULL | dedupe key for automated sources (Outlook/Graph message id, WhatsApp message id, Gmail message id, form row id) — never re-imported twice |
 | match_confidence | FLOAT NULL | AI job-match confidence (0–1) when auto-matched; NULL for manual uploads/assignments |
-| match_reasoning | TEXT NULL | short AI explanation of the job match (or best-guess reasoning while still unassigned) |
+| match_reasoning | TEXT NULL | user-facing match line, e.g. `72% confident this is Sales Executive` (never includes API-key / matcher internals) |
 | submitted_at | DATETIME NULL | actual submission time from the source, distinct from `created_at` (ingestion time) |
 
 ### `candidate_scores`

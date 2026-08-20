@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { CnicImageGallery } from "../../components/domain/CnicImageGallery";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -102,12 +103,6 @@ const emptyForm: FormState = {
   branchName: "",
   branchCode: "",
   baseSalary: "",
-};
-
-const CNIC_CATEGORY_LABELS: Record<string, string> = {
-  cnic_front: "CNIC front",
-  cnic_back: "CNIC back",
-  cnic: "CNIC",
 };
 
 const emptyReferralDraft = (): ClientReferralDraft => ({
@@ -1052,75 +1047,36 @@ export function EmployeeFormPage() {
               </div>
             ) : null}
 
-                {cnicDocs.length === 0 ? (
+                {cnicDocs.length === 0 && !cnicFrontFile && !cnicBackFile ? (
                   <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    {isNew && (cnicFrontFile || cnicBackFile)
-                      ? "Selected CNIC images will be saved when you create the employee."
-                      : "No CNIC images uploaded yet."}
+                    No CNIC images uploaded yet.
                   </p>
                 ) : (
-                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
-                    {cnicDocs.map((d) => (
-                      <li
-                        key={d.id}
-                        style={{
-                          display: "flex",
-                          gap: "var(--space-3)",
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                          borderBottom: "1px solid var(--color-border)",
-                          paddingBottom: "var(--space-2)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "var(--text-xs)",
-                            fontWeight: "var(--weight-medium)",
-                            textTransform: "uppercase",
-                            color: "var(--color-text-secondary)",
-                            minWidth: 100,
-                          }}
-                        >
-                          {CNIC_CATEGORY_LABELS[String(d.category)] ?? d.category}
-                        </span>
-                        <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
-                        {employeeId != null ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={async () => {
-                              try {
-                                const blob = await downloadEmployeeDocument(employeeId, d.id);
-                                await openBlob(blob, d.originalFilename);
-                              } catch {
-                                setError("Could not download file");
-                              }
-                            }}
-                          >
-                            Download
-                          </Button>
-                        ) : null}
-                        {!cnicViewOnly ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={async () => {
-                              if (!window.confirm(`Remove ${d.originalFilename}?`)) return;
-                              try {
-                                await deleteDoc.mutateAsync(d.id);
-                              } catch (err) {
-                                setError(
-                                  err instanceof ApiError ? err.message : "Failed to delete document",
-                                );
-                              }
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
+                  <CnicImageGallery
+                    employeeId={employeeId ?? null}
+                    documents={cnicDocs}
+                    pendingFront={cnicFrontFile}
+                    pendingBack={cnicBackFile}
+                    canRemove={!cnicViewOnly}
+                    onError={setError}
+                    onDownload={async (doc) => {
+                      if (employeeId == null) return;
+                      try {
+                        const blob = await downloadEmployeeDocument(employeeId, doc.id);
+                        await openBlob(blob, doc.originalFilename);
+                      } catch {
+                        setError("Could not download file");
+                      }
+                    }}
+                    onRemove={async (doc) => {
+                      if (!window.confirm(`Remove ${doc.originalFilename}?`)) return;
+                      try {
+                        await deleteDoc.mutateAsync(doc.id);
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : "Failed to delete document");
+                      }
+                    }}
+                  />
                 )}
               </div>
             </Card>

@@ -26,7 +26,7 @@ Steps 4–6 run as one pipeline call (`pipeline.run_cv_pipeline`) triggered auto
 ## 2. Job Descriptions
 
 - **Fields:** title, department, description text, requirements text, status (`draft`/`open`/`closed`), optional source file (Word/PDF), optional posting images (`image_paths`, up to 8 PNG/JPG/WEBP/GIF).
-- **AI draft:** `/job-descriptions/ai-draft` writes description + requirements + skills, ends the description with 6–10 relevant hashtags, then appends the Google Form apply link.
+- **AI draft:** `/job-descriptions/ai-draft` writes a short, to-the-point description (one paragraph, 2–4 sentences; duties live in requirements) + requirements + skills, ends the description with 6–10 relevant hashtags, then appends the Google Form apply link.
 - **Export:** `/job-descriptions/{id}/export` generates a formatted Word or PDF using `reporting/word_export.py` / `pdf_export.py`, populated from the structured fields (not a re-upload of the original file) — so edits made in-app are reflected in the export.
 - **Status lifecycle:** `draft` → `open` (visible for CV intake; also publishes a LinkedIn feed post to every configured LinkedIn account) → `closed` (no new candidates accepted, existing candidates remain visible/scored). LinkedIn posting uses the same developer-app client id/secret and member/org tokens you already have — see §12.
 
@@ -201,8 +201,8 @@ Each source is wrapped so missing credentials / API errors produce a clean per-s
 Manual **"Sync CVs"** button in the CV Screening hub (`POST /cv-screening/sync`) — no background scheduler. Each run: fetches from configured sources → dedupes → stores each new CV as an unassigned `Candidate` (`job_description_id = NULL`, `source`, `source_ref`, `submitted_at` set) → parses it → runs the AI job matcher against **all** job descriptions (open, draft, and closed).
 
 ### AI Matching (`app/scoring/cv_job_matcher.py`)
-- Primary: Gemini (`GEMINI_CV_MATCH_API_KEY`, falling back to `GEMINI_API_KEY`) reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every job's title/description/requirements and returns `{job_description_id, confidence, reasoning}` as strict JSON. Status does not block assignment — a fit for a draft or closed role is still assigned to that role.
-- Fallback (no match key configured): deterministic keyword overlap between the CV/position text and each job's title/requirements — capped confidence so it rarely crosses the auto-assign threshold without a strong signal, keeping the feature honestly "best-effort" without an AI key.
+- Primary: Gemini (`GEMINI_CV_MATCH_API_KEY`, falling back to `GEMINI_API_KEY`) reads the CV text (+ the applicant's stated position, e.g. email subject/form field) against every job's title/description/requirements and returns `{job_description_id, confidence}` as strict JSON. Stored/shown reasoning is always `{n}% confident this is {job_title}` — never API-key or matcher internals. Status does not block assignment — a fit for a draft or closed role is still assigned to that role.
+- Fallback (Gemini unavailable): deterministic keyword overlap between the CV/position text and each job's title/requirements — capped confidence so it rarely crosses the auto-assign threshold without a strong signal. The UI still shows only the confidence + role line.
 - `cv_auto_match_min_confidence` (`system_config`-style setting, default `0.55`) is the auto-assign threshold: at or above it, the candidate is assigned to that job and the normal parse/score/rank pipeline runs immediately; below it, the candidate stays unassigned with `match_confidence`/`match_reasoning` recorded as a "best guess" for HR to see.
 - Pulling CVs from `hr@kafi-group.com` is IMAP (`IMAP_*` env vars). That fetch does **not** need a Gemini key. Gemini is only used after the file is downloaded, to route it to a job (and optionally to classify borderline mail attachments as CV vs not-CV via `GEMINI_API_KEY`).
 

@@ -378,8 +378,8 @@ export function JobDescriptionFormPage() {
             <div style={{ flex: "1 1 220px" }}>
               <strong style={{ display: "block", marginBottom: 4 }}>AI Analyzer</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                Generates description (with relevant hashtags), requirements, and skills for this
-                title — and appends the Google Form apply link to the description.
+                Generates a short description (with relevant hashtags), requirements, and skills
+                for this title — and appends the Google Form apply link to the description.
               </span>
             </div>
             <Button
@@ -433,7 +433,9 @@ export function JobDescriptionFormPage() {
               required
             />
             <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              AI Analyzer ends the description with hiring hashtags. You can edit them before saving.
+              Keep this short and to the point — a brief role overview only. Requirements go in
+              the field below. AI Analyzer ends the description with hiring hashtags; you can edit
+              them before saving.
             </span>
           </label>
           <label className="form-field">

@@ -2,7 +2,9 @@
 
 Primary: Gemini reads the CV text against every job (open, draft, or closed)
 and picks the best match with a confidence score. Falls back to a deterministic
-keyword matcher (title/requirements overlap) when no CV-match Gemini key is set.
+keyword matcher (title/requirements overlap) when Gemini is unavailable.
+User-facing reasoning is always "{n}% confident this is {job_role}" — never
+mentions API keys or internal fallbacks.
 """
 from __future__ import annotations
 
@@ -33,6 +35,23 @@ class CvJobMatchResult:
     reasoning: str
 
 
+def _format_match_reasoning(confidence: float, job_title: str | None) -> str:
+    pct = int(round(max(0.0, min(1.0, confidence)) * 100))
+    title = (job_title or "").strip()
+    if title:
+        return f"{pct}% confident this is {title}"
+    return "No matching role found"
+
+
+def _title_for(jobs: list[OpenJobSummary], job_id: int | None) -> str | None:
+    if job_id is None:
+        return None
+    for job in jobs:
+        if job.id == job_id:
+            return job.title
+    return None
+
+
 def match_candidate_to_job(
     cv_text: str,
     position_hint: str,
@@ -43,7 +62,7 @@ def match_candidate_to_job(
         return CvJobMatchResult(
             job_description_id=None,
             confidence=0.0,
-            reasoning="No job descriptions to match against.",
+            reasoning=_format_match_reasoning(0.0, None),
         )
 
     api_keys = settings.resolved_gemini_cv_match_api_keys()
@@ -52,19 +71,8 @@ def match_candidate_to_job(
             return _match_with_gemini(cv_text, position_hint, jobs, settings, api_keys)
         except Exception as exc:  # noqa: BLE001 — fall back rather than fail the whole sync
             logger.warning("Gemini CV-job match failed, falling back to keyword match: %s", exc)
-            fallback = _match_with_keywords(cv_text, position_hint, jobs)
-            fallback.reasoning = (
-                f"{fallback.reasoning.rstrip('.')} "
-                f"(Gemini match failed: {exc})."
-            )
-            return fallback
 
-    fallback = _match_with_keywords(cv_text, position_hint, jobs)
-    fallback.reasoning = (
-        f"{fallback.reasoning.rstrip('.')} "
-        "(GEMINI_CV_MATCH_API_KEY not configured, using fallback matcher)."
-    )
-    return fallback
+    return _match_with_keywords(cv_text, position_hint, jobs)
 
 
 def _match_with_gemini(
@@ -121,10 +129,11 @@ Respond with STRICT JSON only, no markdown fences, in this exact shape:
     if job_id is None:
         confidence = 0.0
 
+    resolved_id = int(job_id) if job_id is not None else None
     return CvJobMatchResult(
-        job_description_id=int(job_id) if job_id is not None else None,
+        job_description_id=resolved_id,
         confidence=confidence,
-        reasoning=str(data.get("reasoning") or "").strip() or "Gemini match",
+        reasoning=_format_match_reasoning(confidence, _title_for(jobs, resolved_id)),
     )
 
 
@@ -173,7 +182,7 @@ def _match_with_keywords(
         return CvJobMatchResult(
             job_description_id=None,
             confidence=0.0,
-            reasoning="No keyword overlap found with any job description.",
+            reasoning=_format_match_reasoning(0.0, None),
         )
 
     # Keyword overlap scores are inherently noisier than an LLM's — cap so this
@@ -182,5 +191,5 @@ def _match_with_keywords(
     return CvJobMatchResult(
         job_description_id=best_job.id,
         confidence=confidence,
-        reasoning=f"Keyword overlap with '{best_job.title}'",
+        reasoning=_format_match_reasoning(confidence, best_job.title),
     )
