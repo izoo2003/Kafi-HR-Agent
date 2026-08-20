@@ -3,7 +3,6 @@ import { PageHeader } from "../../components/layout/AppShell";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
-import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
 import { useAdminDashboard, useAuditLogs } from "../../hooks/useAdmin";
