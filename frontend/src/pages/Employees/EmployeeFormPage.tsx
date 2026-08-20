@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CnicImageGallery } from "../../components/domain/CnicImageGallery";
+import { FilePreviewModal, type FilePreviewRequest } from "../../components/domain/FilePreviewModal";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -216,6 +217,7 @@ export function EmployeeFormPage() {
   const [cnicBackFile, setCnicBackFile] = useState<File | null>(null);
   const [clientDocTitle, setClientDocTitle] = useState("");
   const [clientDocFiles, setClientDocFiles] = useState<FileList | null>(null);
+  const [filePreview, setFilePreview] = useState<FilePreviewRequest | null>(null);
 
   const [refForm, setRefForm] = useState<ClientReferralDraft>(draftBootstrap.refForm);
   /** Drafts collected on Add employee before the profile exists in the API. */
@@ -646,6 +648,37 @@ export function EmployeeFormPage() {
             {refForm.files.length > 0 ? ` (${refForm.files.length} selected)` : ""}.
           </span>
         </label>
+        {refForm.files.length > 0 ? (
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
+            {refForm.files.map((file, index) => (
+              <li
+                key={`${file.name}-${index}`}
+                style={{
+                  display: "flex",
+                  gap: "var(--space-3)",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ flex: 1, fontSize: "var(--text-sm)" }}>{file.name}</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    setFilePreview({
+                      key: `ref-form-${file.name}-${file.size}-${file.lastModified}`,
+                      title: file.name,
+                      filename: file.name,
+                      load: async () => file,
+                    })
+                  }
+                >
+                  View
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {canWrite && !readOnly ? (
           <div>
             <Button type="submit" variant="secondary" disabled={createRef.isPending}>
@@ -961,10 +994,41 @@ export function EmployeeFormPage() {
                           {ref.relation}
                           {ref.phone ? ` · ${ref.phone}` : ""}
                           {ref.cnic ? ` · CNIC ${ref.cnic}` : ""}
-                          {ref.files.length > 0
-                            ? ` · ${ref.files.length} file(s): ${ref.files.map((f) => f.name).join(", ")}`
-                            : ""}
                         </div>
+                        {ref.files.length > 0 ? (
+                          <ul
+                            style={{
+                              margin: "var(--space-2) 0 0",
+                              padding: 0,
+                              listStyle: "none",
+                              display: "grid",
+                              gap: "var(--space-2)",
+                            }}
+                          >
+                            {ref.files.map((file, fileIdx) => (
+                              <li
+                                key={`${file.name}-${fileIdx}`}
+                                style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}
+                              >
+                                <span style={{ fontSize: "var(--text-sm)" }}>{file.name}</span>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    setFilePreview({
+                                      key: `pending-ref-${idx}-${file.name}-${file.size}`,
+                                      title: file.name,
+                                      filename: file.name,
+                                      load: async () => file,
+                                    })
+                                  }
+                                >
+                                  View
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                       </div>
                       <Button
                         type="button"
@@ -1129,11 +1193,9 @@ export function EmployeeFormPage() {
                   </form>
                 ) : null}
 
-                {clientDocs.length === 0 ? (
+                {clientDocs.length === 0 && !clientDocFiles?.length ? (
                   <p style={{ margin: 0, color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                    {isNew && clientDocFiles?.length
-                      ? `${clientDocFiles.length} file(s) selected — saved on create.`
-                      : "No employee documents submitted yet."}
+                    No employee documents submitted yet.
                   </p>
                 ) : (
                   <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
@@ -1151,20 +1213,36 @@ export function EmployeeFormPage() {
                       >
                         <span style={{ flex: 1 }}>{d.title || d.originalFilename}</span>
                         {employeeId != null ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={async () => {
-                              try {
-                                const blob = await downloadEmployeeDocument(employeeId, d.id);
-                                await openBlob(blob, d.originalFilename);
-                              } catch {
-                                setError("Could not download file");
+                          <>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setFilePreview({
+                                  key: `client-${d.id}`,
+                                  title: d.title || d.originalFilename,
+                                  filename: d.originalFilename,
+                                  load: () => downloadEmployeeDocument(employeeId, d.id),
+                                })
                               }
-                            }}
-                          >
-                            Download
-                          </Button>
+                            >
+                              View
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={async () => {
+                                try {
+                                  const blob = await downloadEmployeeDocument(employeeId, d.id);
+                                  await openBlob(blob, d.originalFilename);
+                                } catch {
+                                  setError("Could not download file");
+                                }
+                              }}
+                            >
+                              Download
+                            </Button>
+                          </>
                         ) : null}
                         {canWrite && !readOnly ? (
                           <Button
@@ -1186,6 +1264,40 @@ export function EmployeeFormPage() {
                         ) : null}
                       </li>
                     ))}
+                    {clientDocFiles
+                      ? Array.from(clientDocFiles).map((file, index) => (
+                          <li
+                            key={`pending-${file.name}-${index}`}
+                            style={{
+                              display: "flex",
+                              gap: "var(--space-3)",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              borderBottom: "1px solid var(--color-border)",
+                              paddingBottom: "var(--space-2)",
+                            }}
+                          >
+                            <span style={{ flex: 1 }}>{file.name}</span>
+                            <span style={{ color: "var(--color-status-info)", fontSize: "var(--text-xs)" }}>
+                              Not saved yet
+                            </span>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setFilePreview({
+                                  key: `pending-client-${file.name}-${file.size}-${file.lastModified}`,
+                                  title: file.name,
+                                  filename: file.name,
+                                  load: async () => file,
+                                })
+                              }
+                            >
+                              View
+                            </Button>
+                          </li>
+                        ))
+                      : null}
                   </ul>
                 )}
               </div>
@@ -1348,20 +1460,38 @@ export function EmployeeFormPage() {
                               No CNIC image or PDF attached yet.
                             </p>
                           ) : (
-                            <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "var(--space-2)" }}>
                               {ref.documents.map((d) => (
-                                <li key={d.id} style={{ marginBottom: 4 }}>
-                                  <button
+                                <li
+                                  key={d.id}
+                                  style={{
+                                    display: "flex",
+                                    gap: "var(--space-3)",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    borderBottom: "1px solid var(--color-border)",
+                                    paddingBottom: "var(--space-2)",
+                                  }}
+                                >
+                                  <span style={{ flex: 1 }}>{d.originalFilename}</span>
+                                  <Button
                                     type="button"
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      color: "var(--color-accent)",
-                                      cursor: "pointer",
-                                      padding: 0,
-                                      font: "inherit",
-                                      textDecoration: "underline",
-                                    }}
+                                    variant="secondary"
+                                    onClick={() =>
+                                      setFilePreview({
+                                        key: `ref-${ref.id}-doc-${d.id}`,
+                                        title: d.originalFilename,
+                                        filename: d.originalFilename,
+                                        load: () =>
+                                          downloadReferenceDocument(employeeId, ref.id, d.id),
+                                      })
+                                    }
+                                  >
+                                    View
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
                                     onClick={async () => {
                                       try {
                                         const blob = await downloadReferenceDocument(
@@ -1375,20 +1505,12 @@ export function EmployeeFormPage() {
                                       }
                                     }}
                                   >
-                                    {d.originalFilename}
-                                  </button>
+                                    Download
+                                  </Button>
                                   {canWrite && !readOnly ? (
-                                    <button
+                                    <Button
                                       type="button"
-                                      style={{
-                                        marginLeft: 12,
-                                        background: "none",
-                                        border: "none",
-                                        color: "var(--color-status-critical)",
-                                        cursor: "pointer",
-                                        font: "inherit",
-                                        fontSize: "var(--text-sm)",
-                                      }}
+                                      variant="destructive"
                                       onClick={async () => {
                                         if (!window.confirm(`Remove ${d.originalFilename}?`)) return;
                                         try {
@@ -1406,7 +1528,7 @@ export function EmployeeFormPage() {
                                       }}
                                     >
                                       Remove
-                                    </button>
+                                    </Button>
                                   ) : null}
                                 </li>
                               ))}
@@ -1465,6 +1587,9 @@ export function EmployeeFormPage() {
           </div>
         ) : null}
       </div>
+      {filePreview ? (
+        <FilePreviewModal preview={filePreview} onClose={() => setFilePreview(null)} />
+      ) : null}
     </>
   );
 }
