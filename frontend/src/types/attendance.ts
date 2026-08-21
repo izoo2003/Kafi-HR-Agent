@@ -125,4 +125,13 @@ export interface AttendancePeriodReport {
   nonWorkingDays: DayClassification[];
   employees: PeriodEmployeeReport[];
   unmatchedPeople: UnmatchedAttendancePerson[];
+  saturdayOffMode?: string;
+  saturdayOffDates?: string[];
+}
+
+export type SaturdayOffMode = "second_saturday" | "date" | "auto";
+
+export interface AttendancePeriodReportOptions {
+  saturdayOffMode: SaturdayOffMode;
+  saturdayOffDate?: string | null;
 }

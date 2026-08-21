@@ -11,16 +11,26 @@ import {
 } from "../../hooks/useAttendance";
 import { attendanceImportTemplateCsv } from "../../api/attendance";
 import { ApiError } from "../../api/client";
-import type { AttendancePeriodReport, PeriodEmployeeReport } from "../../types/attendance";
+import type {
+  AttendancePeriodReport,
+  PeriodEmployeeReport,
+  SaturdayOffMode,
+} from "../../types/attendance";
 
 function dayTypeLabel(t: string): string {
   const map: Record<string, string> = {
     sunday_off: "Sunday off",
-    saturday_off: "Saturday off (≥90% absent)",
+    saturday_off: "Saturday off",
     auto_holiday: "Company off (≥90% absent)",
     configured_holiday: "Configured holiday",
   };
   return map[t] ?? t;
+}
+
+function isSaturdayIso(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay() === 6;
 }
 
 function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
@@ -121,7 +131,7 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
 
       {emp.overtimeDates.length > 0 ? (
         <div>
-          <strong>OT days (present on Sunday / ≥90% off day)</strong>
+          <strong>OT days (present on Sunday / Saturday off / company off)</strong>
           <p style={{ margin: "4px 0 0" }} className="num">
             {emp.overtimeDates.join(", ")}
           </p>
@@ -140,6 +150,8 @@ export function AttendancePeriodReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [saturdayOffMode, setSaturdayOffMode] = useState<SaturdayOffMode>("second_saturday");
+  const [saturdayOffDate, setSaturdayOffDate] = useState("");
   const unmatched = report?.unmatchedPeople ?? [];
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
@@ -148,24 +160,48 @@ export function AttendancePeriodReportPage() {
     [unmatched, selected],
   );
 
-  async function onUpload(files: FileList | null) {
-    if (!files?.[0]) return;
-    lastFileRef.current = files[0];
+  async function runAnalyze(file: File) {
+    if (saturdayOffMode === "date") {
+      if (!saturdayOffDate) {
+        setError("Pick the Saturday off date on the calendar, or choose Recommended / Don't know.");
+        return;
+      }
+      if (!isSaturdayIso(saturdayOffDate)) {
+        setError("The calendar date must be a Saturday.");
+        return;
+      }
+    }
     setError(null);
     setInfo(null);
     setReport(null);
     setExpanded(null);
     try {
-      const res = await analyze.mutateAsync(files[0]);
+      const res = await analyze.mutateAsync({
+        file,
+        saturdayOffMode,
+        saturdayOffDate: saturdayOffMode === "date" ? saturdayOffDate : null,
+      });
       setReport(res);
       const next: Record<string, boolean> = {};
       for (const p of res.unmatchedPeople ?? []) {
         next[`${p.fullName}|${p.excelEmployeeId ?? ""}`] = true;
       }
       setSelected(next);
+      const offs = res.saturdayOffDates ?? [];
+      if (offs.length > 0) {
+        setInfo(`Saturday off treated as holiday (not absent): ${offs.join(", ")}.`);
+      } else if (saturdayOffMode === "auto") {
+        setInfo("Don't know: no clear Saturday off was detected from this file.");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed");
     }
+  }
+
+  async function onUpload(files: FileList | null) {
+    if (!files?.[0]) return;
+    lastFileRef.current = files[0];
+    await runAnalyze(files[0]);
   }
 
   async function onAddEmployees() {
@@ -180,18 +216,29 @@ export function AttendancePeriodReportPage() {
       );
       const file = lastFileRef.current;
       if (file && res.created > 0) {
-        const again = await analyze.mutateAsync(file);
-        setReport(again);
-        const next: Record<string, boolean> = {};
-        for (const p of again.unmatchedPeople ?? []) {
-          next[`${p.fullName}|${p.excelEmployeeId ?? ""}`] = true;
-        }
-        setSelected(next);
+        await runAnalyze(file);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add employees");
     }
   }
+
+  const radioStyle = {
+    display: "grid",
+    gap: "var(--space-2)",
+    margin: 0,
+  } as const;
+
+  const optionRow = {
+    display: "flex",
+    gap: "var(--space-3)",
+    alignItems: "center",
+    flexWrap: "wrap" as const,
+    padding: "var(--space-3)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius-md)",
+    background: "var(--color-surface)",
+  };
 
   return (
     <>
@@ -211,11 +258,119 @@ export function AttendancePeriodReportPage() {
             Upload the WebHR attendance export (
             <strong>Employee ID</strong>, <strong>First Name</strong>, <strong>Date</strong>,{" "}
             <strong>First Punch</strong>). Late and half-day count as <strong>present</strong>. Sundays
-            are official off and never count as absent — Sunday punches go to the Sunday / OT
-            columns. If ≥90% of people have no punch on a Mon–Sat, that day is off (covers the
-            unknown Saturday holiday). Anyone present that day gets +1 OT, not present. 3 lates = 1
-            extra absent day.
+            are official off. Tell us which <strong>Saturday is off</strong> below so that day is a
+            holiday, not absent. Anyone who punched that day gets +1 OT. 3 lates = 1 extra absent day.
           </p>
+
+          <fieldset style={{ border: 0, padding: 0, margin: "0 0 var(--space-4)" }}>
+            <legend
+              style={{
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--weight-semibold)",
+                color: "var(--color-text-secondary)",
+                marginBottom: "var(--space-2)",
+              }}
+            >
+              When is the Saturday off?
+            </legend>
+            <div style={radioStyle}>
+              <label
+                style={{
+                  ...optionRow,
+                  borderColor:
+                    saturdayOffMode === "second_saturday"
+                      ? "var(--color-accent)"
+                      : "var(--color-border)",
+                  background:
+                    saturdayOffMode === "second_saturday"
+                      ? "var(--color-accent-subtle)"
+                      : "var(--color-surface)",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="saturday-off"
+                  checked={saturdayOffMode === "second_saturday"}
+                  onChange={() => setSaturdayOffMode("second_saturday")}
+                />
+                <span>
+                  Second Saturday of the month{" "}
+                  <span
+                    style={{
+                      marginLeft: "var(--space-2)",
+                      fontSize: "var(--text-xs)",
+                      fontWeight: "var(--weight-semibold)",
+                      letterSpacing: "0.02em",
+                      textTransform: "uppercase",
+                      color: "var(--color-status-positive)",
+                      background: "var(--color-status-positive-bg)",
+                      padding: "2px 8px",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    Recommended
+                  </span>
+                </span>
+              </label>
+
+              <label
+                style={{
+                  ...optionRow,
+                  borderColor:
+                    saturdayOffMode === "date" ? "var(--color-accent)" : "var(--color-border)",
+                  background:
+                    saturdayOffMode === "date"
+                      ? "var(--color-accent-subtle)"
+                      : "var(--color-surface)",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="saturday-off"
+                  checked={saturdayOffMode === "date"}
+                  onChange={() => setSaturdayOffMode("date")}
+                />
+                <span style={{ minWidth: 120 }}>Pick a Saturday</span>
+                <input
+                  className="form-field__input"
+                  type="date"
+                  value={saturdayOffDate}
+                  onChange={(e) => {
+                    setSaturdayOffDate(e.target.value);
+                    setSaturdayOffMode("date");
+                  }}
+                  onFocus={() => setSaturdayOffMode("date")}
+                  style={{ maxWidth: 200 }}
+                />
+                {saturdayOffDate && !isSaturdayIso(saturdayOffDate) ? (
+                  <span style={{ color: "var(--color-status-critical)", fontSize: "var(--text-sm)" }}>
+                    Must be a Saturday
+                  </span>
+                ) : null}
+              </label>
+
+              <label
+                style={{
+                  ...optionRow,
+                  borderColor:
+                    saturdayOffMode === "auto" ? "var(--color-accent)" : "var(--color-border)",
+                  background:
+                    saturdayOffMode === "auto"
+                      ? "var(--color-accent-subtle)"
+                      : "var(--color-surface)",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="saturday-off"
+                  checked={saturdayOffMode === "auto"}
+                  onChange={() => setSaturdayOffMode("auto")}
+                />
+                <span>Don&apos;t know — detect automatically with AI</span>
+              </label>
+            </div>
+          </fieldset>
+
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             <input
               ref={fileRef}
@@ -317,12 +472,15 @@ export function AttendancePeriodReportPage() {
                 {" · "}half day after <span className="num">{report.halfDayAfter}</span>
                 {" · "}
                 <span className="num">{report.latesPerOff}</span> lates = 1 absent
-                {" · "}off if ≥{" "}
-                <span className="num">{Math.round((report.majorityAbsentThreshold || 0.9) * 100)}</span>%
-                absent
                 {" · "}month days <span className="num">{report.monthDays}</span>
                 {" · "}imported <span className="num">{report.importedRows}</span> rows
               </p>
+              {(report.saturdayOffDates ?? []).length > 0 ? (
+                <p style={{ margin: "var(--space-2) 0 0" }}>
+                  Saturday off (holiday, not absent):{" "}
+                  <span className="num">{(report.saturdayOffDates ?? []).join(", ")}</span>
+                </p>
+              ) : null}
               {report.nonWorkingDays.length > 0 ? (
                 <ul style={{ marginTop: "var(--space-3)", paddingLeft: "1.2rem" }}>
                   {report.nonWorkingDays.map((d) => (
@@ -333,7 +491,7 @@ export function AttendancePeriodReportPage() {
                 </ul>
               ) : (
                 <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-                  No Sunday / Saturday-off / majority-absent days detected in this file.
+                  No Sunday / Saturday-off / company-off days detected in this file.
                 </p>
               )}
             </Card>

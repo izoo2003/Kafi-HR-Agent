@@ -135,7 +135,7 @@
 | POST | `/attendance` | Manually create/correct a record |
 | PATCH | `/attendance/{id}` | Edit a record (requires reason, audit-logged) |
 | POST | `/attendance/import` | Bulk import from biometric device export (Excel/CSV; `name` or `employee_code` + date + check_in) |
-| POST | `/attendance/period-report` | Upload Excel/CSV → apply office policy (9:40 late, 11:30 half-day, Sat/holiday majority, 3 lates=1 off, OT, leave) and return per-employee report |
+| POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. Form fields: `saturday_off_mode` (`second_saturday` Recommended / `date` / `auto` Don't know+AI) and optional `saturday_off_date` (YYYY-MM-DD). Chosen Saturday is holiday, not absent. |
 | POST | `/attendance/sync-biometric` | Pull latest data from biometric device integration (stubbed until device access confirmed) |
 | GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period — feeds payroll |
 | GET | `/leave-requests` | List leave requests (filter by employee, status) |

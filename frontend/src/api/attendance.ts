@@ -60,9 +60,19 @@ export async function importAttendance(file: File): Promise<AttendanceImportResu
   return apiRequest<AttendanceImportResult>("/attendance/import", { method: "POST", formData: form });
 }
 
-export async function uploadAttendancePeriodReport(file: File): Promise<AttendancePeriodReport> {
+export async function uploadAttendancePeriodReport(
+  file: File,
+  options: {
+    saturdayOffMode?: "second_saturday" | "date" | "auto";
+    saturdayOffDate?: string | null;
+  } = {},
+): Promise<AttendancePeriodReport> {
   const form = new FormData();
   form.append("file", file);
+  form.append("saturday_off_mode", options.saturdayOffMode ?? "second_saturday");
+  if (options.saturdayOffDate) {
+    form.append("saturday_off_date", options.saturdayOffDate);
+  }
   return apiRequest<AttendancePeriodReport>("/attendance/period-report", {
     method: "POST",
     formData: form,

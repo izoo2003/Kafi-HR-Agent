@@ -4,11 +4,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
+from app.core.exceptions import ValidationFailed
 from app.schemas.attendance import (
     AttendanceEmployeesFromExcelCreate,
     AttendanceEmployeesFromExcelResult,
@@ -118,15 +119,34 @@ async def attendance_period_report(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
     file: UploadFile = File(...),
+    saturday_off_mode: Annotated[str, Form()] = "second_saturday",
+    saturday_off_date: Annotated[str | None, Form()] = None,
 ) -> AttendancePeriodReport:
-    """Upload biometric Excel/CSV (name + date + time) and return full office policy report.
+    """Upload biometric Excel/CSV and return full office policy report.
 
-    Applies late/half-day/Saturday-off/auto-holiday/3-lates=1-off/OT/leave rules,
-    persists derived attendance rows, and returns per-employee breakdown.
+    saturday_off_mode:
+    - second_saturday (Recommended): 2nd Saturday of each month in the file period
+    - date: use saturday_off_date (YYYY-MM-DD) as the company Saturday off
+    - auto: Don't know — AI/heuristic picks Saturday(s) from punch patterns
     """
     content = await file.read()
     name = file.filename or "attendance.xlsx"
-    return analyze_period_file(db, auth, content, name, persist=True)
+    parsed_date: date | None = None
+    raw = (saturday_off_date or "").strip()
+    if raw:
+        try:
+            parsed_date = date.fromisoformat(raw[:10])
+        except ValueError as exc:
+            raise ValidationFailed("saturday_off_date must be YYYY-MM-DD") from exc
+    return analyze_period_file(
+        db,
+        auth,
+        content,
+        name,
+        persist=True,
+        saturday_off_mode=saturday_off_mode,
+        saturday_off_date=parsed_date,
+    )
 
 
 @router.post(

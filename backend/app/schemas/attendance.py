@@ -197,3 +197,5 @@ class AttendancePeriodReport(BaseModel):
     non_working_days: list[DayClassification] = []
     employees: list[PeriodEmployeeReport] = []
     unmatched_people: list[UnmatchedAttendancePerson] = []
+    saturday_off_mode: str = "second_saturday"
+    saturday_off_dates: list[date] = []

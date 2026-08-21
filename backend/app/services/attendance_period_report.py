@@ -12,7 +12,8 @@ Canonical upload format (WebHR-style export):
 Policy (Kafi office):
 - Working week: Mon–Sat; Sunday always official off (never counts as absent)
 - Late and half-day still count as present (they showed up); tracked separately
-- One Saturday off / company holiday: any Mon–Sat where ≥90% have no punch → off
+- One Saturday off per month: HR selects the date (default Recommended = 2nd Saturday),
+  or "don't know" → AI/heuristic picks from punch patterns
 - Presence on those off days (or Sunday) → +1 OT, not present
 - 3 lates = 1 extra absent day
 - Tenure ≥ 6 months → 1 leave allowance / month (only when name matches an Employee)
@@ -22,6 +23,8 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import logging
 import re
 from calendar import monthrange
 from collections import defaultdict
@@ -31,7 +34,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.exceptions import ValidationFailed
+from app.core.gemini_client import generate_content_with_fallback
 from app.models.attendance import AttendanceRecord
 from app.models.employees import Department, Employee
 from app.models.system import SystemConfig
@@ -54,6 +59,8 @@ from app.services.attendance_service import (
     build_employee_indexes,
     match_employee,
 )
+
+logger = logging.getLogger(__name__)
 
 LATE_AFTER = time(9, 40)
 HALF_DAY_AFTER = time(11, 30)
@@ -305,6 +312,135 @@ def _calendar_period(dates: list[date]) -> tuple[date, date]:
     return start, end
 
 
+def _nth_weekday_of_month(year: int, month: int, weekday: int, n: int) -> date | None:
+    """weekday: Mon=0 … Sun=6. n is 1-based (2 = second occurrence)."""
+    first = date(year, month, 1)
+    # Days until the first desired weekday
+    offset = (weekday - first.weekday()) % 7
+    day = 1 + offset + (n - 1) * 7
+    last_day = monthrange(year, month)[1]
+    if day > last_day:
+        return None
+    return date(year, month, day)
+
+
+def _second_saturdays(period_start: date, period_end: date) -> set[date]:
+    """Second Saturday of each calendar month that overlaps the period."""
+    out: set[date] = set()
+    y, m = period_start.year, period_start.month
+    while True:
+        cursor = date(y, m, 1)
+        if cursor > period_end:
+            break
+        sat = _nth_weekday_of_month(y, m, weekday=5, n=2)
+        if sat is not None and period_start <= sat <= period_end:
+            out.add(sat)
+        if m == 12:
+            y, m = y + 1, 1
+        else:
+            m += 1
+    return out
+
+
+def _saturdays_in_period(period_start: date, period_end: date) -> list[date]:
+    out: list[date] = []
+    d = period_start
+    while d <= period_end:
+        if d.weekday() == 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def _absent_rate_for_day(
+    day: date,
+    roster_keys: list[str],
+    punches: dict[str, dict[date, dict[str, datetime | None]]],
+) -> float:
+    present_n = sum(1 for k in roster_keys if punches.get(k, {}).get(day, {}).get("check_in"))
+    total_n = max(len(roster_keys), 1)
+    return 1.0 - (present_n / total_n)
+
+
+def _detect_saturday_off_with_ai(
+    saturdays: list[date],
+    rates: dict[date, float],
+    majority: float,
+) -> set[date]:
+    """When HR picks Don't know: ask Gemini which Saturday is company off; else heuristic."""
+    if not saturdays:
+        return set()
+
+    # Prefer Saturdays that look empty (≥ majority absent)
+    candidates = [d for d in saturdays if rates.get(d, 0) >= majority]
+    if not candidates:
+        # Still pick the emptiest Saturday so we don't invent absences for a full workday
+        best = max(saturdays, key=lambda d: rates.get(d, 0.0))
+        if rates.get(best, 0.0) >= 0.5:
+            candidates = [best]
+        else:
+            return set()
+
+    settings = get_settings()
+    api_keys = settings.resolved_gemini_api_keys()
+    if not api_keys:
+        # Heuristic: one Saturday per month — the emptiest that meets threshold
+        by_month: dict[tuple[int, int], date] = {}
+        for d in sorted(candidates, key=lambda x: (-rates.get(x, 0), x)):
+            key = (d.year, d.month)
+            if key not in by_month:
+                by_month[key] = d
+        return set(by_month.values())
+
+    payload = [
+        {"date": d.isoformat(), "weekday": d.strftime("%A"), "absent_rate": round(rates[d], 3)}
+        for d in saturdays
+    ]
+    prompt = f"""You are helping HR pick the company's monthly Saturday off from attendance punches.
+
+Policy: usually the second Saturday is off, but HR did not know this month's date.
+Pick at most one Saturday per calendar month that is most likely the company off day
+(high absent_rate means almost nobody punched — strong off-day signal).
+Threshold hint: absent_rate >= {majority} is typical for an off day.
+
+Saturdays in this file (JSON):
+{json.dumps(payload, indent=2)}
+
+Respond with STRICT JSON only, no markdown:
+{{"saturday_off_dates": ["YYYY-MM-DD", ...]}}
+If none look like an off day, return an empty list.
+"""
+    try:
+        response = generate_content_with_fallback(
+            api_keys=api_keys,
+            models=settings.resolved_gemini_models(),
+            prompt=prompt,
+            pool_id="attendance",
+        )
+        text = (getattr(response, "text", "") or "").strip()
+        fence = re.search(r"\{.*\}", text, re.DOTALL)
+        if fence:
+            text = fence.group(0)
+        data = json.loads(text)
+        picked: set[date] = set()
+        valid = {d.isoformat(): d for d in saturdays}
+        for raw in data.get("saturday_off_dates") or []:
+            key = str(raw).strip()[:10]
+            if key in valid:
+                picked.add(valid[key])
+        if picked:
+            return picked
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Saturday-off AI detection failed, using heuristic: %s", exc)
+
+    by_month: dict[tuple[int, int], date] = {}
+    for d in sorted(candidates, key=lambda x: (-rates.get(x, 0), x)):
+        key = (d.year, d.month)
+        if key not in by_month:
+            by_month[key] = d
+    return set(by_month.values())
+
+
 def analyze_period_file(
     db: Session,
     auth: AuthContext,
@@ -312,6 +448,8 @@ def analyze_period_file(
     filename: str,
     *,
     persist: bool = True,
+    saturday_off_mode: str = "second_saturday",
+    saturday_off_date: date | None = None,
 ) -> AttendancePeriodReport:
     policy = _office_policy(db)
     late_after = _time_from_policy(policy["late_after"], LATE_AFTER)
@@ -407,6 +545,36 @@ def analyze_period_file(
     period_start, period_end = _calendar_period(all_dates)
     roster_keys = sorted(punches.keys(), key=lambda k: display_names[k].lower())
 
+    mode = (saturday_off_mode or "second_saturday").strip().lower()
+    if mode not in ("second_saturday", "date", "auto"):
+        raise ValidationFailed(
+            "saturday_off_mode must be second_saturday, date, or auto (don't know)"
+        )
+
+    forced_saturday_offs: set[date] = set()
+    if mode == "date":
+        if saturday_off_date is None:
+            raise ValidationFailed("Pick a Saturday off date, or choose Don't know / Recommended")
+        if saturday_off_date.weekday() != 5:
+            raise ValidationFailed(
+                f"{saturday_off_date.isoformat()} is not a Saturday — pick a Saturday"
+            )
+        if not (period_start <= saturday_off_date <= period_end):
+            raise ValidationFailed(
+                f"Saturday off {saturday_off_date.isoformat()} is outside this file's period "
+                f"({period_start} → {period_end})"
+            )
+        forced_saturday_offs = {saturday_off_date}
+    elif mode == "second_saturday":
+        forced_saturday_offs = _second_saturdays(period_start, period_end)
+    else:
+        # Don't know → AI (with heuristic fallback) picks among Saturdays
+        sat_list = _saturdays_in_period(period_start, period_end)
+        rates = {
+            d: _absent_rate_for_day(d, roster_keys, punches) for d in sat_list
+        }
+        forced_saturday_offs = _detect_saturday_off_with_ai(sat_list, rates, majority)
+
     # Classify each calendar day using Excel roster (not DB headcount)
     day_types: dict[date, str] = {}
     d = period_start
@@ -415,14 +583,17 @@ def analyze_period_file(
             day_types[d] = "sunday_off"
         elif d in configured_holidays:
             day_types[d] = "configured_holiday"
+        elif d in forced_saturday_offs:
+            day_types[d] = "saturday_off"
         else:
             present_n = sum(1 for k in roster_keys if punches.get(k, {}).get(d, {}).get("check_in"))
             total_n = max(len(roster_keys), 1)
             absent_rate = 1.0 - (present_n / total_n)
-            if d.weekday() == 5:
-                day_types[d] = "saturday_off" if absent_rate >= majority else "working"
+            # Other weekdays only: majority empty → company / gazetted-style off
+            if d.weekday() != 5 and absent_rate >= majority:
+                day_types[d] = "auto_holiday"
             else:
-                day_types[d] = "auto_holiday" if absent_rate >= majority else "working"
+                day_types[d] = "working"
         d += timedelta(days=1)
 
     imported = 0
@@ -463,7 +634,7 @@ def analyze_period_file(
             elif dtype in ("saturday_off", "configured_holiday", "auto_holiday"):
                 if cin is not None:
                     status = "holiday"
-                    notes = f"OT — worked on {dtype.replace('_', ' ')} (≥90% absent / off)"
+                    notes = "OT — worked on Saturday off / company holiday"
                     ot_dates.append(d)
                 else:
                     status = "holiday"
@@ -501,11 +672,13 @@ def analyze_period_file(
                     .filter(AttendanceRecord.employee_id == emp.id, AttendanceRecord.date == d)
                     .one_or_none()
                 )
-                if existing is None and cin is None and status == "holiday":
-                    pass
-                elif existing is None and (
-                    cin is not None or status in ("absent", "half_day", "late", "present")
-                ):
+                # Always persist explicit Saturday-off / holiday so the day is never treated as absent later
+                should_write = (
+                    cin is not None
+                    or status in ("absent", "half_day", "late", "present")
+                    or dtype in ("saturday_off", "configured_holiday", "auto_holiday", "sunday_off")
+                )
+                if existing is None and should_write:
                     db.add(
                         AttendanceRecord(
                             employee_id=emp.id,
@@ -619,6 +792,8 @@ def analyze_period_file(
                 "period_start": str(period_start),
                 "period_end": str(period_end),
                 "excel_people": len(roster_keys),
+                "saturday_off_mode": mode,
+                "saturday_off_dates": sorted(d.isoformat() for d in forced_saturday_offs),
             },
         )
 
@@ -645,6 +820,8 @@ def analyze_period_file(
         non_working_days=day_classifications,
         employees=employee_reports,
         unmatched_people=unmatched,
+        saturday_off_mode=mode,
+        saturday_off_dates=sorted(forced_saturday_offs),
     )
 
 

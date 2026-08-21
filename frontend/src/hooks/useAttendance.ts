@@ -40,7 +40,19 @@ export function useImportAttendance() {
 export function useAttendancePeriodReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => api.uploadAttendancePeriodReport(file),
+    mutationFn: ({
+      file,
+      saturdayOffMode,
+      saturdayOffDate,
+    }: {
+      file: File;
+      saturdayOffMode?: "second_saturday" | "date" | "auto";
+      saturdayOffDate?: string | null;
+    }) =>
+      api.uploadAttendancePeriodReport(file, {
+        saturdayOffMode,
+        saturdayOffDate,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["attendance-summary"] });
