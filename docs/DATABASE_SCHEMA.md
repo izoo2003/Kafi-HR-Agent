@@ -307,7 +307,7 @@ One row per employee per payroll run.
 | generated_pdf_path | TEXT NULL | |
 
 ### `payroll_sheet_adjustments`
-Monthly extras on the Kafi salary sheet (allowance, loan, advance, payment mode, remarks). Unique per employee per month.
+Monthly extras on the Kafi salary sheet (allowance, bonus, loan, advance, payment mode, remarks). Unique per employee per month.
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
@@ -315,6 +315,7 @@ Monthly extras on the Kafi salary sheet (allowance, loan, advance, payment mode,
 | period_month | INTEGER | 1–12 |
 | period_year | INTEGER | |
 | allowance_amount | DECIMAL DEFAULT 0 | |
+| bonus_amount | DECIMAL DEFAULT 0 | |
 | loan_deduction_amount | DECIMAL DEFAULT 0 | |
 | advance_amount | DECIMAL DEFAULT 0 | |
 | payment_mode | TEXT NULL | `IBFT`, `Cheque`, or `Cash` (salary sheet dropdown) |
@@ -379,6 +380,43 @@ Actuals recorded per employee per period. Unique on `(kpi_definition_id, employe
 | score | FLOAT | normalized score against target |
 | recorded_by | INTEGER FK → users.id | |
 | notes | TEXT NULL | |
+
+### `employee_monthly_performance`
+Finalized monthly Employee Development score (/10) with optional AI summary. Unique on `(employee_id, period_year, period_month)`.
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| period_year | INTEGER | |
+| period_month | INTEGER | 1–12 |
+| score_out_of_10 | DECIMAL(4,2) | weighted KPI achievement mapped to 0–10 (capped) |
+| overall_pct | FLOAT NULL | weighted average of entry scores (%) |
+| entries_count | INTEGER | KPI entries counted for the month |
+| ai_summary | TEXT NULL | Gemini narrative |
+| finalized_at | DATETIME NULL | set when past month is snapshotted |
+| created_at | DATETIME | |
+| updated_at | DATETIME | |
+
+### `employee_training_assignments`
+Courses recommended by AI and assigned to an employee (Things To Learn).
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| title | TEXT NOT NULL | |
+| level | TEXT | `intermediate` or `advanced` |
+| description | TEXT NOT NULL | |
+| provider | TEXT NULL | e.g. Coursera, Udemy |
+| url_hint | TEXT NULL | search phrase or URL |
+| topic_prompt | TEXT NOT NULL | what HR typed when recommending |
+| department_name | TEXT NULL | snapshot at assign time |
+| role_title | TEXT NULL | snapshot at assign time |
+| status | TEXT | `assigned`, `in_progress`, `completed` |
+| assigned_by | INTEGER FK → users.id | |
+| assigned_at | DATETIME | |
+| completed_at | DATETIME NULL | |
+| created_at | DATETIME | |
+| updated_at | DATETIME | |
 
 ### `app_notifications`
 In-app reminders (KPI incomplete / at-risk and future kinds). Not an email queue.

@@ -72,6 +72,7 @@ export function SalaryComputePage() {
             daysLate: Number(d?.daysLate ?? e.daysLate),
             daysHalfDay: Number(d?.daysHalfDay ?? e.daysHalfDay),
             allowanceAmount: Number(d?.allowanceAmount ?? e.allowanceAmount ?? 0),
+            bonusAmount: Number(d?.bonusAmount ?? e.bonusAmount ?? 0),
             loanDeductionAmount: Number(d?.loanDeductionAmount ?? e.loanDeductionAmount ?? 0),
             advanceAmount: Number(d?.advanceAmount ?? e.advanceAmount ?? 0),
             paymentMode: normalizePaymentMode(d?.paymentMode ?? e.paymentMode),

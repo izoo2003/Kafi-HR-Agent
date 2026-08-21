@@ -15,10 +15,10 @@ Internal HR system for Kafi Commodities: people, hiring, attendance, payroll, KP
 | **Attendance** | Daily records, leave requests, period reports. Feeds payroll. |
 | **Payroll** | Salary sheets, tax slabs, compute, advances, run lifecycle (draft → approved → paid). |
 | **KPI** | Department definitions, actuals, employee/department rollups, personal KPIs for self-service users. |
-| **HR Policies** | KAFI handbook (documents, timings, SOP, leave, confidentiality). **Copy all** puts the full text on the clipboard. Visible to every signed-in user, including employees. |
+| **Onboarding** | KAFI handbook (documents, timings, SOP, leave, confidentiality). **Copy all** puts the full text on the clipboard. Visible to every signed-in user, including employees. |
 | **Admin / Users** | Dashboard, user list, audit log, system config. |
 
-Employee self-service accounts only see Attendance, KPI, and HR Policies for their own records.
+Employee self-service accounts only see Attendance, KPI, and Onboarding for their own records.
 
 ## Structure
 

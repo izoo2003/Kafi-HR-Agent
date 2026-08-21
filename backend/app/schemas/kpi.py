@@ -193,6 +193,10 @@ class KpiAiSuggestResponse(BaseModel):
     actual_value: float | None = None
     formatted_work: str | None = None
     points_to_add: float | None = None
+    effort_level: Literal[
+        "trivial", "light", "moderate", "substantial", "exceptional"
+    ] | None = None
+    effort_score: int | None = Field(default=None, ge=1, le=5)
     reasoning: str
 
 
@@ -203,6 +207,9 @@ class KpiWorkSubmissionCreate(BaseModel):
     work_text: str = Field(min_length=3, max_length=8000)
     formatted_work: str | None = Field(default=None, max_length=8000)
     points_to_add: float | None = Field(default=None, ge=0, le=10)
+    effort_level: Literal[
+        "trivial", "light", "moderate", "substantial", "exceptional"
+    ] | None = None
 
 
 class SeedDefaultsResponse(BaseModel):

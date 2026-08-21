@@ -65,6 +65,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
     (acc, r) => {
       acc.base += r.base;
       acc.allowance += r.allowance;
+      acc.bonus += r.bonus;
       acc.gross += r.gross;
       acc.lateDed += r.lateDed;
       acc.halfDed += r.halfDed;
@@ -74,7 +75,18 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
       acc.net += r.net;
       return acc;
     },
-    { base: 0, allowance: 0, gross: 0, lateDed: 0, halfDed: 0, loan: 0, advance: 0, tax: 0, net: 0 },
+    {
+      base: 0,
+      allowance: 0,
+      bonus: 0,
+      gross: 0,
+      lateDed: 0,
+      halfDed: 0,
+      loan: 0,
+      advance: 0,
+      tax: 0,
+      net: 0,
+    },
   );
 
   function edit(employeeId: number, current: SheetDraft, patch: Partial<SheetDraft>) {
@@ -94,6 +106,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
           <col style={{ width: 56 }} />
           <col style={{ width: 56 }} />
           <col style={{ width: 90 }} />
+          <col style={{ width: 90 }} />
           <col style={{ width: 100 }} />
           <col style={{ width: 70 }} />
           <col style={{ width: 110 }} />
@@ -107,12 +120,12 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
         </colgroup>
         <thead>
           <tr>
-            <th className="salary-sheet__company" colSpan={19}>
+            <th className="salary-sheet__company" colSpan={20}>
               {result.companyName || "KAFI COMMODITIES (PVT) LTD"}
             </th>
           </tr>
           <tr>
-            <th className="salary-sheet__month" colSpan={19}>
+            <th className="salary-sheet__month" colSpan={20}>
               Salary Sheet For The Month Of {monthTitle(result.periodMonth, result.periodYear)}
             </th>
           </tr>
@@ -127,6 +140,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
             </th>
             <th className="salary-sheet__group">Half Day</th>
             <th className="salary-sheet__group">Allowance</th>
+            <th className="salary-sheet__group">Bonus</th>
             <th className="salary-sheet__group">Gross</th>
             <th className="salary-sheet__group">Late Coming</th>
             <th className="salary-sheet__group">Late Deduction</th>
@@ -147,6 +161,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
             <th className="salary-sheet__sub">P</th>
             <th className="salary-sheet__sub">A</th>
             <th className="salary-sheet__sub">Days</th>
+            <th className="salary-sheet__sub">Amount</th>
             <th className="salary-sheet__sub">Amount</th>
             <th className="salary-sheet__sub">Salary</th>
             <th className="salary-sheet__sub">Count</th>
@@ -229,6 +244,18 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
                   />
                 ) : (
                   <span className="num">{money(r.allowance)}</span>
+                )}
+              </td>
+              <td>
+                {canEdit ? (
+                  <NumInput
+                    step="0.01"
+                    value={r.draft.bonusAmount}
+                    label={`Bonus for ${r.fullName}`}
+                    onChange={(v) => edit(r.employeeId, r.draft, { bonusAmount: v })}
+                  />
+                ) : (
+                  <span className="num">{money(r.bonus)}</span>
                 )}
               </td>
               <td className="num salary-sheet__formula">{money(r.gross)}</td>
@@ -330,6 +357,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
             <td />
             <td />
             <td className="num">{money(totals.allowance)}</td>
+            <td className="num">{money(totals.bonus)}</td>
             <td className="num">{money(totals.gross)}</td>
             <td />
             <td className="num">{money(totals.lateDed)}</td>
@@ -344,7 +372,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
             <td colSpan={6}>
               <div className="salary-sheet__signoff-line">Prepared By</div>
             </td>
-            <td colSpan={7}>
+            <td colSpan={8}>
               <div className="salary-sheet__signoff-line">Checked By</div>
             </td>
             <td colSpan={6}>

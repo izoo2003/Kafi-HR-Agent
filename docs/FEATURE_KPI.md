@@ -70,7 +70,19 @@ On Record actual, HR can describe work in a **Work done** textarea (especially w
 
 ### Work submissions (`POST /kpi/work-submissions`)
 
-Employees log work for **today only** (company timezone Asia/Karachi). Past and future dates are rejected. Sunday is not a workday (no logging; Sundays are omitted from daily score tables). Each workday is capped at 10 points. Multiple entries the same day append and add points until the cap. Employees who do not log on a workday count as **0**. Department score for a day is the average of all eligible employees (including zeros). Company score for a day is the average of departments that have eligible employees (including zeros). A month score averages workdays through today only — future days are not counted as 0 yet.
+Employees log work for **today only** (company timezone Asia/Karachi). Past and future dates are rejected. Sunday is not a workday (no logging; Sundays are omitted from daily score tables). Each workday is capped at 10 points. Multiple entries the same day append and add points until the cap.
+
+**Effort-based points:** before Save, employees must **Analyze with AI**. Gemini rates workload effort from the notes and suggests points by tier so trivial tasks do not score like heavy deliverables:
+
+| Effort level | Typical meaning | Points per submission |
+|---|---|---|
+| `trivial` | Tiny/admin (reply, status ping) | 0.5 |
+| `light` | Small low-complexity task | 1.0 |
+| `moderate` | Solid half-day meaningful work | 2.0 |
+| `substantial` | Hard multi-hour deliverable | 3.0–3.5 |
+| `exceptional` | Major project push / crisis load | 4.0–5.0 |
+
+Points are clamped to the tier band and remaining day headroom. Save without a valid `effort_level` defaults to `light` (max 1.0) to prevent gaming. Each chunk is stored with a prefix like `[effort:substantial|3.5]` in notes. Employees who do not log on a workday count as **0**. Department score for a day is the average of all eligible employees (including zeros). Company score for a day is the average of departments that have eligible employees (including zeros). A month score averages workdays through today only — future days are not counted as 0 yet.
 
 ### Admin dashboard filters
 

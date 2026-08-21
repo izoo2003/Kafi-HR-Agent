@@ -27,6 +27,9 @@ import { TaxSlabsPage } from "./pages/Payroll/TaxSlabsPage";
 import { SalaryComputePage } from "./pages/Payroll/SalaryComputePage";
 import { KpiDefinitionsPage } from "./pages/Kpi/KpiDefinitionsPage";
 import { KpiDashboardPage } from "./pages/Kpi/KpiDashboardPage";
+import { EmployeePerformancePage } from "./pages/EmployeeDevelopment/EmployeePerformancePage";
+import { EmployeeTrainingPage } from "./pages/EmployeeDevelopment/EmployeeTrainingPage";
+import { ThingsToLearnPage } from "./pages/EmployeeDevelopment/ThingsToLearnPage";
 import {
   AuditLogPage,
   DashboardPage,
@@ -52,7 +55,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect />} />
-          <Route path="/hr-policies" element={<HrPoliciesPage />} />
+          <Route path="/onboarding" element={<HrPoliciesPage />} />
+          <Route path="/hr-policies" element={<Navigate to="/onboarding" replace />} />
 
           <Route element={<RequirePermission module="employees" />}>
             <Route path="/employees" element={<EmployeeListPage />} />
@@ -108,6 +112,22 @@ export default function App() {
           <Route element={<RequirePermission module="kpi" />}>
             <Route path="/kpi/definitions" element={<KpiDefinitionsPage />} />
             <Route path="/kpi/dashboard" element={<KpiDashboardPage />} />
+            <Route
+              path="/employee-development/performance"
+              element={<EmployeePerformancePage />}
+            />
+            <Route
+              path="/employee-development/training"
+              element={<EmployeeTrainingPage />}
+            />
+            <Route
+              path="/employee-development/things-to-learn"
+              element={<ThingsToLearnPage />}
+            />
+            <Route
+              path="/employee-development"
+              element={<Navigate to="/employee-development/performance" replace />}
+            />
           </Route>
 
           <Route element={<RequirePermission module="admin_panel" />}>

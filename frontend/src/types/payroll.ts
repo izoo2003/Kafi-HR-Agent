@@ -79,6 +79,7 @@ export interface PayrollComputeRow {
   lateDeductionAmount: string | number;
   halfDayDeduction: string | number;
   allowanceAmount: string | number;
+  bonusAmount: string | number;
   loanDeductionAmount: string | number;
   advanceAmount: string | number;
   paymentMode: string | null;
@@ -130,6 +131,7 @@ export interface PayrollAiSummary {
 export interface PayrollSheetAdjustmentInput {
   employeeId: number;
   allowanceAmount: number;
+  bonusAmount: number;
   loanDeductionAmount: number;
   advanceAmount: number;
   paymentMode: string | null;

@@ -165,6 +165,10 @@ export function KpiDashboardPage() {
   const [workDone, setWorkDone] = useState("");
   const [formattedWork, setFormattedWork] = useState<string | null>(null);
   const [pointsToAdd, setPointsToAdd] = useState<number | null>(null);
+  const [effortLevel, setEffortLevel] = useState<
+    "trivial" | "light" | "moderate" | "substantial" | "exceptional" | null
+  >(null);
+  const [effortScore, setEffortScore] = useState<number | null>(null);
   const [aiReasoning, setAiReasoning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -198,6 +202,10 @@ export function KpiDashboardPage() {
       setError("Describe the work done before saving.");
       return;
     }
+    if (!formattedWork || pointsToAdd == null || !effortLevel) {
+      setError("Analyze with AI first so effort and points are scored from your work notes.");
+      return;
+    }
     if (sundayToday) {
       setError("Sunday is not a workday — you can log again on Monday.");
       return;
@@ -208,10 +216,13 @@ export function KpiDashboardPage() {
         workText: workDone.trim(),
         formattedWork: formattedWork ?? undefined,
         pointsToAdd: pointsToAdd ?? undefined,
+        effortLevel,
       });
       setWorkDone("");
       setFormattedWork(null);
       setPointsToAdd(null);
+      setEffortLevel(null);
+      setEffortScore(null);
       setAiReasoning(null);
       setMessage(`Work saved for ${formatDay(today)}.`);
     } catch (err) {
@@ -236,7 +247,9 @@ export function KpiDashboardPage() {
       });
       setFormattedWork(res.formattedWork ?? workDone.trim());
       setPointsToAdd(res.pointsToAdd ?? 1);
-      setMessage("AI formatted your work — review below, then save.");
+      setEffortLevel(res.effortLevel ?? "light");
+      setEffortScore(res.effortScore ?? null);
+      setMessage("AI scored effort for this work — review below, then save.");
       setAiReasoning(res.reasoning);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI suggest failed");
@@ -610,6 +623,9 @@ export function KpiDashboardPage() {
                     setWorkDone(e.target.value);
                     setFormattedWork(null);
                     setPointsToAdd(null);
+                    setEffortLevel(null);
+                    setEffortScore(null);
+                    setAiReasoning(null);
                   }}
                   placeholder="Describe what you accomplished this day…"
                   required
@@ -622,18 +638,44 @@ export function KpiDashboardPage() {
                 >
                   <strong>AI preview</strong>
                   <p style={{ margin: "var(--space-2) 0" }}>{formattedWork}</p>
-                  {pointsToAdd != null ? (
-                    <p
-                      style={{
-                        margin: 0,
-                        color: "var(--color-text-secondary)",
-                        fontSize: "var(--text-sm)",
-                      }}
-                    >
-                      Adds <span className="font-data">{pointsToAdd.toFixed(1)}</span> to this day’s
-                      score (max 10)
-                    </p>
-                  ) : null}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "var(--space-2)",
+                      alignItems: "center",
+                      marginBottom: "var(--space-2)",
+                    }}
+                  >
+                    {effortLevel ? (
+                      <StatusBadge
+                        status={
+                          effortLevel === "exceptional" || effortLevel === "substantial"
+                            ? "approved"
+                            : effortLevel === "moderate"
+                              ? "pending"
+                              : "draft"
+                        }
+                      >
+                        Effort: {effortLevel}
+                        {effortScore != null ? ` (${effortScore}/5)` : ""}
+                      </StatusBadge>
+                    ) : null}
+                    {pointsToAdd != null ? (
+                      <span className="font-data" style={{ fontSize: "var(--text-sm)" }}>
+                        +{pointsToAdd.toFixed(1)} pts today (max 10)
+                      </span>
+                    ) : null}
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "var(--color-text-secondary)",
+                      fontSize: "var(--text-sm)",
+                    }}
+                  >
+                    Heavier workloads score more points than basic tasks. Day total still caps at 10.
+                  </p>
                 </div>
               ) : null}
               {aiReasoning ? (
@@ -651,11 +693,23 @@ export function KpiDashboardPage() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={createWorkSubmission.isPending || !workDone.trim()}
+                  disabled={
+                    createWorkSubmission.isPending ||
+                    !workDone.trim() ||
+                    !formattedWork ||
+                    pointsToAdd == null ||
+                    !effortLevel
+                  }
                 >
                   Save entry
                 </Button>
               </div>
+              {!formattedWork && workDone.trim() ? (
+                <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
+                  Analyze with AI first — points depend on how hard the work was, not just that you
+                  logged something.
+                </p>
+              ) : null}
             </form>
           </section>
           )

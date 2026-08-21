@@ -10,6 +10,8 @@ from app.api.routes import (
     cnic,
     cv_screening,
     employee_letters,
+    employee_performance,
+    employee_training,
     employees,
     integration,
     job_descriptions,
@@ -32,6 +34,8 @@ api_router.include_router(cv_screening.router)
 api_router.include_router(attendance.router)
 api_router.include_router(payroll.router)
 api_router.include_router(kpi.router)
+api_router.include_router(employee_performance.router)
+api_router.include_router(employee_training.router)
 api_router.include_router(notifications.router)
 api_router.include_router(audit_log.router)
 api_router.include_router(integration.router)

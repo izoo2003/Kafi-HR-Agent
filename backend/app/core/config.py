@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     gemini_payroll_api_key_2: str = ""
     gemini_payroll_model: str = "gemini-flash-latest"
     gemini_payroll_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    # Employee performance monthly AI summary — separate key
+    gemini_performance_api_key: str = ""
+    gemini_performance_api_key_2: str = ""
+    gemini_performance_model: str = "gemini-flash-latest"
+    gemini_performance_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    # Employee training course recommendations — separate key
+    gemini_training_api_key: str = ""
+    gemini_training_api_key_2: str = ""
+    gemini_training_model: str = "gemini-flash-latest"
+    gemini_training_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
 
     # Cloudflare Workers AI — job posting recruitment image generation
     cloudflare_account_id: str = Field(
@@ -342,6 +352,38 @@ class Settings(BaseSettings):
             self.gemini_payroll_model or self.gemini_model or "gemini-flash-latest"
         ).strip()
         fallbacks = self.gemini_payroll_model_fallbacks or self.gemini_model_fallbacks
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_performance_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_performance_api_key, self.gemini_performance_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_performance_models(self) -> list[str]:
+        primary = (
+            self.gemini_performance_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = (
+            self.gemini_performance_model_fallbacks or self.gemini_model_fallbacks
+        )
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_training_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_training_api_key, self.gemini_training_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_training_models(self) -> list[str]:
+        primary = (
+            self.gemini_training_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = self.gemini_training_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)
 
     def sqlite_path(self) -> Path | None:

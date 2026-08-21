@@ -93,7 +93,7 @@ ROLE_DESCRIPTIONS = {
     "payroll_officer": "Full access to payroll, read-only elsewhere",
     "department_head": "Department employees/KPI/attendance; approve leave for team",
     "recruiter": "Job descriptions & CV screening only",
-    "employee": "Self-service: create account with username + PIN; own attendance and KPIs",
+    "employee": "Self-service: own attendance, leave requests, KPIs, and Things To Learn",
     "readonly_auditor": "Read-only across modules except attendance (can mark/import); includes audit logs",
 }
 

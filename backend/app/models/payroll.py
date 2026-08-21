@@ -67,7 +67,7 @@ class SalaryAdvance(Base, TimestampMixin):
 
 
 class PayrollSheetAdjustment(Base, TimestampMixin):
-    """Per-employee monthly extras on the salary sheet (allowance, loan, advance, mode, remarks)."""
+    """Per-employee monthly extras on the salary sheet (allowance, bonus, loan, advance, mode, remarks)."""
 
     __tablename__ = "payroll_sheet_adjustments"
     __table_args__ = (
@@ -83,6 +83,7 @@ class PayrollSheetAdjustment(Base, TimestampMixin):
     period_month: Mapped[int] = mapped_column(Integer, nullable=False)
     period_year: Mapped[int] = mapped_column(Integer, nullable=False)
     allowance_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    bonus_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     loan_deduction_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     advance_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0, nullable=False)
     payment_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -106,6 +106,7 @@ class TaxSlabsReplace(BaseModel):
 class PayrollSheetAdjustmentInput(BaseModel):
     employee_id: int
     allowance_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    bonus_amount: Decimal = Field(default=Decimal("0"), ge=0)
     loan_deduction_amount: Decimal = Field(default=Decimal("0"), ge=0)
     advance_amount: Decimal = Field(default=Decimal("0"), ge=0)
     payment_mode: str | None = Field(default=None, max_length=32)
@@ -158,6 +159,7 @@ class PayrollComputeRow(BaseModel):
     late_deduction_amount: Decimal = Decimal("0")
     half_day_deduction: Decimal = Decimal("0")
     allowance_amount: Decimal = Decimal("0")
+    bonus_amount: Decimal = Decimal("0")
     loan_deduction_amount: Decimal = Decimal("0")
     advance_amount: Decimal = Decimal("0")
     payment_mode: str | None = "IBFT"

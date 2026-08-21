@@ -24,6 +24,7 @@ _HEADERS = [
     ("OT", "Attendance"),
     ("Half Day", "Half Day"),
     ("Amount", "Allowance"),
+    ("Amount", "Bonus"),
     ("Gross Salary", "Gross"),
     ("Late Coming", "Late Coming"),
     ("Late Deduction Amount", "Late Deduction Amount"),
@@ -36,7 +37,7 @@ _HEADERS = [
     ("Remarks", "Remarks"),
 ]
 
-_COL_WIDTHS = [8, 22, 22, 12, 12, 8, 8, 8, 10, 12, 14, 12, 16, 14, 16, 12, 16, 14, 14, 28]
+_COL_WIDTHS = [8, 22, 22, 12, 12, 8, 8, 8, 10, 12, 12, 14, 12, 16, 14, 16, 12, 16, 14, 14, 28]
 
 
 def _money(n) -> float:
@@ -113,7 +114,7 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
     ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].height = 22
 
-    money_cols = {4, 5, 10, 11, 13, 14, 15, 16, 17, 18}
+    money_cols = {4, 5, 10, 11, 12, 14, 15, 16, 17, 18, 19}
 
     for idx, emp in enumerate(result.employees, start=1):
         r = idx + 4
@@ -128,6 +129,7 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
             emp.overtime_bonus_days,
             emp.days_half_day,
             _money(emp.allowance_amount),
+            _money(emp.bonus_amount),
             _money(emp.gross_salary),
             emp.days_late,
             _money(emp.late_deduction_amount),
@@ -142,12 +144,12 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
         for col, val in enumerate(values, start=1):
             cell = ws.cell(r, col, val)
             cell.border = thin
-            cell.alignment = Alignment(vertical="center", wrap_text=col in (2, 3, 20))
+            cell.alignment = Alignment(vertical="center", wrap_text=col in (2, 3, 21))
             if col in money_cols:
                 cell.number_format = "#,##0.00"
                 cell.font = money_font
                 cell.alignment = Alignment(horizontal="right", vertical="center")
-            elif col in (1, 6, 7, 8, 9, 12):
+            elif col in (1, 6, 7, 8, 9, 13):
                 cell.font = money_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
@@ -161,7 +163,7 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
     for col in range(2, last_col + 1):
         ws.cell(total_row, col).fill = total_fill
         ws.cell(total_row, col).border = thin
-    for col in (4, 5, 10, 11, 13, 14, 15, 16, 17, 18):
+    for col in (4, 5, 10, 11, 12, 14, 15, 16, 17, 18, 19):
         letter = get_column_letter(col)
         cell = ws.cell(total_row, col, f"=SUM({letter}5:{letter}{total_row - 1})" if result.employees else 0)
         cell.number_format = "#,##0.00"

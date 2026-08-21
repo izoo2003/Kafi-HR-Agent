@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ScrollText,
+  TrendingUp,
   UserRound,
   Users,
   Wallet,
@@ -23,6 +24,7 @@ import { isSelfService } from "../../lib/selfService";
 import { Button } from "../ui/Button";
 import { NotificationBell } from "./NotificationBell";
 import { EmployeeSectionMenus } from "../../pages/Employees/EmployeeSectionMenus";
+import { EmployeeDevelopmentSectionMenus } from "../../pages/EmployeeDevelopment/EmployeeDevelopmentSectionMenus";
 import "./AppShell.css";
 
 const NAV = [
@@ -33,7 +35,13 @@ const NAV = [
   { to: "/attendance", label: "Attendance", module: "attendance", icon: FileSpreadsheet },
   { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: Wallet },
   { to: "/kpi/dashboard", label: "KPI", module: "kpi", icon: Gauge },
-  { to: "/hr-policies", label: "HR Policies", module: null, icon: ScrollText },
+  {
+    to: "/employee-development/performance",
+    label: "Employee Development",
+    module: "kpi",
+    icon: TrendingUp,
+  },
+  { to: "/onboarding", label: "Onboarding", module: null, icon: ScrollText },
   { to: "/admin/users", label: "User Management", module: "users", icon: Users },
 ] as const;
 
@@ -173,7 +181,10 @@ export function AppShell() {
                   const active =
                     item.to === "/employees"
                       ? location.pathname.startsWith("/employees")
-                      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                      : item.to.startsWith("/employee-development")
+                        ? location.pathname.startsWith("/employee-development")
+                        : location.pathname === item.to ||
+                          location.pathname.startsWith(`${item.to}/`);
                   return `sidebar__link${active ? " sidebar__link--active" : ""}`;
                 }}
               >
@@ -184,6 +195,15 @@ export function AppShell() {
             if (item.to === "/employees") {
               return (
                 <EmployeeNavGroup
+                  key={`${item.to}-${item.label}`}
+                  link={link}
+                  allowSubnav={!railCollapsed}
+                />
+              );
+            }
+            if (item.to === "/employee-development/performance") {
+              return (
+                <EmployeeDevelopmentNavGroup
                   key={`${item.to}-${item.label}`}
                   link={link}
                   allowSubnav={!railCollapsed}
@@ -277,6 +297,48 @@ function EmployeeNavGroup({
         ) : null}
       </div>
       <EmployeeSectionMenus open={allowSubnav && open} />
+    </div>
+  );
+}
+
+function EmployeeDevelopmentNavGroup({
+  link,
+  allowSubnav,
+}: {
+  link: ReactNode;
+  allowSubnav: boolean;
+}) {
+  const location = useLocation();
+  const onSection = location.pathname.startsWith("/employee-development");
+  const [open, setOpen] = useState(onSection);
+
+  useEffect(() => {
+    if (onSection) setOpen(true);
+  }, [onSection]);
+
+  useEffect(() => {
+    if (!allowSubnav) setOpen(false);
+  }, [allowSubnav]);
+
+  return (
+    <div className="sidebar__group">
+      <div className="sidebar__link-row">
+        {link}
+        {allowSubnav ? (
+          <button
+            type="button"
+            className={`sidebar__group-toggle${open ? " is-open" : ""}`}
+            aria-expanded={open}
+            aria-label={
+              open ? "Collapse Employee Development menu" : "Expand Employee Development menu"
+            }
+            onClick={() => setOpen((value) => !value)}
+          >
+            <ChevronDown size={16} aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      <EmployeeDevelopmentSectionMenus open={allowSubnav && open} />
     </div>
   );
 }

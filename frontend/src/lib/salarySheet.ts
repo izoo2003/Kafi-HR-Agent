@@ -20,6 +20,7 @@ export type SheetDraft = {
   daysLate: string;
   daysHalfDay: string;
   allowanceAmount: string;
+  bonusAmount: string;
   loanDeductionAmount: string;
   advanceAmount: string;
   monthlyTax: string;
@@ -42,6 +43,7 @@ export type LiveRow = {
   daysHalfDay: number;
   lateOffDays: number;
   allowance: number;
+  bonus: number;
   gross: number;
   lateDed: number;
   halfDed: number;
@@ -91,13 +93,14 @@ export function computeLiveRow(
   const daysLate = d ? n(d.daysLate) : n(emp.daysLate);
   const daysHalfDay = d ? n(d.daysHalfDay) : n(emp.daysHalfDay);
   const allowance = d ? n(d.allowanceAmount) : n(emp.allowanceAmount);
+  const bonus = d ? n(d.bonusAmount) : n(emp.bonusAmount);
   const loan = d ? n(d.loanDeductionAmount) : n(emp.loanDeductionAmount);
   const advance = d ? n(d.advanceAmount) : n(emp.advanceAmount);
   const perDay = monthDays ? base / monthDays : 0;
   const lateOffDays = Math.floor(daysLate / latesPerOff);
   const lateDed = round2(lateOffDays * perDay);
   const halfDed = round2(daysHalfDay * perDay * 0.5);
-  const gross = round2(perDay * daysPresent + allowance);
+  const gross = round2(perDay * daysPresent + allowance + bonus);
   const taxComputed = monthlyTaxFromGross(gross, opts.slabs);
   const tax = d?.taxManual ? n(d.monthlyTax) : taxComputed;
   const net = Math.max(0, round2(gross - lateDed - loan - halfDed - advance - tax));
@@ -115,6 +118,7 @@ export function computeLiveRow(
     daysHalfDay,
     lateOffDays,
     allowance,
+    bonus,
     gross,
     lateDed,
     halfDed,
@@ -137,6 +141,7 @@ export function draftFromEmployee(e: PayrollComputeRow): SheetDraft {
     daysLate: String(e.daysLate ?? 0),
     daysHalfDay: String(e.daysHalfDay ?? 0),
     allowanceAmount: String(e.allowanceAmount ?? 0),
+    bonusAmount: String(e.bonusAmount ?? 0),
     loanDeductionAmount: String(e.loanDeductionAmount ?? 0),
     advanceAmount: String(e.advanceAmount ?? 0),
     monthlyTax: String(e.monthlyTax ?? 0),
@@ -176,7 +181,15 @@ export function applyAttendancePatch(
   if (patch.daysPresent != null && patch.daysAbsent == null) {
     next.daysAbsent = String(Math.max(0, days - n(patch.daysPresent)));
   }
-  const calcInputs = ["baseSalary", "daysPresent", "daysAbsent", "daysLate", "daysHalfDay", "allowanceAmount"];
+  const calcInputs = [
+    "baseSalary",
+    "daysPresent",
+    "daysAbsent",
+    "daysLate",
+    "daysHalfDay",
+    "allowanceAmount",
+    "bonusAmount",
+  ];
   if (calcInputs.some((k) => k in patch)) {
     next.taxManual = false;
   }

@@ -52,6 +52,71 @@ SELF_SERVICE_POINTS_PER_ENTRY = 1.0
 COMPANY_TZ = ZoneInfo("Asia/Karachi")
 SUNDAY = 6  # date.weekday(): Monday=0 … Sunday=6
 
+EffortLevel = Literal["trivial", "light", "moderate", "substantial", "exceptional"]
+
+# Per-submission point bands by workload effort (day still caps at 10).
+EFFORT_POINT_RANGES: dict[EffortLevel, tuple[float, float]] = {
+    "trivial": (0.5, 0.5),
+    "light": (1.0, 1.0),
+    "moderate": (2.0, 2.0),
+    "substantial": (3.0, 3.5),
+    "exceptional": (4.0, 5.0),
+}
+EFFORT_SCORE_MAP: dict[EffortLevel, int] = {
+    "trivial": 1,
+    "light": 2,
+    "moderate": 3,
+    "substantial": 4,
+    "exceptional": 5,
+}
+VALID_EFFORT_LEVELS = frozenset(EFFORT_POINT_RANGES.keys())
+
+
+def _normalize_effort_level(raw: str | None) -> EffortLevel:
+    level = (raw or "").strip().lower()
+    if level in VALID_EFFORT_LEVELS:
+        return level  # type: ignore[return-value]
+    return "light"
+
+
+def clamp_points_for_effort(
+    level: EffortLevel | str | None,
+    points: float,
+    headroom: float,
+) -> tuple[EffortLevel, float]:
+    """Clamp points into the tier band and remaining day headroom."""
+    normalized = _normalize_effort_level(level if isinstance(level, str) else None)
+    lo, hi = EFFORT_POINT_RANGES[normalized]
+    capped_headroom = max(0.0, float(headroom))
+    if capped_headroom <= 0:
+        return normalized, 0.0
+    mid = round((lo + hi) / 2.0, 2)
+    if points <= 0:
+        value = mid
+    else:
+        value = min(max(float(points), lo), hi)
+    value = min(value, capped_headroom, hi)
+    if value < lo and capped_headroom < lo:
+        value = capped_headroom
+    return normalized, round(max(0.0, value), 2)
+
+
+def _heuristic_effort(text: str) -> EffortLevel:
+    """No-Gemini fallback: never exceptional; length/structure only up to moderate."""
+    cleaned = (text or "").strip()
+    lines = [ln for ln in cleaned.splitlines() if ln.strip()]
+    words = len(cleaned.split())
+    if words < 12 and len(lines) <= 1:
+        return "trivial"
+    if words < 40 and len(lines) <= 2:
+        return "light"
+    return "moderate"
+
+
+def _format_effort_note_prefix(level: EffortLevel, points: float) -> str:
+    return f"[effort:{level}|{points:.1f}] "
+
+
 # (name, description, measurement_unit, target_value, weight) — each pack sums to 1.0
 KpiPackItem = tuple[str, str, str, Decimal, float]
 
@@ -665,7 +730,7 @@ Rules:
 def _ai_format_work_submission(
     db: Session, auth: AuthContext, payload: KpiAiSuggestRequest
 ) -> KpiAiSuggestResponse:
-    """Self-service: rewrite work text professionally; suggest points to add (0–10 scale)."""
+    """Self-service: rewrite work text professionally; suggest points by effort tier."""
     emp_id = auth.linked_employee_id
     if emp_id is None:
         raise ValidationFailed("Your account is not linked to an employee record")
@@ -694,17 +759,25 @@ def _ai_format_work_submission(
         formatted = raw_text.strip()
         if not formatted.endswith("."):
             formatted += "."
-        points = min(SELF_SERVICE_POINTS_PER_ENTRY, headroom) if headroom else 0.0
+        effort = _heuristic_effort(formatted)
+        _, points = clamp_points_for_effort(effort, 0.0, headroom)
         return KpiAiSuggestResponse(
+            kpi_definition_id=definition.id,
             formatted_work=formatted,
             points_to_add=points,
-            reasoning="Gemini not configured — kept your text with light cleanup.",
+            effort_level=effort,
+            effort_score=EFFORT_SCORE_MAP[effort],
+            reasoning=(
+                "Gemini not configured — estimated effort from note length/structure "
+                f"as '{effort}' (capped at moderate without AI)."
+            ),
         )
 
     import json
     import re
 
     prompt = f"""You help employees log work for a daily KPI journal (0–10 rating scale, max 10 per day).
+You MUST distinguish trivial admin work from heavy real workloads — they must NOT get similar points.
 
 Employee's raw notes:
 ---
@@ -714,12 +787,21 @@ Employee's raw notes:
 Period: {work_day}
 Current score for this day: {current:.1f} / 10 (room to add up to {headroom:.1f} more points)
 
+Effort tiers and allowed points_to_add (pick ONE tier from the text itself):
+- trivial (effort_score 1): tiny/admin (reply, status ping, quick check) → 0.5
+- light (effort_score 2): small low-complexity task → 1.0
+- moderate (effort_score 3): solid meaningful half-day work → 2.0
+- substantial (effort_score 4): hard multi-hour deliverable → 3.0 to 3.5
+- exceptional (effort_score 5): major project push / crisis load → 4.0 to 5.0
+
 Respond with STRICT JSON only:
-{{"formatted_work": "<clear professional bullet or paragraph summarizing accomplishments>", "points_to_add": <number 0.5–2.0>, "reasoning": "<short>"}}
+{{"formatted_work": "<clear professional summary>", "effort_level": "<tier>", "effort_score": <1-5>, "points_to_add": <number>, "reasoning": "<short; justify why not a higher tier>"}}
 
 Rules:
 - formatted_work: concise, professional, past tense, suitable for HR review. No markdown.
-- points_to_add: default 1.0 for typical work; use 0.5 for minor tasks, up to 2.0 for major deliverables. Must not exceed {headroom:.1f}.
+- points_to_add MUST fall inside the chosen tier's band above and must not exceed {headroom:.1f}.
+- Do NOT award moderate+ for vague, checklist-only, or one-line notes without real scope.
+- Prefer the lower tier when uncertain.
 - If headroom is 0, set points_to_add to 0 and explain in reasoning.
 """
     try:
@@ -738,12 +820,20 @@ Rules:
         raise ValidationFailed(f"AI format failed: {exc}") from exc
 
     formatted = str(data.get("formatted_work") or raw_text).strip()
-    points = float(data.get("points_to_add") or SELF_SERVICE_POINTS_PER_ENTRY)
-    points = max(0.0, min(points, headroom))
+    effort = _normalize_effort_level(str(data.get("effort_level") or ""))
+    raw_points = float(data.get("points_to_add") or SELF_SERVICE_POINTS_PER_ENTRY)
+    effort, points = clamp_points_for_effort(effort, raw_points, headroom)
+    effort_score = int(data.get("effort_score") or EFFORT_SCORE_MAP[effort])
+    effort_score = max(1, min(5, effort_score))
+    # Keep score aligned with chosen tier when model drifts
+    if effort_score != EFFORT_SCORE_MAP[effort]:
+        effort_score = EFFORT_SCORE_MAP[effort]
     return KpiAiSuggestResponse(
         kpi_definition_id=definition.id,
         formatted_work=formatted,
         points_to_add=points,
+        effort_level=effort,
+        effort_score=effort_score,
         reasoning=str(data.get("reasoning") or "Work formatted for HR review"),
     )
 
@@ -880,20 +970,35 @@ def create_work_submission(
 
     definition = _ensure_work_log_definition(db, emp.department_id)
     existing = _work_log_entry(db, emp_id, definition.id, work_date, work_date)
-    points = (
-        float(payload.points_to_add)
-        if payload.points_to_add is not None
-        else SELF_SERVICE_POINTS_PER_ENTRY
-    )
-    points = max(0.0, min(points, float(WORK_LOG_TARGET)))
+    current = float(existing.actual_value) if existing else 0.0
+    headroom = max(0.0, float(WORK_LOG_TARGET) - current)
+
+    # Missing effort_level defaults to light so clients cannot self-award high points.
+    effort_raw = payload.effort_level
+    if effort_raw is None:
+        effort_level: EffortLevel = "light"
+        requested = (
+            float(payload.points_to_add)
+            if payload.points_to_add is not None
+            else SELF_SERVICE_POINTS_PER_ENTRY
+        )
+    else:
+        effort_level = _normalize_effort_level(effort_raw)
+        requested = (
+            float(payload.points_to_add)
+            if payload.points_to_add is not None
+            else 0.0
+        )
+    effort_level, points = clamp_points_for_effort(effort_level, requested, headroom)
+    annotated = f"{_format_effort_note_prefix(effort_level, points)}{work_text}"
 
     if existing is not None:
         before = {"actual_value": str(existing.actual_value), "notes": existing.notes}
         new_actual = min(float(existing.actual_value) + points, float(WORK_LOG_TARGET))
         notes = (
-            f"{existing.notes}{WORK_ENTRY_SEPARATOR}{work_text}"
+            f"{existing.notes}{WORK_ENTRY_SEPARATOR}{annotated}"
             if existing.notes
-            else work_text
+            else annotated
         )
         existing.actual_value = Decimal(str(round(new_actual, 2)))
         existing.score = round(new_actual, 2)
@@ -909,6 +1014,8 @@ def create_work_submission(
             after_state={
                 "actual_value": str(existing.actual_value),
                 "score": existing.score,
+                "effort_level": effort_level,
+                "points_added": points,
             },
         )
         return existing
@@ -922,7 +1029,7 @@ def create_work_submission(
         actual_value=Decimal(str(round(new_actual, 2))),
         score=round(new_actual, 2),
         recorded_by=auth.user_id,
-        notes=work_text,
+        notes=annotated,
     )
     db.add(row)
     db.flush()
@@ -938,6 +1045,8 @@ def create_work_submission(
             "score": row.score,
             "work_submission": True,
             "work_date": work_date.isoformat(),
+            "effort_level": effort_level,
+            "points_added": points,
         },
     )
     return row

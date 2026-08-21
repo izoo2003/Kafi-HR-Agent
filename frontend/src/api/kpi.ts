@@ -122,6 +122,13 @@ export function seedKpiDefaults(departmentId: number): Promise<{
   });
 }
 
+export type KpiEffortLevel =
+  | "trivial"
+  | "light"
+  | "moderate"
+  | "substantial"
+  | "exceptional";
+
 export function aiSuggestKpiEntry(payload: {
   departmentId: number;
   employeeId: number;
@@ -133,6 +140,8 @@ export function aiSuggestKpiEntry(payload: {
   actualValue?: number | null;
   formattedWork?: string | null;
   pointsToAdd?: number | null;
+  effortLevel?: KpiEffortLevel | null;
+  effortScore?: number | null;
   reasoning: string;
 }> {
   return apiRequest("/kpi/ai-suggest-entry", { method: "POST", body: payload });
@@ -145,6 +154,7 @@ export function createKpiWorkSubmission(payload: {
   workText: string;
   formattedWork?: string;
   pointsToAdd?: number;
+  effortLevel?: KpiEffortLevel;
 }): Promise<KpiEntry> {
   return apiRequest<KpiEntry>("/kpi/work-submissions", { method: "POST", body: payload });
 }

@@ -9,11 +9,12 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.core.self_service import own_employee_id
+from app.core.self_service import is_self_service, own_employee_id
 from app.core.exceptions import (
     BusinessRuleViolation,
     ConflictError,
     EntityNotFound,
+    PermissionDenied,
     ValidationFailed,
 )
 from app.ingestion.biometric_client_stub import fetch_punches
@@ -34,7 +35,7 @@ from app.schemas.attendance import (
     LeaveRequestRead,
     LeaveRequestUpdate,
 )
-from app.schemas.common import AuthContext, PaginatedResponse
+from app.schemas.common import PERMISSION_RANK, AuthContext, PaginatedResponse
 from app.services import audit_service
 
 
@@ -488,13 +489,25 @@ def create_leave_request(
 ) -> LeaveRequest:
     if payload.end_date < payload.start_date:
         raise ValidationFailed("end_date must be on or after start_date")
-    if db.query(Employee).filter(Employee.id == payload.employee_id).one_or_none() is None:
+
+    data = payload.model_dump()
+    if is_self_service(auth):
+        own = own_employee_id(auth)
+        if own is None:
+            raise PermissionDenied("Your account is not linked to an employee record")
+        data["employee_id"] = own
+    else:
+        level = auth.agent_permissions.get("hr_admin.attendance", "none")
+        if PERMISSION_RANK.get(level, 0) < PERMISSION_RANK["write"]:
+            raise PermissionDenied("You need write access to submit leave for other employees")
+
+    if db.query(Employee).filter(Employee.id == data["employee_id"]).one_or_none() is None:
         raise EntityNotFound("Employee not found")
-    if _leave_overlaps(db, payload.employee_id, payload.start_date, payload.end_date):
+    if _leave_overlaps(db, data["employee_id"], data["start_date"], data["end_date"]):
         raise BusinessRuleViolation(
             "Leave request overlaps an existing pending or approved leave for this employee"
         )
-    row = LeaveRequest(**payload.model_dump(), status="pending")
+    row = LeaveRequest(**data, status="pending")
     db.add(row)
     db.flush()
     audit_service.log_from_auth(
@@ -503,7 +516,11 @@ def create_leave_request(
         action="leave_request.created",
         entity_type="leave_request",
         entity_id=row.id,
-        after_state={"employee_id": row.employee_id, "start": str(row.start_date), "end": str(row.end_date)},
+        after_state={
+            "employee_id": row.employee_id,
+            "start": str(row.start_date),
+            "end": str(row.end_date),
+        },
     )
     return row
 

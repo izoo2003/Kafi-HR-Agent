@@ -131,12 +131,14 @@ def save_sheet_adjustments(
         else:
             before_adj = {
                 "allowance_amount": str(row.allowance_amount),
+                "bonus_amount": str(row.bonus_amount),
                 "loan_deduction_amount": str(row.loan_deduction_amount),
                 "advance_amount": str(row.advance_amount),
                 "payment_mode": row.payment_mode,
                 "remarks": row.remarks,
             }
         row.allowance_amount = item.allowance_amount or Decimal("0")
+        row.bonus_amount = item.bonus_amount or Decimal("0")
         row.loan_deduction_amount = item.loan_deduction_amount or Decimal("0")
         row.advance_amount = item.advance_amount or Decimal("0")
         row.payment_mode = _normalize_payment_mode(item.payment_mode)
@@ -158,6 +160,7 @@ def save_sheet_adjustments(
                 "period_month": payload.period_month,
                 "period_year": payload.period_year,
                 "allowance_amount": str(row.allowance_amount),
+                "bonus_amount": str(row.bonus_amount),
                 "loan_deduction_amount": str(row.loan_deduction_amount),
                 "advance_amount": str(row.advance_amount),
                 "payment_mode": row.payment_mode,

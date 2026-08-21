@@ -247,6 +247,7 @@ def compute_payroll_for_month(
 
         overtime_amount = (Decimal(ot_days_final) * per_day).quantize(Decimal("0.01"))
         allowance = Decimal(str(adj.allowance_amount)) if adj else Decimal("0")
+        bonus = Decimal(str(getattr(adj, "bonus_amount", 0) or 0)) if adj else Decimal("0")
         loan = Decimal(str(adj.loan_deduction_amount)) if adj else Decimal("0")
         advance = Decimal(str(adj.advance_amount)) if adj else Decimal("0")
         late_deduction_amount = (Decimal(late_off_days) * per_day).quantize(Decimal("0.01"))
@@ -255,7 +256,7 @@ def compute_payroll_for_month(
             Decimal(raw_absents_after_leave) * per_day + late_deduction_amount + half_day_deduction
         ).quantize(Decimal("0.01"))
         gross_salary = (
-            per_day * Decimal(days_present) + allowance + overtime_amount
+            per_day * Decimal(days_present) + allowance + bonus + overtime_amount
         ).quantize(Decimal("0.01"))
         annual_taxable = (gross_salary * Decimal("12")).quantize(Decimal("0.01"))
         annual_tax = calculate_annual_tax(annual_taxable, slabs)
@@ -305,6 +306,7 @@ def compute_payroll_for_month(
                 late_deduction_amount=late_deduction_amount,
                 half_day_deduction=half_day_deduction,
                 allowance_amount=allowance,
+                bonus_amount=bonus,
                 loan_deduction_amount=loan,
                 advance_amount=advance,
                 payment_mode=_normalize_payment_mode(

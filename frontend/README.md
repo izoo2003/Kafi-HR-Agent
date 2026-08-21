@@ -21,7 +21,7 @@ src/
   styles/tokens.css   # design tokens
   constants/          # status label vocabulary
 
-HR Policies (`/hr-policies`) is available to every signed-in user. Use **Copy all** in the page header to copy the full handbook text.
+Onboarding (`/onboarding`) is available to every signed-in user. Use **Copy all** in the page header to copy the full handbook text.
 ```
 
 ## Setup

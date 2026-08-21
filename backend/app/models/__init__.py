@@ -23,7 +23,12 @@ from app.models.identity import (
     User,
     UserRole,
 )
-from app.models.kpi import KpiDefinition, KpiEntry
+from app.models.kpi import (
+    EmployeeMonthlyPerformance,
+    EmployeeTrainingAssignment,
+    KpiDefinition,
+    KpiEntry,
+)
 from app.models.payroll import (
     Deduction,
     PayrollRun,
@@ -68,6 +73,8 @@ __all__ = [
     "TaxSlab",
     "KpiDefinition",
     "KpiEntry",
+    "EmployeeMonthlyPerformance",
+    "EmployeeTrainingAssignment",
     "AuditLog",
     "IntegrationRegistry",
     "SystemConfig",

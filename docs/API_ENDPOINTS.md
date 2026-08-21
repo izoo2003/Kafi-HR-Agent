@@ -141,9 +141,9 @@
 | POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. Form fields: `saturday_off_mode` (`second_saturday` Recommended / `date` / `auto` Don't know+AI) and optional `saturday_off_date` (YYYY-MM-DD). Chosen Saturday is holiday, not absent. |
 | POST | `/attendance/sync-biometric` | Pull latest data from biometric device integration (stubbed until device access confirmed) |
 | GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period — feeds payroll |
-| GET | `/leave-requests` | List leave requests (filter by employee, status) |
-| POST | `/leave-requests` | Submit leave request |
-| PATCH | `/leave-requests/{id}` | Approve/reject leave request |
+| GET | `/leave-requests` | List leave requests (filter by employee, status); self-service sees own only |
+| POST | `/leave-requests` | Submit leave (self-service: own employee only with attendance read; HR needs write for others) |
+| PATCH | `/leave-requests/{id}` | Approve/reject leave request (attendance approve) |
 
 ---
 
@@ -197,10 +197,16 @@
 | GET | `/kpi/global-summary` | Company rollup: score per department for a period |
 | GET | `/kpi/daily-summary` | Score per calendar day (`department_id` optional; omit = company-wide) |
 | GET | `/kpi/work-logs` | Individual work logs (`department_id`, `employee_id`, date range) |
-| POST | `/kpi/work-submissions` | Employee self-service: log work for a calendar day (max 10 points that day) |
+| POST | `/kpi/work-submissions` | Employee self-service: log work for today (max 10 pts/day); `effort_level` + `points_to_add` clamped by effort tier |
 | POST | `/departments/{id}/kpi-period-reviewed` | Mark period reviewed; emits `hr_admin.kpi.period_closed` |
 | POST | `/departments/{id}/kpi-definitions/seed-defaults` | Idempotent default KPI pack (incl. Other / ad-hoc; weights sum to 1.0) |
-| POST | `/kpi/ai-suggest-entry` | Gemini formats work text + suggested points (no write; user confirms Save) |
+| POST | `/kpi/ai-suggest-entry` | Gemini formats work + `effort_level` / `effort_score` / `points_to_add` by workload (no write; user confirms Save) |
+| GET | `/employee-performance` | Employee Development: month KPI entries + live/finalized score out of 10 + history (`employee_id`, `period_year`, `period_month`) |
+| POST | `/employee-performance/ai-summary` | Generate/refresh Gemini performance summary for employee+month (requires kpi write) |
+| POST | `/employee-training/recommend` | AI intermediate/advanced course recommendations for employee + topic (kpi write) |
+| POST | `/employee-training/assign` | Persist selected recommended courses to employee (Things To Learn) |
+| GET | `/employee-training` | List training assignments (`employee_id` optional; self-service = own only) |
+| PATCH | `/employee-training/{id}` | Update assignment status (`assigned` / `in_progress` / `completed`) |
 
 ### Notifications (in-app)
 

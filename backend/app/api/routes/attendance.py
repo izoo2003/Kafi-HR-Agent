@@ -211,8 +211,9 @@ def list_leave(
 def create_leave(
     payload: LeaveRequestCreate,
     db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
 ) -> LeaveRequestRead:
+    """Self-service employees may submit their own leave (read). HR needs write for others."""
     return LeaveRequestRead.model_validate(svc.create_leave_request(db, auth, payload))
 
 
