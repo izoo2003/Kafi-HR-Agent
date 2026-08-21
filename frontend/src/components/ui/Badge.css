@@ -44,7 +44,8 @@
 [data-badge-status="info"],
 [data-badge-status="scored"],
 [data-badge-status="on_leave"],
-[data-badge-status="complete"] {
+[data-badge-status="complete"],
+[data-badge-status="verified"] {
   background: var(--color-status-info-bg);
   color: var(--color-status-info);
 }

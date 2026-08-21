@@ -87,6 +87,29 @@ export async function viewEmployeeLetter(
   return fetchBlob(`/employees/${employeeId}/letters/${kind}`);
 }
 
+export interface LetterSignatureVerifyResult {
+  verified: boolean;
+  status: string;
+  message: string;
+  kind: string;
+  employeeId: number;
+  documentId: number | null;
+}
+
+/** Upload a photo of the signed letter; AI checks for a client signature. */
+export async function verifyEmployeeLetterSignature(
+  employeeId: number,
+  kind: "appointment" | "contract",
+  file: File,
+): Promise<LetterSignatureVerifyResult> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<LetterSignatureVerifyResult>(
+    `/employees/${employeeId}/letters/${kind}/verify`,
+    { method: "POST", formData: form },
+  );
+}
+
 /** Soft-exit: marks employee terminated (does not hard-delete the row). */
 export async function exitEmployee(id: number): Promise<Employee> {
   return apiRequest<Employee>(`/employees/${id}`, { method: "DELETE" });

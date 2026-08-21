@@ -115,6 +115,8 @@ export interface Employee {
   updatedAt: string;
   hasAppointmentLetter?: boolean;
   hasContractLetter?: boolean;
+  appointmentLetterVerified?: boolean;
+  contractLetterVerified?: boolean;
 }
 
 export interface EmployeeDetail extends Employee {

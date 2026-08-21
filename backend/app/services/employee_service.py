@@ -20,6 +20,7 @@ from app.schemas.employees import (
     DOCUMENT_CATEGORIES,
     IMAGE_ONLY_DOCUMENT_CATEGORIES,
     LETTER_CATEGORIES,
+    LETTER_SIGNED_CATEGORIES,
     EmployeeCreate,
     EmployeeDetailRead,
     EmployeeDocumentRead,
@@ -38,6 +39,8 @@ def _letter_flags(emp: Employee) -> dict[str, bool]:
     return {
         "has_appointment_letter": LETTER_CATEGORIES["appointment"] in cats,
         "has_contract_letter": LETTER_CATEGORIES["contract"] in cats,
+        "appointment_letter_verified": LETTER_SIGNED_CATEGORIES["appointment"] in cats,
+        "contract_letter_verified": LETTER_SIGNED_CATEGORIES["contract"] in cats,
     }
 
 

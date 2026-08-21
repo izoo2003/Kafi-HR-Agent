@@ -21,11 +21,17 @@ DOCUMENT_CATEGORIES = frozenset(
         "client",
         "appointment_letter",
         "contract_letter",
+        "appointment_letter_signed",
+        "contract_letter_signed",
     }
 )
 LETTER_CATEGORIES = {
     "appointment": "appointment_letter",
     "contract": "contract_letter",
+}
+LETTER_SIGNED_CATEGORIES = {
+    "appointment": "appointment_letter_signed",
+    "contract": "contract_letter_signed",
 }
 CNIC_IMAGE_CATEGORIES = frozenset({"cnic_front", "cnic_back", "cnic"})
 IMAGE_ONLY_DOCUMENT_CATEGORIES = CNIC_IMAGE_CATEGORIES | frozenset({"photo"})
@@ -238,8 +244,19 @@ class EmployeeRead(BaseModel):
     updated_at: datetime
     has_appointment_letter: bool = False
     has_contract_letter: bool = False
+    appointment_letter_verified: bool = False
+    contract_letter_verified: bool = False
 
 
 class EmployeeDetailRead(EmployeeRead):
     documents: list[EmployeeDocumentRead] = []
     references: list[EmployeeReferenceRead] = []
+
+
+class LetterSignatureVerifyResult(BaseModel):
+    verified: bool
+    status: str  # verified | no_signature | not_letter | unreadable
+    message: str
+    kind: str
+    employee_id: int
+    document_id: int | None = None

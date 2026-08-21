@@ -62,6 +62,8 @@
 | GET | `/employees/{id}/letters/contract` | Download stored employment contract (404 if not created yet) |
 | POST | `/employees/{id}/letters/appointment` | Generate, store, and download appointment letter Word file |
 | POST | `/employees/{id}/letters/contract` | Generate, store, and download employment contract Word file |
+| POST | `/employees/{id}/letters/appointment/verify` | Upload signed letter image; AI checks for a signature → marks Verified |
+| POST | `/employees/{id}/letters/contract/verify` | Upload signed contract image; AI checks for a signature → marks Verified |
 | PATCH | `/employees/{id}` | Update employee profile fields |
 | DELETE | `/employees/{id}` | Mark employee as exited (soft delete) |
 | POST | `/employees/{id}/documents` | Upload document(s) (multipart: `category`, optional `title`, `files[]`) — PDF/images; binaries go to Supabase Storage when configured |

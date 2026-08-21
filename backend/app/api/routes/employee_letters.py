@@ -4,12 +4,14 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
+from app.core.exceptions import ValidationFailed
 from app.schemas.common import AuthContext
+from app.schemas.employees import LetterSignatureVerifyResult
 from app.services import employee_letter_service
 
 router = APIRouter(tags=["employee-letters"])
@@ -46,3 +48,31 @@ def create_employee_letter(
 ) -> Response:
     content, filename = employee_letter_service.generate_letter(db, auth, employee_id, kind)
     return _letter_response(content, filename)
+
+
+@router.post(
+    "/employees/{employee_id}/letters/{kind}/verify",
+    response_model=LetterSignatureVerifyResult,
+)
+async def verify_employee_letter_signature(
+    employee_id: int,
+    kind: LetterKind,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+    file: UploadFile = File(...),
+) -> LetterSignatureVerifyResult:
+    """Upload a photo of the signed letter; AI checks for a client signature."""
+    content = await file.read()
+    name = file.filename or "signed_letter.jpg"
+    mime = file.content_type
+    if not content:
+        raise ValidationFailed("Upload an image of the signed letter")
+    return employee_letter_service.verify_letter_signature(
+        db,
+        auth,
+        employee_id,
+        kind,
+        filename=name,
+        content=content,
+        mime_type=mime,
+    )
