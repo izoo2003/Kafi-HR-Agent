@@ -19,8 +19,10 @@ except Exception:  # noqa: BLE001 — Windows without tzdata
 _lock = threading.Lock()
 # pool_id -> preferred key index
 _preferred_index: dict[str, int] = {}
-# (pool_id, key_fingerprint) -> exhausted_until (UTC)
+# (pool_id, key_fingerprint) -> exhausted_until (UTC) — whole key burned
 _exhausted_until: dict[tuple[str, str], datetime] = {}
+# (pool_id, key_fingerprint, model) -> exhausted_until (UTC) — single model burned
+_model_exhausted_until: dict[tuple[str, str, str], datetime] = {}
 
 
 class GeminiQuotaExhausted(RuntimeError):
@@ -73,6 +75,7 @@ def _is_quota_error(exc: BaseException) -> bool:
         "exceeded your current quota",
         "generate_requests_per_day",
         "generate_content_free_tier",
+        "limit: 0",
     )
     return any(m in text for m in markers)
 
@@ -115,9 +118,24 @@ def _format_reset_time(reset_at: datetime) -> str:
     )
 
 
+def _quota_until(exc: BaseException, now: datetime) -> datetime:
+    delay = _parse_retry_delay(exc) or (_default_daily_reset_utc(now) - now)
+    until = now + delay
+    if until <= now:
+        until = _default_daily_reset_utc(now)
+    return until
+
+
 def _mark_exhausted(pool_id: str, key: str, until: datetime) -> None:
     with _lock:
         _exhausted_until[(pool_id, _fingerprint(key))] = until
+
+
+def _mark_model_exhausted(
+    pool_id: str, key: str, model_name: str, until: datetime
+) -> None:
+    with _lock:
+        _model_exhausted_until[(pool_id, _fingerprint(key), model_name)] = until
 
 
 def _is_exhausted(pool_id: str, key: str, now: datetime) -> bool:
@@ -128,6 +146,24 @@ def _is_exhausted(pool_id: str, key: str, now: datetime) -> bool:
     if now >= until:
         with _lock:
             _exhausted_until.pop((pool_id, _fingerprint(key)), None)
+        return False
+    return True
+
+
+def _is_model_exhausted(
+    pool_id: str, key: str, model_name: str, now: datetime
+) -> bool:
+    with _lock:
+        until = _model_exhausted_until.get(
+            (pool_id, _fingerprint(key), model_name)
+        )
+    if until is None:
+        return False
+    if now >= until:
+        with _lock:
+            _model_exhausted_until.pop(
+                (pool_id, _fingerprint(key), model_name), None
+            )
         return False
     return True
 
@@ -152,10 +188,14 @@ def _remember_success(pool_id: str, keys: list[str], key: str) -> None:
 
 def _soonest_reset(pool_id: str, keys: list[str], now: datetime) -> datetime:
     resets: list[datetime] = []
+    fps = {_fingerprint(k) for k in keys}
     with _lock:
         for key in keys:
             until = _exhausted_until.get((pool_id, _fingerprint(key)))
             if until is not None and until > now:
+                resets.append(until)
+        for (pid, fp, _model), until in _model_exhausted_until.items():
+            if pid == pool_id and fp in fps and until > now:
                 resets.append(until)
     return min(resets) if resets else _default_daily_reset_utc(now)
 
@@ -168,11 +208,12 @@ def generate_content_with_fallback(
     prompt: str | list[Any],
     pool_id: str = "default",
 ) -> Any:
-    """Call Gemini with key rotation and model fallbacks.
+    """Call Gemini with key rotation and per-model fallbacks.
 
-    Order: preferred key → all models → next key → all models → … → first key again
-    once the second is exhausted. When every key is quota-exhausted, raises
-    GeminiQuotaExhausted with the actual reset time.
+    Order for each key: try primary model, then each fallback model.
+    A quota hit on one model only skips that model — the next fallback is tried
+    on the same key. The whole key is marked exhausted only after every model
+    in the chain hits quota. Then the next key is tried the same way.
     """
     keys = _normalize_keys(api_keys if api_keys is not None else api_key)
     if not keys:
@@ -185,11 +226,11 @@ def generate_content_with_fallback(
     now = datetime.now(UTC)
     ordered = _ordered_keys(pool_id, keys)
     last_exc: Exception | None = None
-    quota_hits = 0
+    keys_fully_exhausted = 0
 
     for key in ordered:
         if _is_exhausted(pool_id, key, now):
-            quota_hits += 1
+            keys_fully_exhausted += 1
             logger.info(
                 "Skipping exhausted Gemini key …%s in pool %s",
                 _fingerprint(key),
@@ -198,8 +239,17 @@ def generate_content_with_fallback(
             continue
 
         genai.configure(api_key=key)
-        key_quota_failed = False
+        model_quota_hits = 0
         for model_name in models:
+            if _is_model_exhausted(pool_id, key, model_name, now):
+                model_quota_hits += 1
+                logger.info(
+                    "Skipping exhausted Gemini model %s on key …%s (pool %s)",
+                    model_name,
+                    _fingerprint(key),
+                    pool_id,
+                )
+                continue
             try:
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt)
@@ -208,43 +258,47 @@ def generate_content_with_fallback(
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if _is_quota_error(exc):
-                    delay = _parse_retry_delay(exc) or (
-                        _default_daily_reset_utc(now) - now
-                    )
-                    until = now + delay
-                    if until <= now:
-                        until = _default_daily_reset_utc(now)
-                    _mark_exhausted(pool_id, key, until)
-                    # Prefer the next key on subsequent calls.
-                    with _lock:
-                        try:
-                            cur = keys.index(key)
-                            _preferred_index[pool_id] = (cur + 1) % len(keys)
-                        except ValueError:
-                            pass
+                    until = _quota_until(exc, now)
+                    _mark_model_exhausted(pool_id, key, model_name, until)
+                    model_quota_hits += 1
                     logger.warning(
-                        "Gemini key …%s exhausted until %s (model %s): %s",
+                        "Gemini model %s exhausted on key …%s until %s; "
+                        "trying next fallback model: %s",
+                        model_name,
                         _fingerprint(key),
                         until.isoformat(),
-                        model_name,
                         exc,
                     )
-                    key_quota_failed = True
-                    quota_hits += 1
-                    break
+                    continue
                 logger.warning(
                     "Gemini model %s failed on key …%s: %s",
                     model_name,
                     _fingerprint(key),
                     exc,
                 )
-        if key_quota_failed:
-            continue
 
-    # If every key is currently marked exhausted (or just became so), surface wait time.
+        # All models on this key hit quota → mark key exhausted, prefer next key
+        if model_quota_hits >= len(models):
+            until = _soonest_reset(pool_id, [key], now)
+            _mark_exhausted(pool_id, key, until)
+            keys_fully_exhausted += 1
+            with _lock:
+                try:
+                    cur = keys.index(key)
+                    _preferred_index[pool_id] = (cur + 1) % len(keys)
+                except ValueError:
+                    pass
+            logger.warning(
+                "All models exhausted for Gemini key …%s in pool %s; rotating key",
+                _fingerprint(key),
+                pool_id,
+            )
+
     now = datetime.now(UTC)
     all_exhausted = all(_is_exhausted(pool_id, key, now) for key in keys)
-    if all_exhausted or (quota_hits >= len(keys) and last_exc and _is_quota_error(last_exc)):
+    if all_exhausted or (
+        keys_fully_exhausted >= len(keys) and last_exc and _is_quota_error(last_exc)
+    ):
         reset_at = _soonest_reset(pool_id, keys, now)
         when = _format_reset_time(reset_at)
         raise GeminiQuotaExhausted(

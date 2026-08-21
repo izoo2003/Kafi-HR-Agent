@@ -20,6 +20,9 @@ class Department(Base, TimestampMixin):
         ForeignKey("employees.id", use_alter=True, name="fk_departments_head_employee"),
         nullable=True,
     )
+    # Department-level role duties and standard operating procedures
+    job_description_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sops_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     employees: Mapped[list[Employee]] = relationship(
         "Employee",
@@ -59,6 +62,8 @@ class Employee(Base, TimestampMixin):
     permanent_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     nationality: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Workplace site: Mill | Clifton Office | KMP House
+    location: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Bank details
     bank_name: Mapped[str | None] = mapped_column(String(200), nullable=True)

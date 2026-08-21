@@ -101,18 +101,11 @@ export function DashboardPage() {
               }}
             >
               <MetricCard
-                label="Registered employees"
+                label="User Accounts"
                 value={dash.data.registeredEmployeesActive}
-                hint="Self-service signups only (username + PIN)"
+                hint="Registered logins (username + PIN)"
                 to="/admin/users"
                 status="positive"
-              />
-              <MetricCard
-                label="Staff accounts"
-                value={dash.data.staffUsersActive}
-                hint="HR admin, auditor, payroll, recruiter, etc."
-                to="/admin/users"
-                status="info"
               />
               <MetricCard
                 label="HR employee records"

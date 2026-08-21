@@ -28,7 +28,12 @@ def create_department(db: Session, auth: AuthContext, payload: DepartmentCreate)
     existing = db.query(Department).filter(Department.name == payload.name).one_or_none()
     if existing:
         raise ConflictError(f"Department '{payload.name}' already exists")
-    dept = Department(name=payload.name, head_employee_id=payload.head_employee_id)
+    dept = Department(
+        name=payload.name,
+        head_employee_id=payload.head_employee_id,
+        job_description_text=payload.job_description_text,
+        sops_text=payload.sops_text,
+    )
     db.add(dept)
     db.flush()
     audit_service.log_from_auth(
@@ -37,7 +42,11 @@ def create_department(db: Session, auth: AuthContext, payload: DepartmentCreate)
         action="department.created",
         entity_type="department",
         entity_id=dept.id,
-        after_state={"name": dept.name},
+        after_state={
+            "name": dept.name,
+            "job_description_text": dept.job_description_text,
+            "sops_text": dept.sops_text,
+        },
     )
     return dept
 
@@ -46,7 +55,12 @@ def update_department(
     db: Session, auth: AuthContext, department_id: int, payload: DepartmentUpdate
 ) -> Department:
     dept = get_department(db, department_id)
-    before = {"name": dept.name, "head_employee_id": dept.head_employee_id}
+    before = {
+        "name": dept.name,
+        "head_employee_id": dept.head_employee_id,
+        "job_description_text": dept.job_description_text,
+        "sops_text": dept.sops_text,
+    }
     data = payload.model_dump(exclude_unset=True)
     new_name = data.get("name")
     if new_name is not None:

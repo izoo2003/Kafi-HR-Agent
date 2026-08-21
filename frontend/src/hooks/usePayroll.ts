@@ -85,3 +85,10 @@ export function useSavePayrollSheet() {
     },
   });
 }
+
+export function usePayrollAiSummary() {
+  return useMutation({
+    mutationFn: (params: { periodMonth: number; periodYear: number; taxYearId: number }) =>
+      payrollApi.generatePayrollAiSummary(params),
+  });
+}

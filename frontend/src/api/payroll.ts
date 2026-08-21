@@ -1,6 +1,7 @@
 import { apiRequest, getAccessToken } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type {
+  PayrollAiSummary,
   PayrollComputeResult,
   PayrollSalaryRow,
   PayrollSalaryUpdate,
@@ -59,6 +60,21 @@ export async function downloadSalarySheetExcel(params: {
   });
   if (!res.ok) throw new Error("Salary sheet download failed");
   return res.blob();
+}
+
+export async function generatePayrollAiSummary(params: {
+  periodMonth: number;
+  periodYear: number;
+  taxYearId: number;
+}): Promise<PayrollAiSummary> {
+  return apiRequest<PayrollAiSummary>("/payroll/compute/ai-summary", {
+    method: "POST",
+    params: {
+      periodMonth: params.periodMonth,
+      periodYear: params.periodYear,
+      taxYearId: params.taxYearId,
+    },
+  });
 }
 
 export async function listTaxYears(): Promise<TaxYear[]> {

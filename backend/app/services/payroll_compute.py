@@ -16,6 +16,7 @@ from app.models.payroll import PayrollSheetAdjustment, TaxSlab
 from app.models.system import SystemConfig
 from app.schemas.payroll import PayrollComputeResult, PayrollComputeRow, PayrollTaxSlabLite
 from app.services.attendance_service import _company_tz, _holiday_dates
+from app.services.payroll_service import _normalize_payment_mode
 from app.services.tax_service import calculate_annual_tax, get_tax_year_read
 
 
@@ -306,7 +307,9 @@ def compute_payroll_for_month(
                 allowance_amount=allowance,
                 loan_deduction_amount=loan,
                 advance_amount=advance,
-                payment_mode=(adj.payment_mode if adj and adj.payment_mode else "IBFT"),
+                payment_mode=_normalize_payment_mode(
+                    adj.payment_mode if adj and adj.payment_mode else None
+                ),
                 remarks=adj.remarks if adj else None,
                 gross_salary=gross_salary,
                 gross_after_attendance=gross,

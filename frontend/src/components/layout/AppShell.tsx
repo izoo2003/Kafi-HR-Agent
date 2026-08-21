@@ -34,7 +34,7 @@ const NAV = [
   { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: Wallet },
   { to: "/kpi/dashboard", label: "KPI", module: "kpi", icon: Gauge },
   { to: "/hr-policies", label: "HR Policies", module: null, icon: ScrollText },
-  { to: "/admin/users", label: "Users", module: "users", icon: Users },
+  { to: "/admin/users", label: "User Management", module: "users", icon: Users },
 ] as const;
 
 const SIDEBAR_STORAGE_KEY = "kafi.sidebar.collapsed";

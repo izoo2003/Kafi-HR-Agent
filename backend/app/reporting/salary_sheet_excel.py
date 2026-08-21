@@ -169,6 +169,40 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
         cell.fill = total_fill
         cell.border = thin
 
+    # Payment mode summary sheet (report figures — not shown as a UI banner)
+    from collections import Counter
+
+    from app.services.payroll_service import _normalize_payment_mode
+
+    counts: Counter[str] = Counter()
+    net_by_mode: dict[str, float] = {"IBFT": 0.0, "Cash": 0.0, "Cheque": 0.0}
+    for emp in result.employees:
+        mode = _normalize_payment_mode(emp.payment_mode)
+        counts[mode] += 1
+        net_by_mode[mode] = net_by_mode.get(mode, 0.0) + _money(emp.net_payable)
+
+    summary = wb.create_sheet("Payment Summary")
+    summary["A1"] = "Payment mode summary"
+    summary["A1"].font = Font(name="Calibri", bold=True, size=12, color="101828")
+    summary["A2"] = f"Salary sheet — {month_label}"
+    summary["A3"] = "Mode"
+    summary["B3"] = "Employees"
+    summary["C3"] = "Net payable"
+    for col in ("A", "B", "C"):
+        summary[f"{col}3"].font = head_font
+        summary[f"{col}3"].fill = head_fill
+    for i, mode in enumerate(("IBFT", "Cash", "Cheque"), start=4):
+        summary.cell(i, 1, mode)
+        summary.cell(i, 2, int(counts.get(mode, 0)))
+        cell = summary.cell(i, 3, net_by_mode.get(mode, 0.0))
+        cell.number_format = "#,##0.00"
+        cell.font = money_font
+    summary.cell(7, 1, "Total employees")
+    summary.cell(7, 2, len(result.employees))
+    summary.column_dimensions["A"].width = 18
+    summary.column_dimensions["B"].width = 14
+    summary.column_dimensions["C"].width = 16
+
     sign_row = total_row + 2
     ws.cell(sign_row, 2, "Prepared By")
     ws.cell(sign_row, 8, "Checked By")

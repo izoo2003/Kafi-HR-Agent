@@ -34,6 +34,12 @@ export function useGenerateJobPostingAiDraft() {
   });
 }
 
+export function useGenerateJobPostingAiImage() {
+  return useMutation({
+    mutationFn: jdApi.generateJobPostingAiImage,
+  });
+}
+
 export function useApplicationFormUrl() {
   return useQuery({
     queryKey: ["job-descriptions", "application-form"],

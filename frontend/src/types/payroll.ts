@@ -118,6 +118,15 @@ export interface PayrollComputeResult {
   employees: PayrollComputeRow[];
 }
 
+export interface PayrollAiSummary {
+  periodMonth: number;
+  periodYear: number;
+  employeeCount: number;
+  totalNetPayable: number;
+  paymentModeCounts: Record<string, number>;
+  summaryText: string;
+}
+
 export interface PayrollSheetAdjustmentInput {
   employeeId: number;
   allowanceAmount: number;

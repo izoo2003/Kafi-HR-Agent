@@ -8,6 +8,8 @@ import type {
   JobDescriptionCreate,
   JobPostingAiDraftRequest,
   JobPostingAiDraftResult,
+  JobPostingAiImageRequest,
+  JobPostingAiImageResult,
   LinkedInAccount,
   RankingRow,
   ScoringCriteria,
@@ -30,6 +32,16 @@ export async function generateJobPostingAiDraft(
   return apiRequest<JobPostingAiDraftResult>("/job-descriptions/ai-draft", {
     method: "POST",
     body: payload,
+  });
+}
+
+export async function generateJobPostingAiImage(
+  payload: JobPostingAiImageRequest,
+): Promise<JobPostingAiImageResult> {
+  return apiRequest<JobPostingAiImageResult>("/job-descriptions/ai-image", {
+    method: "POST",
+    body: payload,
+    timeoutMs: 180_000,
   });
 }
 

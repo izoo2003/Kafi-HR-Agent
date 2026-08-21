@@ -69,6 +69,33 @@ class JobPostingAiDraftResult(BaseModel):
     application_form_url: str | None = None
 
 
+class JobPostingAiImageSkill(BaseModel):
+    name: str
+    level: int | None = Field(default=None, ge=1, le=10)
+
+
+class JobPostingAiImageRequest(BaseModel):
+    title: str = Field(min_length=1)
+    department_id: int
+    # Optional AI/poster-only description — never intended for LinkedIn commentary
+    poster_description_text: str | None = None
+    requirements_text: str | None = None
+    skills: list[JobPostingAiImageSkill] = Field(default_factory=list)
+
+
+class JobPostingAiImageResult(BaseModel):
+    image_base64: str
+    mime_type: str = "image/png"
+    filename: str = "hiring-poster.png"
+    # LinkedIn-safe short text for the job record (apply CTA only)
+    description_text: str
+    # Full AI description used on the poster only (not for LinkedIn)
+    poster_description_text: str
+    application_form_url: str | None = None
+    requirements_text: str | None = None
+    skills: list[JobPostingAiDraftSkill] = Field(default_factory=list)
+
+
 class JobDescriptionUpdate(BaseModel):
     title: str | None = None
     department_id: int | None = None

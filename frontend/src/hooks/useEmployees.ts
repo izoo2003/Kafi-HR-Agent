@@ -28,6 +28,8 @@ export function useDepartments(enabled = true) {
           id: d.id,
           name: d.name,
           headEmployeeId: null,
+          jobDescriptionText: null,
+          sopsText: null,
           createdAt: "",
           updatedAt: "",
         }));

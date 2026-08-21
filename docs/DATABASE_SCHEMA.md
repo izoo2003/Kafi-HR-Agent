@@ -68,6 +68,8 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 | id | INTEGER PK | |
 | name | TEXT UNIQUE NOT NULL | |
 | head_employee_id | INTEGER FK → employees.id NULL | department head |
+| job_description_text | TEXT NULL | department-level duties / job description |
+| sops_text | TEXT NULL | department standard operating procedures |
 
 ### `employees`
 | Column | Type | Notes |
@@ -97,6 +99,7 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 | permanent_address | TEXT NULL | |
 | city | TEXT NULL | |
 | nationality | TEXT NULL | |
+| location | TEXT NULL | workplace site: `Mill`, `Clifton Office`, `KMP House` |
 | bank_name | TEXT NULL | |
 | account_title | TEXT NULL | |
 | account_number | TEXT NULL | |
@@ -314,7 +317,7 @@ Monthly extras on the Kafi salary sheet (allowance, loan, advance, payment mode,
 | allowance_amount | DECIMAL DEFAULT 0 | |
 | loan_deduction_amount | DECIMAL DEFAULT 0 | |
 | advance_amount | DECIMAL DEFAULT 0 | |
-| payment_mode | TEXT NULL | e.g. `IBFT`, `CHQ`, `Cash` |
+| payment_mode | TEXT NULL | `IBFT`, `Cheque`, or `Cash` (salary sheet dropdown) |
 | remarks | TEXT NULL | |
 | days_present | INTEGER NULL | salary-sheet override; NULL = use attendance |
 | days_absent | INTEGER NULL | unpaid absents override |

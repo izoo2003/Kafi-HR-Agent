@@ -7,11 +7,17 @@ import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Pagination } from "../../components/ui/Pagination";
-import { useDepartments, useEmployees, useExitEmployee } from "../../hooks/useEmployees";
+import {
+  useDepartments,
+  useEmployees,
+  useExitEmployee,
+  useUpdateEmployee,
+} from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import { useAuth } from "../../hooks/useAuth";
 import { ApiError } from "../../api/client";
-import type { Employee } from "../../types/employees";
+import type { Employee, EmployeeLocation } from "../../types/employees";
+import { EMPLOYEE_LOCATIONS } from "../../types/employees";
 
 export function EmployeeListPage() {
   const { hasPermission } = useAuth();
@@ -24,8 +30,10 @@ export function EmployeeListPage() {
     status: statusFilter === "all" ? undefined : statusFilter,
   });
   const exitEmp = useExitEmployee();
+  const updateEmp = useUpdateEmployee();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [savingLocationId, setSavingLocationId] = useState<number | null>(null);
 
   const deptNameById = useMemo(() => {
     const map = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
@@ -46,6 +54,22 @@ export function EmployeeListPage() {
       setPage(1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to remove employee");
+    }
+  }
+
+  async function onLocationChange(emp: Employee, value: string) {
+    const next = (value.trim() || null) as EmployeeLocation | null;
+    if ((emp.location ?? null) === next) return;
+    setError(null);
+    setMessage(null);
+    setSavingLocationId(emp.id);
+    try {
+      await updateEmp.mutateAsync({ id: emp.id, payload: { location: next } });
+      setMessage(`Location updated for ${emp.fullName}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update location");
+    } finally {
+      setSavingLocationId(null);
     }
   }
 
@@ -110,7 +134,17 @@ export function EmployeeListPage() {
         {employees.data && employees.data.items.length > 0 ? (
           <>
             <Table
-              headers={["Code", "Name", "CNIC", "Role", "Mobile", "Status", "Base salary", "Actions"]}
+              headers={[
+                "Code",
+                "Name",
+                "CNIC",
+                "Department",
+                "Location",
+                "Mobile",
+                "Status",
+                "Base salary",
+                "Actions",
+              ]}
             >
               {employees.data.items.map((e) => (
                 <tr key={e.id} data-status={e.status === "active" ? "positive" : "neutral"}>
@@ -122,6 +156,27 @@ export function EmployeeListPage() {
                   </td>
                   <td className="num">{e.cnic ?? "—"}</td>
                   <td>{deptNameById(e.departmentId)}</td>
+                  <td>
+                    {canWrite && e.status !== "terminated" ? (
+                      <select
+                        className="form-field__input"
+                        value={e.location ?? ""}
+                        onChange={(ev) => onLocationChange(e, ev.target.value)}
+                        disabled={savingLocationId === e.id || updateEmp.isPending}
+                        aria-label={`Location for ${e.fullName}`}
+                        style={{ minWidth: 140 }}
+                      >
+                        <option value="">Select…</option>
+                        {EMPLOYEE_LOCATIONS.map((loc) => (
+                          <option key={loc} value={loc}>
+                            {loc}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      e.location ?? "—"
+                    )}
+                  </td>
                   <td className="num">{e.personalMobile ?? "—"}</td>
                   <td>
                     <StatusBadge status={e.status === "active" ? "approved" : "draft"}>

@@ -5,10 +5,12 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { SalarySheet, draftFromResult, type SheetDraft } from "../../components/domain/SalarySheet";
-import { usePayrollCompute, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
+import { normalizePaymentMode } from "../../lib/salarySheet";
+import { usePayrollCompute, usePayrollAiSummary, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
 import { useAuth } from "../../hooks/useAuth";
 import { downloadSalarySheetExcel } from "../../api/payroll";
 import { ApiError } from "../../api/client";
+import type { PayrollAiSummary } from "../../types/payroll";
 
 export function SalaryComputePage() {
   const { hasPermission } = useAuth();
@@ -21,7 +23,9 @@ export function SalaryComputePage() {
   const [drafts, setDrafts] = useState<Record<number, SheetDraft>>({});
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [aiSummary, setAiSummary] = useState<PayrollAiSummary | null>(null);
   const saveSheet = useSavePayrollSheet();
+  const aiSummaryMutation = usePayrollAiSummary();
 
   const activeTaxId = useMemo(() => {
     if (taxYearId !== "") return taxYearId;
@@ -39,6 +43,7 @@ export function SalaryComputePage() {
     if (compute.data) {
       setDrafts(draftFromResult(compute.data));
     }
+    setAiSummary(null);
   }, [compute.data]);
 
   function patchDraft(employeeId: number, patch: Partial<SheetDraft>) {
@@ -47,6 +52,7 @@ export function SalaryComputePage() {
       [employeeId]: { ...prev[employeeId], ...patch } as SheetDraft,
     }));
     setMessage(null);
+    setAiSummary(null);
   }
 
   async function save() {
@@ -68,7 +74,7 @@ export function SalaryComputePage() {
             allowanceAmount: Number(d?.allowanceAmount ?? e.allowanceAmount ?? 0),
             loanDeductionAmount: Number(d?.loanDeductionAmount ?? e.loanDeductionAmount ?? 0),
             advanceAmount: Number(d?.advanceAmount ?? e.advanceAmount ?? 0),
-            paymentMode: d?.paymentMode ?? e.paymentMode ?? "IBFT",
+            paymentMode: normalizePaymentMode(d?.paymentMode ?? e.paymentMode),
             remarks: d?.remarks || null,
             monthlyTaxOverride: d?.taxManual ? Number(d.monthlyTax) : null,
           };
@@ -105,6 +111,21 @@ export function SalaryComputePage() {
     }
   }
 
+  async function generateAiSummary() {
+    if (activeTaxId === "") return;
+    setError(null);
+    try {
+      const summary = await aiSummaryMutation.mutateAsync({
+        periodMonth: month,
+        periodYear: year,
+        taxYearId: Number(activeTaxId),
+      });
+      setAiSummary(summary);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "AI summary failed");
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -119,6 +140,13 @@ export function SalaryComputePage() {
             ) : null}
             <Button variant="secondary" disabled={!compute.data} onClick={downloadExcel}>
               Download Excel
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!compute.data || aiSummaryMutation.isPending || activeTaxId === ""}
+              onClick={() => void generateAiSummary()}
+            >
+              {aiSummaryMutation.isPending ? "Generating summary…" : "Generate AI summary"}
             </Button>
             <Link to="/payroll/tax-slabs">
               <Button variant="secondary">Tax slabs</Button>
@@ -194,6 +222,36 @@ export function SalaryComputePage() {
         {compute.isLoading ? <Spinner label="Calculating salaries" /> : null}
         {compute.isError ? (
           <p style={{ color: "var(--color-status-critical)" }}>Could not compute payroll.</p>
+        ) : null}
+
+        {aiSummary ? (
+          <Card>
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>AI salary sheet summary</h2>
+            <p style={{ margin: "0 0 var(--space-3)", color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+              Payment modes — IBFT {aiSummary.paymentModeCounts.IBFT ?? 0}, Cash{" "}
+              {aiSummary.paymentModeCounts.Cash ?? 0}, Cheque {aiSummary.paymentModeCounts.Cheque ?? 0}
+              {" · "}
+              {aiSummary.employeeCount} employees · net{" "}
+              <span className="font-data">
+                {Number(aiSummary.totalNetPayable).toLocaleString("en-PK", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </p>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--text-sm)",
+                lineHeight: 1.55,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {aiSummary.summaryText}
+            </pre>
+          </Card>
         ) : null}
 
         {compute.data ? (

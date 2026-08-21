@@ -93,6 +93,44 @@ class Settings(BaseSettings):
     gemini_job_posting_api_key_2: str = ""
     gemini_job_posting_model: str = "gemini-flash-latest"
     gemini_job_posting_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    # Payroll salary-sheet AI summary (payment modes + narrative) — separate key
+    gemini_payroll_api_key: str = ""
+    gemini_payroll_api_key_2: str = ""
+    gemini_payroll_model: str = "gemini-flash-latest"
+    gemini_payroll_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+
+    # Cloudflare Workers AI — job posting recruitment image generation
+    cloudflare_account_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_ACCOUNT_ID", "cloudflare_account_id"),
+    )
+    cloudflare_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLOUDFLARE_API_TOKEN", "cloudflare_api_token"),
+    )
+    cloudflare_image_model: str = Field(
+        default="@cf/black-forest-labs/flux-1-schnell",
+        validation_alias=AliasChoices("CLOUDFLARE_IMAGE_MODEL", "cloudflare_image_model"),
+    )
+    cloudflare_image_steps: int = Field(
+        default=4,
+        validation_alias=AliasChoices("CLOUDFLARE_IMAGE_STEPS", "cloudflare_image_steps"),
+    )
+    cloudflare_image_timeout: int = Field(
+        default=120,
+        validation_alias=AliasChoices(
+            "CLOUDFLARE_IMAGE_TIMEOUT", "cloudflare_image_timeout"
+        ),
+    )
+    # Shown on generated hiring posters
+    hiring_apply_email: str = Field(
+        default="hr@kafi-group.com",
+        validation_alias=AliasChoices("HIRING_APPLY_EMAIL", "hiring_apply_email"),
+    )
+    company_display_name: str = Field(
+        default="Kafi Group",
+        validation_alias=AliasChoices("COMPANY_DISPLAY_NAME", "company_display_name"),
+    )
 
     # LinkedIn feed post when a job description is set to Open (reuse the same
     # developer app client id/secret + member tokens from a previous agent).
@@ -289,6 +327,21 @@ class Settings(BaseSettings):
         fallbacks = (
             self.gemini_job_posting_model_fallbacks or self.gemini_model_fallbacks
         )
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_payroll_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_payroll_api_key, self.gemini_payroll_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_payroll_models(self) -> list[str]:
+        primary = (
+            self.gemini_payroll_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = self.gemini_payroll_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)
 
     def sqlite_path(self) -> Path | None:

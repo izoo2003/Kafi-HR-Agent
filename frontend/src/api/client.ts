@@ -68,6 +68,8 @@ type RequestOptions = {
   params?: Record<string, string | number | boolean | undefined>;
   auth?: boolean;
   formData?: FormData;
+  /** Abort the request after this many milliseconds (e.g. long AI image jobs). */
+  timeoutMs?: number;
 };
 
 function buildUrl(path: string, params?: RequestOptions["params"]): string {
@@ -111,11 +113,29 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     body = JSON.stringify(keysToSnake(options.body));
   }
 
-  const response = await fetch(buildUrl(path, options.params), {
-    method: options.method ?? (options.body || options.formData ? "POST" : "GET"),
-    headers,
-    body,
-  });
+  const controller =
+    options.timeoutMs && options.timeoutMs > 0 ? new AbortController() : null;
+  const timer =
+    controller != null
+      ? window.setTimeout(() => controller.abort(), options.timeoutMs)
+      : null;
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, options.params), {
+      method: options.method ?? (options.body || options.formData ? "POST" : "GET"),
+      headers,
+      body,
+      signal: controller?.signal,
+    });
+  } catch (err) {
+    if (timer != null) window.clearTimeout(timer);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(408, "Request timed out — try again");
+    }
+    throw err;
+  }
+  if (timer != null) window.clearTimeout(timer);
 
   if (response.status === 204) {
     return undefined as T;

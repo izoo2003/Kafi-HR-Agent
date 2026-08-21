@@ -43,20 +43,20 @@ function UsersSectionMenu({ current }: { current: "list" | "create" }) {
 
   return (
     <label className="form-field" style={{ margin: 0 }}>
-      <span className="form-field__label">Create User</span>
+      <span className="form-field__label">User Management</span>
       <select
         className="form-field__input"
         style={selectStyle}
         value={current}
-        aria-label="Create User"
+        aria-label="User Management section"
         onChange={(e) => {
           const value = e.target.value;
           if (value === "create") navigate("/admin/users/new");
           else navigate("/admin/users");
         }}
       >
-        <option value="list">View users</option>
-        {canWrite ? <option value="create">Create User</option> : null}
+        <option value="list">View Users</option>
+        {canWrite ? <option value="create">Create Users</option> : null}
       </select>
     </label>
   );
@@ -66,7 +66,7 @@ export function UserManagementPage() {
   const { hasPermission, user } = useAuth();
   const canWrite = hasPermission("users", "write");
   const { page, pageSize, setPage, params } = usePagination(1, 50);
-  const users = useUsers(params);
+  const users = useUsers({ ...params, selfRegisteredOnly: true });
   const setPasswordMut = useSetUserPassword();
   const deactivateUser = useDeactivateUser();
   const [resetUser, setResetUser] = useState<User | null>(null);
@@ -105,15 +105,14 @@ export function UserManagementPage() {
   return (
     <>
       <PageHeader
-        title="Users"
-        breadcrumb="Admin / Users"
+        title="View Users"
+        breadcrumb="Admin / User Management / View Users"
         actions={<UsersSectionMenu current="list" />}
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-          Stored PINs are listed below. If a row says “Not stored”, use Change PIN, or the PIN
-          appears after that person signs in once. Use the Create User option in the dropdown to add
-          a login.
+          Registered user accounts only (username + PIN). Staff management logins are not listed
+          here. Stored PINs appear below; if a row says “Not stored”, use Change PIN.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
 
@@ -165,8 +164,8 @@ export function UserManagementPage() {
           <>
             {users.data.items.length === 0 ? (
               <EmptyState
-                title="No logins yet"
-                description="Open the Users dropdown and choose Create User to add a username, PIN, and department."
+                title="No user accounts yet"
+                description="Open User Management and choose Create Users to add a username, PIN, and department."
               />
             ) : (
               <Table headers={["Name", "Username", "PIN / password", "Department", "Active", ""]}>
@@ -253,14 +252,14 @@ export function CreateUserPage() {
     return (
       <>
         <PageHeader
-          title="Create User"
-          breadcrumb="Admin / Users / Create User"
+          title="Create Users"
+          breadcrumb="Admin / User Management / Create Users"
           actions={<UsersSectionMenu current="create" />}
         />
         <div className="page">
           <EmptyState
             title="Not allowed"
-            description="You need write access on Users to create logins."
+            description="You need write access on User Management to create logins."
           />
         </div>
       </>
@@ -270,14 +269,14 @@ export function CreateUserPage() {
   return (
     <>
       <PageHeader
-        title="Create User"
-        breadcrumb="Admin / Users / Create User"
+        title="Create Users"
+        breadcrumb="Admin / User Management / Create Users"
         actions={<UsersSectionMenu current="create" />}
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           Set a full name, username, 4–8 digit PIN, and department. That person can then sign in. The
-          PIN stays visible on the users list.
+          PIN stays visible under View Users after save.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         <Card>
@@ -309,7 +308,7 @@ export function CreateUserPage() {
               required
               minLength={4}
               maxLength={8}
-              hint="4–8 digits. Shown in the users list after save."
+              hint="4–8 digits. Shown under View Users after save."
             />
             <label style={{ display: "grid", gap: "var(--space-1)" }}>
               <span

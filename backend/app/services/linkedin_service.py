@@ -539,19 +539,25 @@ def _post_with_version_fallback(
 
 
 def _build_commentary(job: JobDescription, apply_url: str | None) -> str:
+    """LinkedIn caption: title + apply. Never includes poster-only AI description."""
     apply_line = f"Apply here: {apply_url}" if apply_url else ""
 
     parts = [f"We're hiring: {job.title.strip()}"]
-    # Avoid including the apply CTA (raw Google Form URL) in the description
-    # we paste into commentary; we add it once via the dedicated "Apply here"
-    # line.
-    desc_clean = _HOW_TO_APPLY_RE.sub("", job.description_text or "").strip()
-    desc = re.sub(r"\s+", " ", desc_clean)
-    if desc:
-        parts.append(desc[:1200])
-    req = re.sub(r"\s+", " ", (job.requirements_text or "").strip())
-    if req:
-        parts.append(f"Requirements: {req[:600]}")
+    # When a hiring poster image exists, keep the LinkedIn caption short — role
+    # details live on the image. Do not paste poster AI description / long body.
+    has_images = bool(job.image_paths)
+    if not has_images:
+        desc_clean = _HOW_TO_APPLY_RE.sub("", job.description_text or "").strip()
+        desc_clean = re.sub(
+            r"\n*Apply Here\s*->\s*\S+", "", desc_clean, flags=re.IGNORECASE
+        ).strip()
+        desc = re.sub(r"\s+", " ", desc_clean)
+        # Skip placeholder one-liners meant only for image posts
+        if desc and not re.match(r"^we're hiring:", desc, flags=re.IGNORECASE):
+            parts.append(desc[:1200])
+        req = re.sub(r"\s+", " ", (job.requirements_text or "").strip())
+        if req:
+            parts.append(f"Requirements: {req[:600]}")
 
     base_text = "\n\n".join(parts).strip()
 
@@ -561,9 +567,8 @@ def _build_commentary(job: JobDescription, apply_url: str | None) -> str:
             text = text[: COMMENTARY_MAX - 1] + "…"
         return text
 
-    # Ensure the apply line is never truncated away.
     glue = "\n\n"
-    max_base = COMMENTARY_MAX - len(glue) - len(apply_line) - 1  # reserve 1 char for ellipsis
+    max_base = COMMENTARY_MAX - len(glue) - len(apply_line) - 1
     if len(base_text) > max_base:
         base_text = base_text[: max_base - 1].rstrip() + "…"
 

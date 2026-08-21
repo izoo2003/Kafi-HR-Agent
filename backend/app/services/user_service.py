@@ -68,9 +68,13 @@ def list_users(
     if is_active is not None:
         q = q.filter(User.is_active.is_(is_active))
     if self_registered_only:
+        # Registered user accounts only — hide seeded staff/demo management logins.
         q = q.filter(User.email.like(f"%@{SELF_SERVICE_EMAIL_DOMAIN}"))
 
     rows = q.order_by(User.created_at.desc(), User.id.desc()).all()
+    if self_registered_only:
+        rows = [u for u in rows if not _is_staff_account(u)]
+
     total = len(rows)
     page_rows = rows[(page - 1) * page_size : (page - 1) * page_size + page_size]
 

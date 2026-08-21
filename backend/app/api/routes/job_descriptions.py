@@ -17,6 +17,8 @@ from app.schemas.job_descriptions import (
     JobDescriptionUpdate,
     JobPostingAiDraftRequest,
     JobPostingAiDraftResult,
+    JobPostingAiImageRequest,
+    JobPostingAiImageResult,
     LinkedInAccountPublic,
     ScoringCriteriaCreate,
     ScoringCriteriaRead,
@@ -82,6 +84,16 @@ def ai_draft_job_posting(
 ) -> JobPostingAiDraftResult:
     """AI Analyzer — generate description, requirements, and skills from title and department."""
     return jd_service.generate_ai_draft(db, payload)
+
+
+@router.post("/job-descriptions/ai-image", response_model=JobPostingAiImageResult)
+def ai_image_job_posting(
+    payload: JobPostingAiImageRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("job_descriptions", "write"))],
+) -> JobPostingAiImageResult:
+    """Generate a hiring poster image via Cloudflare Workers AI + composed layout."""
+    return jd_service.generate_ai_image(db, payload)
 
 
 @router.get("/job-descriptions/{job_id}", response_model=JobDescriptionRead)

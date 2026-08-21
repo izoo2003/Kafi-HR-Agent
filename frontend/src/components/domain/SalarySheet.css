@@ -4,6 +4,11 @@
   background: var(--color-surface);
 }
 
+.salary-sheet__select {
+  min-width: 96px;
+  cursor: pointer;
+}
+
 .salary-sheet {
   width: max-content;
   min-width: 100%;

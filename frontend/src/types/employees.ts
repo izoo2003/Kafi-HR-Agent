@@ -1,7 +1,17 @@
+export type EmployeeLocation = "Mill" | "Clifton Office" | "KMP House";
+
+export const EMPLOYEE_LOCATIONS: readonly EmployeeLocation[] = [
+  "Mill",
+  "Clifton Office",
+  "KMP House",
+] as const;
+
 export interface Department {
   id: number;
   name: string;
   headEmployeeId: number | null;
+  jobDescriptionText: string | null;
+  sopsText: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -9,11 +19,15 @@ export interface Department {
 export interface DepartmentCreate {
   name: string;
   headEmployeeId?: number | null;
+  jobDescriptionText?: string | null;
+  sopsText?: string | null;
 }
 
 export interface DepartmentUpdate {
   name?: string;
   headEmployeeId?: number | null;
+  jobDescriptionText?: string | null;
+  sopsText?: string | null;
 }
 
 export type EmployeeDocumentCategory =
@@ -103,6 +117,7 @@ export interface Employee {
   permanentAddress: string | null;
   city: string | null;
   nationality: string | null;
+  location: EmployeeLocation | string | null;
 
   bankName: string | null;
   accountTitle: string | null;
@@ -149,6 +164,7 @@ export interface EmployeeCreate {
   permanentAddress?: string | null;
   city?: string | null;
   nationality?: string | null;
+  location?: EmployeeLocation | string | null;
 
   bankName?: string | null;
   accountTitle?: string | null;
@@ -183,6 +199,7 @@ export interface EmployeeUpdate {
   permanentAddress?: string | null;
   city?: string | null;
   nationality?: string | null;
+  location?: EmployeeLocation | string | null;
 
   bankName?: string | null;
   accountTitle?: string | null;

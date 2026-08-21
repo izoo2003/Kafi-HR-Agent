@@ -195,3 +195,12 @@ class PayrollComputeResult(BaseModel):
     company_name: str = "KAFI COMMODITIES (PVT) LTD"
     tax_slabs: list[PayrollTaxSlabLite] = []
     employees: list[PayrollComputeRow]
+
+
+class PayrollAiSummaryRead(BaseModel):
+    period_month: int
+    period_year: int
+    employee_count: int
+    total_net_payable: float
+    payment_mode_counts: dict[str, int]
+    summary_text: str

@@ -11,6 +11,7 @@ import {
   useCriteria,
   useDeleteJobImage,
   useGenerateJobPostingAiDraft,
+  useGenerateJobPostingAiImage,
   useJobDescription,
   useLinkedInAccounts,
   useUpdateJobDescription,
@@ -19,6 +20,7 @@ import { replaceCriteria as replaceCriteriaApi, uploadJobImages } from "../../ap
 import { ApiError } from "../../api/client";
 import type { LinkedInPostResult, ScoringCriteriaInput } from "../../types/cvScreening";
 import { JobPostingImageGallery, MAX_JOB_IMAGES } from "../../components/domain/JobPostingImages";
+import { FilePreviewModal, type FilePreviewRequest } from "../../components/domain/FilePreviewModal";
 import {
   clearJobDescriptionFormDraft,
   hasMeaningfulJobDescriptionDraft,
@@ -61,6 +63,7 @@ export function JobDescriptionFormPage() {
   const createJob = useCreateJobDescription();
   const updateJob = useUpdateJobDescription(jobId);
   const aiDraft = useGenerateJobPostingAiDraft();
+  const aiImage = useGenerateJobPostingAiImage();
   const applicationForm = useApplicationFormUrl();
   const linkedinAccounts = useLinkedInAccounts();
   const criteriaQ = useCriteria(jobId);
@@ -112,6 +115,7 @@ export function JobDescriptionFormPage() {
   const [title, setTitle] = useState(draftBootstrap.title);
   const [departmentId, setDepartmentId] = useState(draftBootstrap.departmentId);
   const [descriptionText, setDescriptionText] = useState(draftBootstrap.descriptionText);
+  const [posterDescriptionText, setPosterDescriptionText] = useState("");
   const [requirementsText, setRequirementsText] = useState(draftBootstrap.requirementsText);
   const [status, setStatus] = useState<"draft" | "open" | "closed">(draftBootstrap.status);
   const [skills, setSkills] = useState<ScoringCriteriaInput[]>(draftBootstrap.skills);
@@ -124,6 +128,7 @@ export function JobDescriptionFormPage() {
   const [postedJobId, setPostedJobId] = useState<number | null>(null);
   const [pendingImages, setPendingImages] = useState<File[]>([]);
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
+  const [imagePreview, setImagePreview] = useState<FilePreviewRequest | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(
     draftBootstrap.restored ? "Restored unsaved job posting draft from your last session." : null,
   );
@@ -165,6 +170,59 @@ export function JobDescriptionFormPage() {
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI Analyzer failed");
+    }
+  }
+
+  async function onGenerateAiImage() {
+    setError(null);
+    setAiMessage(null);
+    if (!title.trim() || !departmentId) {
+      setError("Enter a title and select a department before generating an image");
+      return;
+    }
+    const existingImageCount = existing.data?.imagePaths?.length ?? 0;
+    if (existingImageCount + pendingImages.length >= MAX_JOB_IMAGES) {
+      setError(`At most ${MAX_JOB_IMAGES} images per job posting — remove one before generating.`);
+      return;
+    }
+    try {
+      const skillPayload = skills
+        .map((s) => ({ name: s.criterionName.trim(), level: toRating(Number(s.weight)) }))
+        .filter((s) => s.name.length > 0);
+      const result = await aiImage.mutateAsync({
+        title: title.trim(),
+        departmentId: Number(departmentId),
+        // Optional override — otherwise backend AI-drafts poster description
+        posterDescriptionText: posterDescriptionText.trim() || null,
+        requirementsText: requirementsText.trim() || null,
+        skills: skillPayload.length ? skillPayload : undefined,
+      });
+      // LinkedIn-safe short text only (not the poster AI description)
+      setDescriptionText(result.descriptionText);
+      setPosterDescriptionText(result.posterDescriptionText);
+      if (result.requirementsText) {
+        setRequirementsText(result.requirementsText);
+      }
+      if (result.skills?.length) {
+        setSkills(result.skills.map((s) => skillRow(s.name, toRating(s.level))));
+      }
+      const binary = atob(result.imageBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const file = new File([bytes], result.filename || "hiring-poster.png", {
+        type: result.mimeType || "image/png",
+      });
+      if (isEdit && jobId > 0) {
+        await uploadJobImages(jobId, [file]);
+        await existing.refetch();
+      } else {
+        setPendingImages((current) => [...current, file]);
+      }
+      setAiMessage(
+        "Hiring poster generated (Kafi logo + AI description on the image). Poster description is not included in LinkedIn posts.",
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Image generation failed");
     }
   }
 
@@ -376,20 +434,35 @@ export function JobDescriptionFormPage() {
             }}
           >
             <div style={{ flex: "1 1 220px" }}>
-              <strong style={{ display: "block", marginBottom: 4 }}>AI Analyzer</strong>
+              <strong style={{ display: "block", marginBottom: 4 }}>Generate Image</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                Generates a short description (with relevant hashtags), requirements, and skills
-                for this title — and appends the Google Form apply link to the description.
+                From title + department, AI writes a poster description (not used on LinkedIn), then
+                builds a hiring image with the Kafi logo. Edit the poster description below and
+                regenerate if you want to tweak the image copy.
               </span>
             </div>
-            <Button
-              type="button"
-              variant="primary"
-              disabled={aiDraft.isPending || !title.trim() || !departmentId}
-              onClick={onGenerateAiDraft}
-            >
-              {aiDraft.isPending ? "Generating…" : "Generate with AI"}
-            </Button>
+            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={
+                  aiDraft.isPending || aiImage.isPending || !title.trim() || !departmentId
+                }
+                onClick={onGenerateAiImage}
+              >
+                {aiImage.isPending ? "Generating image…" : "Generate Image"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={
+                  aiDraft.isPending || aiImage.isPending || !title.trim() || !departmentId
+                }
+                onClick={onGenerateAiDraft}
+              >
+                {aiDraft.isPending ? "Generating…" : "Generate with AI"}
+              </Button>
+            </div>
           </div>
           {aiMessage ? (
             <p style={{ color: "var(--color-status-info)", margin: 0 }}>{aiMessage}</p>
@@ -424,18 +497,34 @@ export function JobDescriptionFormPage() {
           </div>
 
           <label className="form-field">
-            <span className="form-field__label">Description</span>
+            <span className="form-field__label">
+              Poster description (AI — optional, not posted to LinkedIn)
+            </span>
             <textarea
               className="form-field__input"
-              rows={5}
-              value={descriptionText}
-              onChange={(e) => setDescriptionText(e.target.value)}
-              required
+              rows={4}
+              value={posterDescriptionText}
+              onChange={(e) => setPosterDescriptionText(e.target.value)}
+              placeholder="Leave blank — Generate Image will AI-write this for the poster only."
             />
             <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              Keep this short and to the point — a brief role overview only. Requirements go in
-              the field below. AI Analyzer ends the description with hiring hashtags; you can edit
-              them before saving.
+              Used only on the generated image. LinkedIn posts use the job title + apply link, not
+              this text.
+            </span>
+          </label>
+
+          <label className="form-field">
+            <span className="form-field__label">Description (LinkedIn / apply note)</span>
+            <textarea
+              className="form-field__input"
+              rows={4}
+              value={descriptionText}
+              onChange={(e) => setDescriptionText(e.target.value)}
+              required={pendingImages.length === 0 && (existing.data?.imagePaths?.length ?? 0) === 0}
+            />
+            <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
+              Short apply note saved on the job. When a poster image exists, LinkedIn captions stay
+              title + apply only (poster AI description is excluded).
             </span>
           </label>
           <label className="form-field">
@@ -490,11 +579,34 @@ export function JobDescriptionFormPage() {
                     background: "var(--color-surface-alt)",
                   }}
                 >
-                  <img
-                    src={url}
-                    alt={pendingImages[index]?.name ?? `New image ${index + 1}`}
-                    style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const file = pendingImages[index];
+                      if (!file) return;
+                      setImagePreview({
+                        key: `pending-${file.name}-${index}`,
+                        title: file.name || `New image ${index + 1}`,
+                        filename: file.name || `pending-image-${index + 1}.png`,
+                        load: async () => file,
+                      });
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: 0,
+                      border: 0,
+                      background: "transparent",
+                      cursor: "zoom-in",
+                    }}
+                    aria-label={`View ${pendingImages[index]?.name ?? `new image ${index + 1}`}`}
+                  >
+                    <img
+                      src={url}
+                      alt={pendingImages[index]?.name ?? `New image ${index + 1}`}
+                      style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
+                    />
+                  </button>
                   <div style={{ padding: "var(--space-2)" }}>
                     <Button
                       type="button"
@@ -741,6 +853,9 @@ export function JobDescriptionFormPage() {
             ) : null}
           </div>
         </div>
+      ) : null}
+      {imagePreview ? (
+        <FilePreviewModal preview={imagePreview} onClose={() => setImagePreview(null)} />
       ) : null}
     </>
   );

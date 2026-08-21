@@ -2,6 +2,8 @@ import type { PayrollComputeResult } from "../../types/payroll";
 import {
   applyAttendancePatch,
   computeLiveRow,
+  normalizePaymentMode,
+  SALARY_PAYMENT_MODES,
   slabsFromResult,
   type SheetDraft,
 } from "../../lib/salarySheet";
@@ -100,7 +102,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
           <col style={{ width: 90 }} />
           <col style={{ width: 110 }} />
           <col style={{ width: 100 }} />
-          <col style={{ width: 100 }} />
+          <col style={{ width: 110 }} />
           <col style={{ width: 160 }} />
         </colgroup>
         <thead>
@@ -284,16 +286,24 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
               <td className="num salary-sheet__net">{money(r.net)}</td>
               <td>
                 {canEdit ? (
-                  <input
-                    className="salary-sheet__input salary-sheet__input--text"
-                    value={r.paymentMode}
+                  <select
+                    className="salary-sheet__input salary-sheet__input--text salary-sheet__select"
+                    value={normalizePaymentMode(r.paymentMode)}
                     onChange={(ev) =>
-                      edit(r.employeeId, r.draft, { paymentMode: ev.target.value })
+                      edit(r.employeeId, r.draft, {
+                        paymentMode: normalizePaymentMode(ev.target.value),
+                      })
                     }
                     aria-label={`Payment mode for ${r.fullName}`}
-                  />
+                  >
+                    {SALARY_PAYMENT_MODES.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
-                  r.paymentMode
+                  normalizePaymentMode(r.paymentMode)
                 )}
               </td>
               <td>
@@ -337,7 +347,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
             <td colSpan={7}>
               <div className="salary-sheet__signoff-line">Checked By</div>
             </td>
-            <td colSpan={7}>
+            <td colSpan={6}>
               <div className="salary-sheet__signoff-line">Approved By</div>
             </td>
           </tr>

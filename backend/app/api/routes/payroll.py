@@ -9,9 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.deps import require_permission
+from app.core.config import get_settings
 from app.reporting.salary_sheet_excel import salary_sheet_xlsx_bytes
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.payroll import (
+    PayrollAiSummaryRead,
     PayrollComputeResult,
     PayrollSalaryRow,
     PayrollSalaryUpdate,
@@ -22,6 +24,7 @@ from app.schemas.payroll import (
     TaxYearUpdate,
 )
 from app.services import payroll_service, tax_service
+from app.services.payroll_ai_summary import generate_payroll_ai_summary
 from app.services.payroll_compute import compute_payroll_for_month
 
 router = APIRouter(tags=["payroll"])
@@ -86,6 +89,32 @@ def export_salary_sheet(
         headers={
             "Content-Disposition": f'attachment; filename="Salary_Sheet_{month_label}.xlsx"'
         },
+    )
+
+
+@router.post("/payroll/compute/ai-summary", response_model=PayrollAiSummaryRead)
+def payroll_ai_summary(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("payroll", "read"))],
+    period_month: int = Query(..., ge=1, le=12),
+    period_year: int = Query(..., ge=2000, le=2100),
+    tax_year_id: int = Query(...),
+) -> PayrollAiSummaryRead:
+    """AI narrative salary-sheet summary including IBFT / Cash / Cheque counts."""
+    result = compute_payroll_for_month(
+        db,
+        period_month=period_month,
+        period_year=period_year,
+        tax_year_id=tax_year_id,
+    )
+    summary = generate_payroll_ai_summary(result, get_settings())
+    return PayrollAiSummaryRead(
+        period_month=summary.period_month,
+        period_year=summary.period_year,
+        employee_count=summary.employee_count,
+        total_net_payable=summary.total_net_payable,
+        payment_mode_counts=summary.payment_mode_counts,
+        summary_text=summary.summary_text,
     )
 
 

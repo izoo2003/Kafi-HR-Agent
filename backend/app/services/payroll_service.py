@@ -16,6 +16,19 @@ from app.schemas.payroll import (
 )
 from app.services import audit_service
 
+PAYMENT_MODES = ("IBFT", "Cheque", "Cash")
+
+
+def _normalize_payment_mode(raw: str | None) -> str:
+    v = (raw or "").strip().lower()
+    if not v or v in {"ibft", "bank", "online"}:
+        return "IBFT"
+    if v in {"cheque", "check", "chq", "cq"}:
+        return "Cheque"
+    if v == "cash":
+        return "Cash"
+    return "IBFT"
+
 
 def _to_salary_row(db: Session, emp: Employee) -> PayrollSalaryRow:
     dept = db.query(Department).filter(Department.id == emp.department_id).one_or_none()
@@ -126,7 +139,7 @@ def save_sheet_adjustments(
         row.allowance_amount = item.allowance_amount or Decimal("0")
         row.loan_deduction_amount = item.loan_deduction_amount or Decimal("0")
         row.advance_amount = item.advance_amount or Decimal("0")
-        row.payment_mode = (item.payment_mode or "IBFT").strip() or "IBFT"
+        row.payment_mode = _normalize_payment_mode(item.payment_mode)
         row.remarks = item.remarks
         row.days_present = item.days_present
         row.days_absent = item.days_absent

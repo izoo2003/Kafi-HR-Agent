@@ -152,8 +152,14 @@ function JobPostingsView() {
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("job_descriptions", "write");
   const jobs = useJobDescriptions(params);
+  const departments = useDepartments();
   const deleteJob = useDeleteJobDescription();
   const [error, setError] = useState<string | null>(null);
+
+  const deptName = useMemo(() => {
+    const map = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
+    return (id: number) => map.get(id) ?? `Department #${id}`;
+  }, [departments.data]);
 
   async function onDelete(id: number, title: string, applicants: number) {
     const applicantNote =
@@ -200,7 +206,7 @@ function JobPostingsView() {
             data-status={j.status === "open" ? "positive" : j.status === "closed" ? "neutral" : "info"}
           >
             <td>{j.title}</td>
-            <td className="num">{j.departmentId}</td>
+            <td>{deptName(j.departmentId)}</td>
             <td>
               <StatusBadge
                 status={j.status === "open" ? "approved" : j.status === "closed" ? "draft" : "scored"}

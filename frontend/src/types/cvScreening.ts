@@ -56,6 +56,28 @@ export interface JobPostingAiDraftResult {
   applicationFormUrl: string | null;
 }
 
+export interface JobPostingAiImageRequest {
+  title: string;
+  departmentId: number;
+  /** AI/poster-only description — never sent to LinkedIn */
+  posterDescriptionText?: string | null;
+  requirementsText?: string | null;
+  skills?: JobPostingAiDraftSkill[];
+}
+
+export interface JobPostingAiImageResult {
+  imageBase64: string;
+  mimeType: string;
+  filename: string;
+  /** LinkedIn-safe short job description (apply CTA) */
+  descriptionText: string;
+  /** Full AI text used on the poster only */
+  posterDescriptionText: string;
+  applicationFormUrl: string | null;
+  requirementsText?: string | null;
+  skills?: JobPostingAiDraftSkill[];
+}
+
 export interface ScoringCriteria {
   id: number;
   jobDescriptionId: number;

@@ -87,6 +87,7 @@
 | GET | `/job-descriptions/application-form` | Configured public Google Form URL for CV/details submission |
 | GET | `/job-descriptions/linkedin-accounts` | Configured LinkedIn profile names/labels for the Open-job picker (no tokens) |
 | POST | `/job-descriptions/ai-draft` | AI Analyzer: generate description (with hashtags) + requirements + skills; appends Google Form link |
+| POST | `/job-descriptions/ai-image` | Generate hiring poster image (Cloudflare Workers AI + layout); returns PNG base64; sets description `Apply Here -> {Google Form URL}` |
 | GET | `/job-descriptions/{id}` | Detail (includes `applicants_count`, `application_form_url`, `image_paths`, `linkedin_posts`) |
 | PATCH | `/job-descriptions/{id}` | Update; setting status to `open` with `linkedin_account_names` posts to those LinkedIn accounts |
 | DELETE | `/job-descriptions/{id}` | Close/archive |
@@ -153,7 +154,8 @@
 | GET | `/payroll/salaries` | List active employees with current `base_salary` (paginated) |
 | PATCH | `/payroll/salaries/{employee_id}` | Update an active employee's `base_salary` (audit-logged; requires payroll write) |
 | GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`); includes salary-sheet columns |
-| GET | `/payroll/compute/export` | Download the month's salary sheet as Excel (Kafi salary-sheet layout) |
+| GET | `/payroll/compute/export` | Download the month's salary sheet as Excel (Kafi salary-sheet layout + Payment Summary sheet) |
+| POST | `/payroll/compute/ai-summary` | AI narrative salary-sheet summary (includes IBFT / Cash / Cheque payment mode counts); query: `period_month`, `period_year`, `tax_year_id` |
 | PUT | `/payroll/sheet-adjustments` | Save monthly salary-sheet extras (allowance, loan, advance, payment mode, remarks) and optional base salary |
 | GET | `/payroll/tax-years` | List tax years with progressive slabs |
 | POST | `/payroll/tax-years` | Create a tax year (optional initial slabs) |

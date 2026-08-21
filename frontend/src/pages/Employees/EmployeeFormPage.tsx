@@ -36,6 +36,7 @@ import type {
   EmployeeReferenceCreate,
   EmployeeUpdate,
 } from "../../types/employees";
+import { EMPLOYEE_LOCATIONS } from "../../types/employees";
 import {
   clearEmployeeFormDraft,
   hasMeaningfulEmployeeDraft,
@@ -67,6 +68,7 @@ type FormState = {
   permanentAddress: string;
   city: string;
   nationality: string;
+  location: string;
   departmentId: string;
   employmentType: string;
   dateJoined: string;
@@ -94,6 +96,7 @@ const emptyForm: FormState = {
   permanentAddress: "",
   city: "",
   nationality: "Pakistani",
+  location: "",
   departmentId: "",
   employmentType: "full_time",
   dateJoined: "",
@@ -250,6 +253,7 @@ export function EmployeeFormPage() {
       permanentAddress: e.permanentAddress ?? "",
       city: e.city ?? "",
       nationality: e.nationality ?? "",
+      location: e.location ?? "",
       departmentId: String(e.departmentId ?? ""),
       employmentType: e.employmentType ?? "full_time",
       dateJoined: e.dateJoined ?? "",
@@ -315,6 +319,7 @@ export function EmployeeFormPage() {
       permanentAddress: emptyToNull(form.permanentAddress),
       city: emptyToNull(form.city),
       nationality: emptyToNull(form.nationality),
+      location: emptyToNull(form.location),
       bankName: emptyToNull(form.bankName),
       accountTitle: emptyToNull(form.accountTitle),
       accountNumber: emptyToNull(form.accountNumber),
@@ -341,7 +346,7 @@ export function EmployeeFormPage() {
     setError(null);
     setMessage(null);
     if (!form.departmentId) {
-      setError("Select a role (department) before saving.");
+      setError("Select a department before saving.");
       return;
     }
     try {
@@ -848,13 +853,13 @@ export function EmployeeFormPage() {
 
           <Card>
             <div style={sectionStyle()}>
-              <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Role</h2>
+              <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Department</h2>
               <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                Assign the employee to a department role. Options come from departments already created.
+                Assign the employee to a department. Options come from departments already created.
               </p>
               <div style={gridStyle()}>
                 <label className="form-field">
-                  <span className="form-field__label">Role (department)</span>
+                  <span className="form-field__label">Department</span>
                   <select
                     className="form-field__input"
                     value={form.departmentId}
@@ -890,6 +895,33 @@ export function EmployeeFormPage() {
                   onChange={(e) => patchForm("dateJoined", e.target.value)}
                   disabled={readOnly}
                 />
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <div style={sectionStyle()}>
+              <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Location</h2>
+              <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                Workplace site for this employee.
+              </p>
+              <div style={gridStyle()}>
+                <label className="form-field">
+                  <span className="form-field__label">Location</span>
+                  <select
+                    className="form-field__input"
+                    value={form.location}
+                    onChange={(e) => patchForm("location", e.target.value)}
+                    disabled={readOnly}
+                  >
+                    <option value="">Select location…</option>
+                    {EMPLOYEE_LOCATIONS.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </div>
           </Card>

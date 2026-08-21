@@ -1,5 +1,18 @@
 import type { PayrollComputeResult, PayrollComputeRow, TaxSlabInput } from "../types/payroll";
 
+/** Canonical salary sheet payment modes (dropdown). */
+export const SALARY_PAYMENT_MODES = ["IBFT", "Cheque", "Cash"] as const;
+export type SalaryPaymentMode = (typeof SALARY_PAYMENT_MODES)[number];
+
+/** Map legacy/free-text values onto IBFT | Cheque | Cash. */
+export function normalizePaymentMode(raw: string | null | undefined): SalaryPaymentMode {
+  const v = (raw || "").trim().toLowerCase();
+  if (!v || v === "ibft" || v === "bank" || v === "online") return "IBFT";
+  if (v === "cheque" || v === "check" || v === "chq" || v === "cq") return "Cheque";
+  if (v === "cash") return "Cash";
+  return "IBFT";
+}
+
 export type SheetDraft = {
   baseSalary: string;
   daysPresent: string;
@@ -110,7 +123,7 @@ export function computeLiveRow(
     taxComputed,
     tax,
     net,
-    paymentMode: d?.paymentMode ?? emp.paymentMode ?? "IBFT",
+    paymentMode: normalizePaymentMode(d?.paymentMode ?? emp.paymentMode),
     remarks: d?.remarks ?? emp.remarks ?? "",
     draft: d ?? draftFromEmployee(emp),
   };
@@ -128,7 +141,7 @@ export function draftFromEmployee(e: PayrollComputeRow): SheetDraft {
     advanceAmount: String(e.advanceAmount ?? 0),
     monthlyTax: String(e.monthlyTax ?? 0),
     taxManual: Boolean(e.taxManual),
-    paymentMode: e.paymentMode ?? "IBFT",
+    paymentMode: normalizePaymentMode(e.paymentMode),
     remarks: e.remarks ?? "",
   };
 }

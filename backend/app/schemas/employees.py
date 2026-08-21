@@ -3,12 +3,16 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # Numeric(12, 2) → at most 10 digits before the decimal (max 9_999_999_999.99)
 _MAX_BASE_SALARY = Decimal("9999999999.99")
+
+EMPLOYEE_LOCATIONS = ("Mill", "Clifton Office", "KMP House")
+EmployeeLocation = Literal["Mill", "Clifton Office", "KMP House"]
 
 DOCUMENT_CATEGORIES = frozenset(
     {
@@ -40,11 +44,15 @@ IMAGE_ONLY_DOCUMENT_CATEGORIES = CNIC_IMAGE_CATEGORIES | frozenset({"photo"})
 class DepartmentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     head_employee_id: int | None = None
+    job_description_text: str | None = None
+    sops_text: str | None = None
 
 
 class DepartmentUpdate(BaseModel):
     name: str | None = None
     head_employee_id: int | None = None
+    job_description_text: str | None = None
+    sops_text: str | None = None
 
 
 class DepartmentRead(BaseModel):
@@ -53,6 +61,8 @@ class DepartmentRead(BaseModel):
     id: int
     name: str
     head_employee_id: int | None
+    job_description_text: str | None = None
+    sops_text: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -150,6 +160,7 @@ class EmployeeCreate(BaseModel):
     permanent_address: str | None = None
     city: str | None = None
     nationality: str | None = None
+    location: EmployeeLocation | None = None
 
     bank_name: str | None = None
     account_title: str | None = None
@@ -189,6 +200,7 @@ class EmployeeUpdate(BaseModel):
     permanent_address: str | None = None
     city: str | None = None
     nationality: str | None = None
+    location: EmployeeLocation | None = None
 
     bank_name: str | None = None
     account_title: str | None = None
@@ -232,6 +244,7 @@ class EmployeeRead(BaseModel):
     permanent_address: str | None = None
     city: str | None = None
     nationality: str | None = None
+    location: str | None = None
 
     bank_name: str | None = None
     account_title: str | None = None

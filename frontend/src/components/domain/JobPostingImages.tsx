@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { downloadJobImage } from "../../api/jobDescriptions";
 import { Button } from "../ui/Button";
+import { FilePreviewModal, type FilePreviewRequest } from "./FilePreviewModal";
 
 const MAX_JOB_IMAGES = 8;
 
@@ -15,6 +16,7 @@ export function JobPostingImageGallery({
 }) {
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const urlsRef = useRef<string[]>([]);
+  const [preview, setPreview] = useState<FilePreviewRequest | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,53 +57,77 @@ export function JobPostingImageGallery({
   if (count <= 0) return null;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-        gap: "var(--space-3)",
-      }}
-    >
-      {Array.from({ length: count }, (_, index) => (
-        <figure
-          key={`${jobId}-${index}`}
-          style={{
-            margin: 0,
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            overflow: "hidden",
-            background: "var(--color-surface-alt)",
-          }}
-        >
-          {urls[index] ? (
-            <img
-              src={urls[index] ?? ""}
-              alt={`Job posting ${index + 1}`}
-              style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
-            />
-          ) : (
-            <div
-              style={{
-                height: 120,
-                display: "grid",
-                placeItems: "center",
-                color: "var(--color-text-muted)",
-                fontSize: "var(--text-sm)",
-              }}
-            >
-              Loading…
-            </div>
-          )}
-          {onRemove ? (
-            <div style={{ padding: "var(--space-2)" }}>
-              <Button type="button" variant="destructive" onClick={() => onRemove(index)}>
-                Remove
-              </Button>
-            </div>
-          ) : null}
-        </figure>
-      ))}
-    </div>
+    <>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+          gap: "var(--space-3)",
+        }}
+      >
+        {Array.from({ length: count }, (_, index) => (
+          <figure
+            key={`${jobId}-${index}`}
+            style={{
+              margin: 0,
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              overflow: "hidden",
+              background: "var(--color-surface-alt)",
+            }}
+          >
+            {urls[index] ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setPreview({
+                    key: `job-${jobId}-image-${index}`,
+                    title: `Job posting image ${index + 1}`,
+                    filename: `job-${jobId}-image-${index + 1}.jpg`,
+                    load: () => downloadJobImage(jobId, index),
+                  })
+                }
+                style={{
+                  display: "block",
+                  width: "100%",
+                  padding: 0,
+                  border: 0,
+                  background: "transparent",
+                  cursor: "zoom-in",
+                }}
+                aria-label={`View job posting image ${index + 1}`}
+              >
+                <img
+                  src={urls[index] ?? ""}
+                  alt={`Job posting ${index + 1}`}
+                  style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }}
+                />
+              </button>
+            ) : (
+              <div
+                style={{
+                  height: 120,
+                  display: "grid",
+                  placeItems: "center",
+                  color: "var(--color-text-muted)",
+                  fontSize: "var(--text-sm)",
+                }}
+              >
+                Loading…
+              </div>
+            )}
+            {onRemove ? (
+              <div style={{ padding: "var(--space-2)" }}>
+                <Button type="button" variant="destructive" onClick={() => onRemove(index)}>
+                  Remove
+                </Button>
+              </div>
+            ) : null}
+          </figure>
+        ))}
+      </div>
+      {preview ? <FilePreviewModal preview={preview} onClose={() => setPreview(null)} /> : null}
+    </>
   );
 }
 
