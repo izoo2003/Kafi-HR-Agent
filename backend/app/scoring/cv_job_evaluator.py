@@ -39,7 +39,8 @@ def evaluate_cv_against_job(
     heuristic_strengths: list[str] | None = None,
     heuristic_gaps: list[str] | None = None,
 ) -> CvJobEvaluationResult:
-    if settings.resolved_gemini_api_keys():
+    api_keys = _cv_eval_api_keys(settings)
+    if api_keys:
         try:
             return _evaluate_with_gemini(
                 cv_text=cv_text,
@@ -47,6 +48,7 @@ def evaluate_cv_against_job(
                 description_text=description_text,
                 requirements_text=requirements_text or "",
                 settings=settings,
+                api_keys=api_keys,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Gemini CV evaluation failed, using heuristic: %s", exc)
@@ -59,6 +61,17 @@ def evaluate_cv_against_job(
     )
 
 
+def _cv_eval_api_keys(settings: Settings) -> list[str]:
+    dedicated = settings.resolved_gemini_cv_match_api_keys()
+    if dedicated:
+        return dedicated
+    return settings.resolved_gemini_api_keys()
+
+
+def _cv_eval_models(settings: Settings) -> list[str]:
+    return settings.resolved_gemini_cv_match_models()
+
+
 def _evaluate_with_gemini(
     *,
     cv_text: str,
@@ -66,6 +79,7 @@ def _evaluate_with_gemini(
     description_text: str,
     requirements_text: str,
     settings: Settings,
+    api_keys: list[str],
 ) -> CvJobEvaluationResult:
     prompt = f"""You are an HR screening assistant. Compare this candidate's CV against the job posting.
 
@@ -101,10 +115,10 @@ Rules:
 """
 
     response = generate_content_with_fallback(
-        api_keys=settings.resolved_gemini_api_keys(),
-        models=settings.resolved_gemini_models(),
+        api_keys=api_keys,
+        models=_cv_eval_models(settings),
         prompt=prompt,
-        pool_id="general",
+        pool_id="cv_match",
     )
     data = _parse_json_response(response.text)
 

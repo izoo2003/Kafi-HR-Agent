@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -10,7 +11,6 @@ import { CvPreviewModal } from "../../components/domain/CvPreviewModal";
 import { useDeleteCandidate, usePatchCandidate, useRanking } from "../../hooks/useJobDescriptions";
 import { downloadReport, rerank } from "../../api/jobDescriptions";
 import { CANDIDATE_STATUS_LABELS } from "../../constants/statusLabels";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../hooks/useAuth";
 import { ApiError } from "../../api/client";
 
@@ -24,6 +24,7 @@ export function RankingPage() {
   const remove = useDeleteCandidate();
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [reranking, setReranking] = useState(false);
   const [preview, setPreview] = useState<{ candidateId: number; fullName: string | null } | null>(null);
 
   async function handleDelete(candidateId: number, name: string | null) {
@@ -48,12 +49,25 @@ export function RankingPage() {
           <>
             <Button
               variant="secondary"
+              disabled={reranking || !canWrite}
               onClick={async () => {
-                await rerank(jobId);
-                qc.invalidateQueries({ queryKey: ["ranking", jobId] });
+                setError(null);
+                setReranking(true);
+                try {
+                  const rows = await rerank(jobId);
+                  qc.setQueryData(["ranking", jobId], rows);
+                } catch (err) {
+                  setError(
+                    err instanceof ApiError
+                      ? err.message
+                      : "Recompute ranking failed. Check skills on the job and Gemini API keys.",
+                  );
+                } finally {
+                  setReranking(false);
+                }
               }}
             >
-              Recompute Ranking
+              {reranking ? "Recomputing…" : "Recompute Ranking"}
             </Button>
             <Button
               variant="primary"
@@ -74,7 +88,8 @@ export function RankingPage() {
       />
       <div className="page">
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
-        {ranking.isLoading ? <Spinner /> : null}
+        {reranking ? <Spinner label="Scoring CVs and rebuilding ranking" /> : null}
+        {ranking.isLoading && !reranking ? <Spinner /> : null}
         {ranking.data && ranking.data.length === 0 ? (
           <EmptyState
             title="No rankings yet"

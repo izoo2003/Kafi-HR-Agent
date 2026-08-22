@@ -25,10 +25,10 @@ from app.ingestion.whatsapp_ingestor import fetch_whatsapp_submissions
 from app.ingestion.google_form_ingestor import fetch_form_submissions
 from app.ingestion.cv_submission import SourceFetchResult
 from app.integration.event_bus_stub import publish_event
-from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription
+from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription, ScoringCriteria
 from app.models.employees import Employee
 from app.pipeline import run_cv_pipeline
-from app.ranking.candidate_ranker import rank_candidates_for_job
+from app.ranking.candidate_ranker import rank_candidates_for_job, refresh_rankings
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.cv_screening import (
     CandidateAssignRequest,
@@ -45,7 +45,7 @@ from app.schemas.cv_screening import (
 )
 from app.scoring.cv_job_evaluator import evaluate_cv_against_job
 from app.scoring.cv_job_matcher import OpenJobSummary, match_candidate_to_job
-from app.scoring.cv_scorer import _max_points_for_rule
+from app.scoring.cv_scorer import _max_points_for_rule, score_candidate
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
@@ -244,6 +244,103 @@ def override_score(
         cand.status = "scored"
         db.flush()
     return row
+
+
+def recompute_job_rankings(db: Session, job_id: int) -> list[CandidateRanking]:
+    """Parse (if needed), score each CV with skills + Gemini when configured, then rank high→low."""
+    job = db.query(JobDescription).filter(JobDescription.id == job_id).one_or_none()
+    if job is None:
+        raise EntityNotFound(f"Job description {job_id} not found")
+
+    settings = get_settings()
+    criteria_rows = (
+        db.query(ScoringCriteria)
+        .filter(ScoringCriteria.job_description_id == job_id)
+        .order_by(ScoringCriteria.id)
+        .all()
+    )
+    criteria_payload = [
+        {"id": c.id, "weight": c.weight, "scoring_rules": c.scoring_rules or {}}
+        for c in criteria_rows
+    ]
+    has_gemini = bool(
+        settings.resolved_gemini_cv_match_api_keys() or settings.resolved_gemini_api_keys()
+    )
+
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.job_description_id == job_id)
+        .order_by(Candidate.id)
+        .all()
+    )
+    if not candidates:
+        refresh_rankings(db, job_id, [])
+        return []
+
+    scored_rows: list[dict] = []
+    skipped = 0
+    for cand in candidates:
+        parsed = cand.parsed_data or {}
+        if not str(parsed.get("raw_text") or "").strip():
+            try:
+                run_cv_pipeline(cand.id, db)
+                db.refresh(cand)
+                parsed = cand.parsed_data or {}
+            except Exception:
+                logger.exception("Could not parse candidate %s during ranking recompute", cand.id)
+
+        cv_text = str(parsed.get("raw_text") or "").strip()
+        if not cv_text:
+            skipped += 1
+            continue
+
+        rule_total = 0.0
+        if criteria_payload:
+            score_rows, rule_total = score_candidate(parsed, criteria_payload)
+            db.query(CandidateScore).filter(CandidateScore.candidate_id == cand.id).delete()
+            db.flush()
+            for row in score_rows:
+                db.add(
+                    CandidateScore(
+                        candidate_id=cand.id,
+                        scoring_criteria_id=row["scoring_criteria_id"],
+                        raw_score=row["raw_score"],
+                        notes=row.get("notes"),
+                    )
+                )
+            db.flush()
+
+        total_score = float(rule_total)
+        if has_gemini:
+            ai = evaluate_cv_against_job(
+                cv_text=cv_text,
+                job_title=job.title,
+                description_text=job.description_text or "",
+                requirements_text=job.requirements_text,
+                settings=settings,
+                heuristic_overall_score=rule_total if rule_total > 0 else None,
+            )
+            ai_score = round(float(ai.rating_out_of_10) * 10.0, 2)
+            total_score = ai_score if not criteria_payload else max(total_score, ai_score)
+
+        scored_rows.append({"candidate_id": cand.id, "total_score": total_score})
+        cand.status = "scored"
+        db.flush()
+
+    if not scored_rows:
+        raise BusinessRuleViolation(
+            "No candidates could be scored. Ensure CVs are uploaded and readable, add skills on "
+            "the job posting, or configure GEMINI_CV_MATCH_API_KEY / GEMINI_API_KEY for AI ranking."
+        )
+
+    if skipped:
+        logger.info(
+            "Ranking recompute for job %s skipped %s unreadable candidate(s)",
+            job_id,
+            skipped,
+        )
+
+    return refresh_rankings(db, job_id, scored_rows)
 
 
 def get_ranking(db: Session, job_id: int) -> list[RankingRow]:

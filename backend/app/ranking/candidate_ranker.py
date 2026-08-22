@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.cv_screening import Candidate, CandidateRanking
+from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, ScoringCriteria
 
 
 def refresh_rankings(db: Session, job_description_id: int, scored: list[dict]) -> list[CandidateRanking]:
@@ -36,15 +36,12 @@ def refresh_rankings(db: Session, job_description_id: int, scored: list[dict]) -
 
 
 def rank_candidates_for_job(db: Session, job_description_id: int) -> list[CandidateRanking]:
-    """Recompute from existing CandidateScore totals via CandidateRanking payloads already scored."""
-    from app.models.cv_screening import CandidateScore, ScoringCriteria
+    """Fast rule-based re-rank from stored scores (used after single-candidate pipeline steps)."""
+    from app.scoring.cv_scorer import score_candidate
 
     candidates = (
         db.query(Candidate)
-        .filter(
-            Candidate.job_description_id == job_description_id,
-            Candidate.status.in_(["scored", "shortlisted", "rejected", "hired", "parsed"]),
-        )
+        .filter(Candidate.job_description_id == job_description_id)
         .all()
     )
     criteria = (
@@ -56,18 +53,14 @@ def rank_candidates_for_job(db: Session, job_description_id: int) -> list[Candid
         {"id": c.id, "weight": c.weight, "scoring_rules": c.scoring_rules or {}} for c in criteria
     ]
 
-    from app.scoring.cv_scorer import score_candidate
-
     scored_rows: list[dict] = []
     for cand in candidates:
         if not cand.parsed_data:
             continue
-        # Prefer recompute from scores table if present
         existing = (
             db.query(CandidateScore).filter(CandidateScore.candidate_id == cand.id).all()
         )
         if existing and criteria_payload:
-            # rebuild from stored raw scores
             score_map = {s.scoring_criteria_id: s.raw_score for s in existing}
             total = 0.0
             wsum = 0.0

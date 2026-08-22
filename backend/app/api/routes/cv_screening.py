@@ -14,7 +14,6 @@ from app.core.db import get_db
 from app.core.deps import require_permission
 from app.models.cv_screening import CandidateScore
 from app.pipeline import run_cv_pipeline
-from app.ranking.candidate_ranker import rank_candidates_for_job
 from app.reporting.excel_export import export_ranking_excel
 from app.schemas.common import AuthContext, MessageResponse, PaginatedResponse
 from app.schemas.cv_screening import (
@@ -271,7 +270,7 @@ def rank_job(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("cv_screening", "write"))],
 ) -> list[RankingRow]:
-    rank_candidates_for_job(db, job_id)
+    cv_service.recompute_job_rankings(db, job_id)
     audit_service.log_from_auth(
         db, auth, action="candidate.ranked", entity_type="job_description", entity_id=job_id
     )
