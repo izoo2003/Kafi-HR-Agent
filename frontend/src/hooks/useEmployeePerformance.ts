@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as perfApi from "../api/employeePerformance";
 
 export function useEmployeePerformance(
@@ -8,6 +8,7 @@ export function useEmployeePerformance(
     queryKey: ["employee-performance", params],
     queryFn: () => perfApi.getEmployeePerformance(params!),
     enabled: Boolean(params?.employeeId && params.periodYear && params.periodMonth),
+    placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
 }

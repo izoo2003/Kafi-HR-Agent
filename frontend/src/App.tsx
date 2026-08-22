@@ -13,6 +13,7 @@ import { UnassignedCandidatesPage } from "./pages/CvScreening/UnassignedCandidat
 import { EmployeeListPage } from "./pages/Employees/EmployeeListPage";
 import { EmployeeFormPage } from "./pages/Employees/EmployeeFormPage";
 import { VerifyCnicPage } from "./pages/Employees/VerifyCnicPage";
+import { VerifyEducationPage } from "./pages/Employees/VerifyEducationPage";
 import { DepartmentManagePage } from "./pages/Employees/DepartmentManagePage";
 import { EmployeeLettersPage } from "./pages/Employees/EmployeeLettersPage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
@@ -30,6 +31,7 @@ import { KpiDashboardPage } from "./pages/Kpi/KpiDashboardPage";
 import { EmployeePerformancePage } from "./pages/EmployeeDevelopment/EmployeePerformancePage";
 import { EmployeeTrainingPage } from "./pages/EmployeeDevelopment/EmployeeTrainingPage";
 import { ThingsToLearnPage } from "./pages/EmployeeDevelopment/ThingsToLearnPage";
+import { EmployeeResignationPage } from "./pages/EmployeeDevelopment/EmployeeResignationPage";
 import {
   AuditLogPage,
   DashboardPage,
@@ -55,13 +57,14 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect />} />
-          <Route path="/onboarding" element={<HrPoliciesPage />} />
-          <Route path="/hr-policies" element={<Navigate to="/onboarding" replace />} />
+          <Route path="/hr-policies" element={<HrPoliciesPage />} />
+          <Route path="/onboarding" element={<Navigate to="/hr-policies" replace />} />
 
           <Route element={<RequirePermission module="employees" />}>
             <Route path="/employees" element={<EmployeeListPage />} />
             <Route path="/employees/new" element={<EmployeeFormPage />} />
             <Route path="/employees/verify-cnic" element={<VerifyCnicPage />} />
+            <Route path="/employees/verify-education" element={<VerifyEducationPage />} />
             <Route path="/employees/departments" element={<DepartmentManagePage />} />
             <Route
               path="/employees/letters/appointment"
@@ -123,6 +126,10 @@ export default function App() {
             <Route
               path="/employee-development/things-to-learn"
               element={<ThingsToLearnPage />}
+            />
+            <Route
+              path="/employee-development/resignation"
+              element={<EmployeeResignationPage />}
             />
             <Route
               path="/employee-development"

@@ -75,7 +75,7 @@ export function EmployeeListPage() {
 
   return (
     <>
-      <PageHeader title="Employees" breadcrumb="Organization / Employees" />
+      <PageHeader title="Employees Management" breadcrumb="Organization / Employees Management" />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
@@ -105,18 +105,11 @@ export function EmployeeListPage() {
             </select>
           </label>
           {canWrite ? (
-            <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-              <Link to="/employees/verify-cnic">
-                <Button type="button" variant="secondary">
-                  Verify my CNIC
-                </Button>
-              </Link>
-              <Link to="/employees/new">
-                <Button type="button" variant="primary">
-                  Add Employee
-                </Button>
-              </Link>
-            </div>
+            <Link to="/employees/new">
+              <Button type="button" variant="primary">
+                Add Employee
+              </Button>
+            </Link>
           ) : null}
         </div>
 
@@ -127,7 +120,7 @@ export function EmployeeListPage() {
             description={
               statusFilter === "active"
                 ? "Add an employee to start building the roster, or switch the filter to see terminated records."
-                : "Open Employees, expand the menu, then use Departments to create a department before adding an employee."
+                : "Open Employees Management, expand the menu, then use Departments to create a department before adding an employee."
             }
           />
         ) : null}

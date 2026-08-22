@@ -25,6 +25,7 @@ from app.models.identity import (
 )
 from app.models.kpi import (
     EmployeeMonthlyPerformance,
+    EmployeeResignationNotice,
     EmployeeTrainingAssignment,
     KpiDefinition,
     KpiEntry,
@@ -75,6 +76,7 @@ __all__ = [
     "KpiEntry",
     "EmployeeMonthlyPerformance",
     "EmployeeTrainingAssignment",
+    "EmployeeResignationNotice",
     "AuditLog",
     "IntegrationRegistry",
     "SystemConfig",

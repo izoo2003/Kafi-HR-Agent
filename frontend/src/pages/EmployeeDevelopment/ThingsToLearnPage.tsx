@@ -7,12 +7,11 @@ import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
-import { useEmployees } from "../../hooks/useEmployees";
+import { useEmployeeDevelopmentEmployees } from "../../hooks/useEmployeeDevelopmentEmployees";
 import {
   useEmployeeTrainingList,
   useUpdateEmployeeTrainingStatus,
 } from "../../hooks/useEmployeeTraining";
-import { isSelfService } from "../../lib/selfService";
 import type { TrainingStatus } from "../../types/employeeTraining";
 
 const selectStyle: CSSProperties = {
@@ -40,16 +39,9 @@ function statusBadge(status: TrainingStatus): string {
 
 export function ThingsToLearnPage() {
   const { user } = useAuth();
-  const selfService = isSelfService(user);
+  const { selfService, employees } = useEmployeeDevelopmentEmployees();
   const [filterEmployeeId, setFilterEmployeeId] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
-
-  const employees = useEmployees({
-    status: "active",
-    page: 1,
-    pageSize: 200,
-    enabled: !selfService,
-  });
 
   const listEmployeeId = selfService
     ? user?.linkedEmployeeId ?? null
@@ -79,8 +71,9 @@ export function ThingsToLearnPage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <Card>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-            Courses assigned to you for development. Mark them in progress or completed as you work
-            through them.
+            {selfService
+              ? "Courses assigned to you for development. Mark them in progress or completed as you work through them."
+              : "View training assignments and progress across employees. Employees update their own status on their account."}
           </p>
           {!selfService ? (
             <label className="form-field" style={{ maxWidth: 420 }}>
@@ -218,44 +211,46 @@ export function ThingsToLearnPage() {
                   )}
                 </p>
               ) : null}
-              <div
-                style={{
-                  display: "flex",
-                  gap: "var(--space-2)",
-                  flexWrap: "wrap",
-                  marginTop: "var(--space-4)",
-                }}
-              >
-                {row.status !== "in_progress" && row.status !== "completed" ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={updateStatus.isPending}
-                    onClick={() => void setStatus(row.id, "in_progress")}
-                  >
-                    Mark in progress
-                  </Button>
-                ) : null}
-                {row.status !== "completed" ? (
-                  <Button
-                    type="button"
-                    disabled={updateStatus.isPending}
-                    onClick={() => void setStatus(row.id, "completed")}
-                  >
-                    Mark completed
-                  </Button>
-                ) : null}
-                {row.status === "completed" ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={updateStatus.isPending}
-                    onClick={() => void setStatus(row.id, "assigned")}
-                  >
-                    Reopen
-                  </Button>
-                ) : null}
-              </div>
+              {selfService ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--space-2)",
+                    flexWrap: "wrap",
+                    marginTop: "var(--space-4)",
+                  }}
+                >
+                  {row.status !== "in_progress" && row.status !== "completed" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={updateStatus.isPending}
+                      onClick={() => void setStatus(row.id, "in_progress")}
+                    >
+                      Mark in progress
+                    </Button>
+                  ) : null}
+                  {row.status !== "completed" ? (
+                    <Button
+                      type="button"
+                      disabled={updateStatus.isPending}
+                      onClick={() => void setStatus(row.id, "completed")}
+                    >
+                      Mark completed
+                    </Button>
+                  ) : null}
+                  {row.status === "completed" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={updateStatus.isPending}
+                      onClick={() => void setStatus(row.id, "assigned")}
+                    >
+                      Reopen
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>

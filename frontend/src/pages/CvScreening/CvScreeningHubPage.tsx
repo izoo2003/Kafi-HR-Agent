@@ -112,8 +112,10 @@ export function CvScreeningHubPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-muted)" }}>
-          Select an open role to upload CVs, review candidates, and open the ranking. Or fetch new
-          CVs automatically from hr@kafi-group.com webmail and the Google Form with Sync CVs.
+          Select an open role to upload CVs, review candidates, and open the ranking. Click{" "}
+          <strong>Sync CVs</strong> to pull new submissions from hr@kafi-group.com webmail and the
+          Google Form — sync is manual (not instant). Google Form responses can take 30–60 seconds
+          to appear in the linked sheet after someone submits.
         </p>
 
         {syncError ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{syncError}</p> : null}

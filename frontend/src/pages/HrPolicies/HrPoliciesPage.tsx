@@ -40,8 +40,8 @@ export function HrPoliciesPage() {
   return (
     <>
       <PageHeader
-        title="Onboarding"
-        breadcrumb="Onboarding"
+        title="HR Policies"
+        breadcrumb="HR Policies"
         actions={
           <Button variant="secondary" onClick={() => void copyAll()}>
             {copied ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}

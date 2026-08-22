@@ -29,7 +29,7 @@ import "./AppShell.css";
 
 const NAV = [
   { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: LayoutDashboard },
-  { to: "/employees", label: "Employees", module: "employees", icon: UserRound },
+  { to: "/employees", label: "Employees Management", module: "employees", icon: UserRound },
   { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: BriefcaseBusiness },
   { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: ClipboardList },
   { to: "/attendance", label: "Attendance", module: "attendance", icon: FileSpreadsheet },
@@ -41,7 +41,7 @@ const NAV = [
     module: "kpi",
     icon: TrendingUp,
   },
-  { to: "/onboarding", label: "Onboarding", module: null, icon: ScrollText },
+  { to: "/hr-policies", label: "HR Policies", module: null, icon: ScrollText },
   { to: "/admin/users", label: "User Management", module: "users", icon: Users },
 ] as const;
 
@@ -207,6 +207,7 @@ export function AppShell() {
                   key={`${item.to}-${item.label}`}
                   link={link}
                   allowSubnav={!railCollapsed}
+                  canManage={!selfService && hasPermission("employees", "read")}
                 />
               );
             }
@@ -289,7 +290,9 @@ function EmployeeNavGroup({
             type="button"
             className={`sidebar__group-toggle${open ? " is-open" : ""}`}
             aria-expanded={open}
-            aria-label={open ? "Collapse Employees menu" : "Expand Employees menu"}
+            aria-label={
+              open ? "Collapse Employees Management menu" : "Expand Employees Management menu"
+            }
             onClick={() => setOpen((value) => !value)}
           >
             <ChevronDown size={16} aria-hidden />
@@ -304,21 +307,25 @@ function EmployeeNavGroup({
 function EmployeeDevelopmentNavGroup({
   link,
   allowSubnav,
+  canManage,
 }: {
   link: ReactNode;
   allowSubnav: boolean;
+  canManage: boolean;
 }) {
   const location = useLocation();
   const onSection = location.pathname.startsWith("/employee-development");
-  const [open, setOpen] = useState(onSection);
+  const [manualClose, setManualClose] = useState(false);
 
   useEffect(() => {
-    if (onSection) setOpen(true);
-  }, [onSection]);
+    setManualClose(false);
+  }, [location.pathname]);
 
   useEffect(() => {
-    if (!allowSubnav) setOpen(false);
+    if (!allowSubnav) setManualClose(false);
   }, [allowSubnav]);
+
+  const open = onSection && !manualClose;
 
   return (
     <div className="sidebar__group">
@@ -332,13 +339,13 @@ function EmployeeDevelopmentNavGroup({
             aria-label={
               open ? "Collapse Employee Development menu" : "Expand Employee Development menu"
             }
-            onClick={() => setOpen((value) => !value)}
+            onClick={() => setManualClose((value) => !value)}
           >
             <ChevronDown size={16} aria-hidden />
           </button>
         ) : null}
       </div>
-      <EmployeeDevelopmentSectionMenus open={allowSubnav && open} />
+      <EmployeeDevelopmentSectionMenus open={allowSubnav && open} canManage={canManage} />
     </div>
   );
 }

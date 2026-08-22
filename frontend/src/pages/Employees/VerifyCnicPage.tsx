@@ -83,7 +83,7 @@ export function VerifyCnicPage() {
     <>
       <PageHeader
         title="Verify my CNIC"
-        breadcrumb="Organization / Employees / Verify CNIC"
+        breadcrumb="Organization / Employees Management / Employees Document Verification / Verify my CNIC"
         actions={
           <Link to="/employees">
             <Button variant="secondary">Back to employees</Button>

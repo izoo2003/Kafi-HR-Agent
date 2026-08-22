@@ -215,6 +215,12 @@
   color: var(--color-text-primary);
 }
 
+.sidebar__subitem--active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
 .sidebar__sublist-empty {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-xs);

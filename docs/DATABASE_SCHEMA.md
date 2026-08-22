@@ -418,6 +418,23 @@ Courses recommended by AI and assigned to an employee (Things To Learn).
 | created_at | DATETIME | |
 | updated_at | DATETIME | |
 
+### `employee_resignation_notices`
+HR-issued resignation letters. When the employee accepts, the employee is terminated and their login is deactivated.
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| employee_id | INTEGER FK → employees.id | |
+| subject | TEXT NOT NULL | |
+| letter_body | TEXT NOT NULL | full letter text |
+| reason | TEXT NULL | |
+| effective_date | DATE NULL | exit date applied on accept |
+| status | TEXT | `pending`, `accepted`, `cancelled` |
+| issued_by | INTEGER FK → users.id | |
+| issued_at | DATETIME | |
+| accepted_at | DATETIME NULL | |
+| created_at | DATETIME | |
+| updated_at | DATETIME | |
+
 ### `app_notifications`
 In-app reminders (KPI incomplete / at-risk and future kinds). Not an email queue.
 | Column | Type | Notes |

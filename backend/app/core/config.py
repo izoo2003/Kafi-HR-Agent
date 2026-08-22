@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     gemini_cnic_api_key_2: str = ""
     gemini_cnic_model: str = "gemini-flash-latest"
     gemini_cnic_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    # Education marks/grade sheet verification — separate key (falls back to gemini_api_key pool)
+    gemini_education_api_key: str = ""
+    gemini_education_api_key_2: str = ""
+    gemini_education_model: str = "gemini-flash-latest"
+    gemini_education_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
     gemini_job_posting_api_key_2: str = ""
@@ -188,6 +193,8 @@ class Settings(BaseSettings):
     google_service_account_json: str = ""
     # Comma-separated CV sync sources. Default is the two live intake channels.
     cv_sync_sources: str = "webmail,google_form"
+    cv_sync_batch_size: int = Field(default=20, ge=1, le=100)
+    cv_sync_time_budget_seconds: float = Field(default=120.0, ge=15.0, le=600.0)
     # HR webmail via IMAP (mail.kafi-group.com) — primary for hr@kafi-group.com
     imap_host: str = "mail.kafi-group.com"
     imap_port: int = 993
@@ -319,6 +326,27 @@ class Settings(BaseSettings):
             self.gemini_cnic_model or self.gemini_model or "gemini-flash-latest"
         ).strip()
         fallbacks = self.gemini_cnic_model_fallbacks or self.gemini_model_fallbacks
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_education_api_key(self) -> str:
+        keys = self.resolved_gemini_education_api_keys()
+        return keys[0] if keys else ""
+
+    def resolved_gemini_education_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_education_api_key, self.gemini_education_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_education_models(self) -> list[str]:
+        primary = (
+            self.gemini_education_model or self.gemini_model or "gemini-flash-latest"
+        ).strip()
+        fallbacks = (
+            self.gemini_education_model_fallbacks or self.gemini_model_fallbacks
+        )
         return parse_model_chain(primary, fallbacks)
 
     def resolved_gemini_job_posting_api_key(self) -> str:

@@ -8,12 +8,14 @@ import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
-import { useEmployees } from "../../hooks/useEmployees";
+import {
+  useEmployeeDevelopmentEmployees,
+  useEmployeeDevelopmentSelection,
+} from "../../hooks/useEmployeeDevelopmentEmployees";
 import {
   useEmployeePerformance,
   useEmployeePerformanceAiSummary,
 } from "../../hooks/useEmployeePerformance";
-import { isSelfService } from "../../lib/selfService";
 
 const selectStyle: CSSProperties = {
   minWidth: 200,
@@ -37,34 +39,26 @@ function moneyOrNum(n: string | number | null | undefined): string {
   return Number(n).toLocaleString("en-PK", { maximumFractionDigits: 2 });
 }
 
+function formatNum(n: string | number | null | undefined, digits = 1): string {
+  if (n == null || n === "") return "—";
+  return Number(n).toFixed(digits);
+}
+
 export function EmployeePerformancePage() {
-  const { user, hasPermission } = useAuth();
-  const selfService = isSelfService(user);
+  const { hasPermission } = useAuth();
+  const { selfService, linkedEmployeeId, canListEmployees, employees } =
+    useEmployeeDevelopmentEmployees();
   const canWrite = hasPermission("kpi", "write");
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [employeeId, setEmployeeId] = useState<number | "">("");
+  const { employeeId, setEmployeeId } = useEmployeeDevelopmentSelection(
+    Boolean(employees.data?.items.length),
+    employees.data?.items,
+    { selfService, linkedEmployeeId },
+  );
   const [error, setError] = useState<string | null>(null);
   const [aiText, setAiText] = useState<string | null>(null);
-
-  const employees = useEmployees({
-    status: "active",
-    page: 1,
-    pageSize: 200,
-    enabled: !selfService,
-  });
-
-  useEffect(() => {
-    if (selfService && user?.linkedEmployeeId) {
-      setEmployeeId(user.linkedEmployeeId);
-    }
-  }, [selfService, user?.linkedEmployeeId]);
-
-  useEffect(() => {
-    if (selfService || employeeId !== "" || !employees.data?.items.length) return;
-    setEmployeeId(employees.data.items[0].id);
-  }, [selfService, employeeId, employees.data]);
 
   const queryParams = useMemo(() => {
     if (employeeId === "") return null;
@@ -77,6 +71,8 @@ export function EmployeePerformancePage() {
 
   const performance = useEmployeePerformance(queryParams);
   const aiMutation = useEmployeePerformanceAiSummary();
+  const data = performance.data;
+  const showPerformanceLoading = performance.isFetching && !data;
 
   useEffect(() => {
     setAiText(performance.data?.aiSummary ?? null);
@@ -94,7 +90,7 @@ export function EmployeePerformancePage() {
     }
   }
 
-  const data = performance.data;
+  const employeeOptions = employees.data?.items ?? [];
 
   return (
     <>
@@ -125,19 +121,38 @@ export function EmployeePerformancePage() {
                 disabled={selfService}
                 onChange={(e) => setEmployeeId(e.target.value ? Number(e.target.value) : "")}
               >
-                <option value="">Select employee…</option>
-                {selfService && user?.linkedEmployeeId ? (
-                  <option value={user.linkedEmployeeId}>
-                    {data?.employeeName ?? `Employee #${user.linkedEmployeeId}`}
+                {!selfService ? <option value="">Select employee…</option> : null}
+                {selfService && linkedEmployeeId ? (
+                  <option value={linkedEmployeeId}>
+                    {data?.employeeName ?? `Employee #${linkedEmployeeId}`}
+                  </option>
+                ) : employees.isLoading ? (
+                  <option value="" disabled>
+                    Loading employees…
+                  </option>
+                ) : employees.isError ? (
+                  <option value="" disabled>
+                    Could not load employees
+                  </option>
+                ) : !canListEmployees ? (
+                  <option value="" disabled>
+                    Employees list requires employees read access
                   </option>
                 ) : (
-                  (employees.data?.items ?? []).map((e) => (
+                  employeeOptions.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.fullName} ({e.employeeCode})
                     </option>
                   ))
                 )}
               </select>
+              {!selfService && employees.isError ? (
+                <span className="form-field__error">
+                  {employees.error instanceof ApiError
+                    ? employees.error.message
+                    : "Could not load the employee list."}
+                </span>
+              ) : null}
             </label>
             <label className="form-field">
               <span className="form-field__label">Month</span>
@@ -175,8 +190,8 @@ export function EmployeePerformancePage() {
           />
         ) : null}
 
-        {performance.isLoading ? <Spinner label="Loading performance" /> : null}
-        {performance.isError ? (
+        {showPerformanceLoading ? <Spinner label="Loading performance" /> : null}
+        {performance.isError && !data ? (
           <EmptyState
             title="Could not load performance"
             description={
@@ -189,6 +204,17 @@ export function EmployeePerformancePage() {
 
         {data ? (
           <>
+            {performance.isFetching ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "var(--text-sm)",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                Updating performance…
+              </p>
+            ) : null}
             <section
               style={{
                 display: "grid",
@@ -196,7 +222,7 @@ export function EmployeePerformancePage() {
                 gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
               }}
             >
-              <Card status={scoreBand(data.scoreOutOf10)}>
+              <Card status={scoreBand(Number(data.scoreOutOf10))}>
                 <div
                   style={{
                     fontSize: "var(--text-xs)",
@@ -212,7 +238,7 @@ export function EmployeePerformancePage() {
                   className="font-data"
                   style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-2)" }}
                 >
-                  {data.scoreOutOf10.toFixed(1)}
+                  {formatNum(data.scoreOutOf10, 1)}
                   <span style={{ fontSize: "var(--text-lg)", color: "var(--color-text-muted)" }}>
                     {" "}
                     / 10
@@ -231,7 +257,7 @@ export function EmployeePerformancePage() {
                       ? "Live score — updates as KPIs are logged"
                       : "Computed from logged KPIs"}
                   {data.overallPct != null
-                    ? ` · ${data.overallPct.toFixed(1)}% achievement`
+                    ? ` · ${formatNum(data.overallPct, 1)}% achievement`
                     : ""}
                 </p>
               </Card>
@@ -290,7 +316,7 @@ export function EmployeePerformancePage() {
                       }}
                     >
                       {h.label} ={" "}
-                      <span className="font-data">{h.scoreOutOf10.toFixed(1)}/10</span>
+                      <span className="font-data">{formatNum(h.scoreOutOf10, 1)}/10</span>
                     </button>
                   ))}
                 </div>
@@ -383,7 +409,7 @@ export function EmployeePerformancePage() {
                       <td className="num">{moneyOrNum(row.actualValue)}</td>
                       <td className="num">{moneyOrNum(row.targetValue)}</td>
                       <td className="num">
-                        {row.weight != null ? row.weight.toFixed(2) : "—"}
+                        {row.weight != null ? formatNum(row.weight, 2) : "—"}
                       </td>
                       <td>
                         {row.score != null ? (
@@ -396,7 +422,7 @@ export function EmployeePerformancePage() {
                                   : "rejected"
                             }
                           >
-                            {row.score.toFixed(1)}%
+                            {formatNum(row.score, 1)}%
                           </StatusBadge>
                         ) : (
                           "—"

@@ -29,14 +29,14 @@ const COPY: Record<
 > = {
   appointment: {
     title: "Appointment letters",
-    breadcrumb: "Organization / Employees / Appointment letter",
+    breadcrumb: "Organization / Employees Management / Appointment letter",
     file: "Appointment_Letter",
     empty: "No employees yet. Add an employee first, then create their appointment letter here.",
     createLabel: "Create appointment letter",
   },
   contract: {
     title: "Contract letters",
-    breadcrumb: "Organization / Employees / Contract letter",
+    breadcrumb: "Organization / Employees Management / Contract letter",
     file: "Employment_Contract",
     empty: "No employees yet. Add an employee first, then create their contract letter here.",
     createLabel: "Create contract letter",

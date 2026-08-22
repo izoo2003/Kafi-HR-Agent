@@ -701,8 +701,8 @@ export function EmployeeFormPage() {
         title={isNew ? "Add employee" : form.fullName || "Employee profile"}
         breadcrumb={
           isNew
-            ? "Organization / Employees / New"
-            : `Organization / Employees / ${form.employeeCode || id}`
+            ? "Organization / Employees Management / New"
+            : `Organization / Employees Management / ${form.employeeCode || id}`
         }
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)", maxWidth: 1100 }}>

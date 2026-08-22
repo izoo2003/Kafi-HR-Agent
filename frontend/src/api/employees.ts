@@ -16,6 +16,7 @@ import type {
   EmployeeUpdate,
 } from "../types/employees";
 import type { CnicVerificationResult } from "../types/cnic";
+import type { EducationVerificationResult } from "../types/educationVerification";
 
 export async function listDepartments(): Promise<Department[]> {
   return apiRequest<Department[]>("/departments");
@@ -60,6 +61,20 @@ export async function verifyCnic(
     form.append("front_image", images);
   }
   return apiRequest<CnicVerificationResult>("/cnic/verify", {
+    method: "POST",
+    formData: form,
+  });
+}
+
+/** Education marks/grade sheet read + AI institution existence check. Not an official registry lookup. */
+export async function verifyEducationDocuments(files: {
+  marksSheet?: File | null;
+  gradeSheet?: File | null;
+}): Promise<EducationVerificationResult> {
+  const form = new FormData();
+  if (files.marksSheet) form.append("marks_sheet", files.marksSheet);
+  if (files.gradeSheet) form.append("grade_sheet", files.gradeSheet);
+  return apiRequest<EducationVerificationResult>("/education-documents/verify", {
     method: "POST",
     formData: form,
   });

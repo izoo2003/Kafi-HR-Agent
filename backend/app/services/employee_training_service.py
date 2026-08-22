@@ -315,12 +315,11 @@ def update_assignment_status(
     if row is None:
         raise EntityNotFound(f"Training assignment {assignment_id} not found")
 
-    if is_self_service(auth):
-        own = own_employee_id(auth)
-        if own is None or row.employee_id != own:
-            raise PermissionDenied("You can only update your own training")
-    elif not _has_kpi_write(auth):
-        raise PermissionDenied("You need write access to update training status")
+    own = own_employee_id(auth)
+    if own is None or row.employee_id != own:
+        raise PermissionDenied(
+            "Only the assigned employee can update training progress on Things To Learn"
+        )
 
     before = {"status": row.status}
     row.status = status

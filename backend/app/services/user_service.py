@@ -65,8 +65,11 @@ def list_users(
     self_registered_only: bool = False,
 ) -> PaginatedResponse[UserRead]:
     q = db.query(User).options(joinedload(User.roles))
+    # Registered-user admin list hides deactivated logins by default (e.g. after resignation).
     if is_active is not None:
         q = q.filter(User.is_active.is_(is_active))
+    elif self_registered_only:
+        q = q.filter(User.is_active.is_(True))
     if self_registered_only:
         # Registered user accounts only — hide seeded staff/demo management logins.
         q = q.filter(User.email.like(f"%@{SELF_SERVICE_EMAIL_DOMAIN}"))

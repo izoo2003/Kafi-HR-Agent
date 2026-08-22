@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../api/employeeTraining";
 import type { TrainingCourseRecommendation, TrainingStatus } from "../types/employeeTraining";
 
@@ -10,6 +10,7 @@ export function useEmployeeTrainingList(employeeId?: number | null, enabled = tr
         employeeId != null ? { employeeId } : undefined,
       ),
     enabled,
+    placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
 }

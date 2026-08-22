@@ -122,6 +122,10 @@ def _state_file(settings: Settings):
     return settings.data_dir / "google_form_state.json"
 
 
+def _max_rows_per_run(settings: Settings) -> int:
+    return int(getattr(settings, "cv_sync_batch_size", 20) or 20)
+
+
 def _fetch_new_rows(sheets, drive, settings: Settings) -> tuple[list[CvSubmission], list[str]]:
     sheet_id = settings.google_form_sheet_id
     sheet_name = _first_sheet_title(sheets, sheet_id)
@@ -136,7 +140,7 @@ def _fetch_new_rows(sheets, drive, settings: Settings) -> tuple[list[CvSubmissio
         return [], []
 
     header_map = _resolve_headers(rows[0])
-    last_processed = _load_last_processed_row(settings, sheet_row_count=len(rows))
+    processed_rows = _load_processed_rows(settings, sheet_row_count=len(rows))
     warnings: list[str] = []
     if "cv_upload" not in header_map:
         warnings.append(
@@ -145,27 +149,32 @@ def _fetch_new_rows(sheets, drive, settings: Settings) -> tuple[list[CvSubmissio
         )
 
     submissions: list[CvSubmission] = []
-    new_last_processed = last_processed
     imported_this_run = 0
-    for row_idx, row in enumerate(rows[1:], start=2):  # sheet rows are 1-indexed w/ header
-        if row_idx <= last_processed:
-            continue
-        if imported_this_run >= 8:
+    max_rows = _max_rows_per_run(settings)
+    pending_row_indices = [
+        row_idx for row_idx in range(2, len(rows) + 1) if row_idx not in processed_rows
+    ]
+    # Newest submissions live at the bottom of the sheet — prioritize them first.
+    pending_row_indices.sort(reverse=True)
+
+    for row_idx in pending_row_indices:
+        if imported_this_run >= max_rows:
             warnings.append("more Google Form rows remain — click Sync CVs again")
             break
+        row = rows[row_idx - 1]
         submission, skip_reason = _row_to_submission(drive, row_idx, row, header_map, settings)
         if submission:
             submissions.append(submission)
-            new_last_processed = row_idx
+            processed_rows.add(row_idx)
             imported_this_run += 1
         elif skip_reason == "no_cv":
-            new_last_processed = row_idx
+            processed_rows.add(row_idx)
         elif skip_reason:
             warnings.append(f"row {row_idx}: {skip_reason}")
             if not skip_reason.startswith("could not download"):
-                new_last_processed = row_idx
+                processed_rows.add(row_idx)
 
-    _save_last_processed_row(settings, new_last_processed)
+    _save_processed_rows(settings, processed_rows)
     return submissions, warnings
 
 
@@ -281,29 +290,37 @@ def _parse_timestamp(raw: str) -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
-def _load_last_processed_row(settings: Settings, *, sheet_row_count: int) -> int:
+def _load_processed_rows(settings: Settings, *, sheet_row_count: int) -> set[int]:
     state_file = _state_file(settings)
     if not state_file.exists():
-        return 1  # header is row 1
+        return set()
     try:
-        last = int(json.loads(state_file.read_text()).get("last_processed_row", 1))
+        data = json.loads(state_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return 1
-    # Sheet was cleared/recreated or linked to a new form — old row numbers are invalid.
-    if sheet_row_count > 1 and last > sheet_row_count:
-        logger.warning(
-            "Google Form sync state last_processed_row=%s but sheet only has %s rows — reprocessing",
-            last,
-            sheet_row_count,
-        )
-        return 1
-    return last
+        return set()
+
+    if "processed_rows" in data:
+        rows: set[int] = set()
+        for raw in data.get("processed_rows", []):
+            try:
+                rows.add(int(raw))
+            except (TypeError, ValueError):
+                continue
+    else:
+        # Migrate legacy last_processed_row checkpoints.
+        last = int(data.get("last_processed_row", 1) or 1)
+        rows = set(range(2, last + 1))
+
+    if sheet_row_count > 1:
+        rows = {row_idx for row_idx in rows if row_idx <= sheet_row_count}
+    return rows
 
 
-def _save_last_processed_row(settings: Settings, row_idx: int) -> None:
+def _save_processed_rows(settings: Settings, processed_rows: set[int]) -> None:
     state_file = _state_file(settings)
     state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps({"last_processed_row": row_idx}), encoding="utf-8")
+    trimmed = sorted(processed_rows)[-5000:]
+    state_file.write_text(json.dumps({"processed_rows": trimmed}), encoding="utf-8")
 
 
 def restore_form_cv(source_ref: str, settings: Settings) -> tuple[str, bytes] | None:

@@ -49,7 +49,14 @@ from app.scoring.cv_scorer import _max_points_for_rule
 from app.services import audit_service
 
 logger = logging.getLogger(__name__)
-_SYNC_TIME_BUDGET_SECONDS = 45.0
+
+
+def _sync_time_budget_seconds(settings) -> float:
+    return float(getattr(settings, "cv_sync_time_budget_seconds", 120.0) or 120.0)
+
+
+def _sync_batch_size(settings) -> int:
+    return int(getattr(settings, "cv_sync_batch_size", 20) or 20)
 
 
 def list_candidates(
@@ -489,7 +496,7 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     duplicate_candidates: list[CvDuplicateCandidateRead] = []
     DUPLICATE_DETAILS_LIMIT = 25
 
-    deadline = time.monotonic() + _SYNC_TIME_BUDGET_SECONDS
+    deadline = time.monotonic() + _sync_time_budget_seconds(settings)
     fetch_results: list[SourceFetchResult] = []
     for name in _enabled_cv_sources(settings):
         if name not in fetchers:
@@ -520,6 +527,9 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
     for fetch_result in fetch_results:
         fetched_count = 0
         validation_skipped: list[str] = []
+        pending: list[tuple] = []
+
+        # Phase 1 — store files quickly so new submissions appear even if AI matching is slow.
         for submission in fetch_result.submissions:
             if time.monotonic() >= deadline:
                 validation_skipped.append(
@@ -574,6 +584,21 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
                 validation_skipped.append(f"{submission.source_ref}: {exc}")
                 continue
 
+            pending.append((submission, candidate))
+            fetched_count += 1
+
+        db.flush()
+
+        # Phase 2 — parse + AI job match (can be slower; CV file is already saved).
+        for submission, candidate in pending:
+            if time.monotonic() >= deadline:
+                validation_skipped.append(
+                    "CVs saved — AI matching paused; click Sync CVs again to finish matching"
+                )
+                unassigned += 1
+                all_candidates.append(get_candidate(db, candidate.id))
+                continue
+
             try:
                 run_cv_pipeline(candidate.id, db)  # parse-only: job_description_id is still None
             except Exception:
@@ -613,7 +638,6 @@ def sync_cv_sources(db: Session, auth: AuthContext) -> CvSyncResult:
             else:
                 unassigned += 1
 
-            fetched_count += 1
             all_candidates.append(get_candidate(db, candidate.id))
 
         source_message = fetch_result.message

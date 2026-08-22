@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -8,7 +8,11 @@ import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
-import { useDepartments, useEmployees } from "../../hooks/useEmployees";
+import { useDepartments } from "../../hooks/useEmployees";
+import {
+  useEmployeeDevelopmentEmployees,
+  useEmployeeDevelopmentSelection,
+} from "../../hooks/useEmployeeDevelopmentEmployees";
 import {
   useAssignEmployeeTraining,
   useEmployeeTrainingList,
@@ -39,8 +43,12 @@ function statusBadge(status: string): string {
 
 export function EmployeeTrainingPage() {
   const { hasPermission } = useAuth();
-  const canWrite = hasPermission("kpi", "write");
-  const [employeeId, setEmployeeId] = useState<number | "">("");
+  const { selfService, canListEmployees, employees } = useEmployeeDevelopmentEmployees();
+  const canWrite = hasPermission("kpi", "write") && !selfService && canListEmployees;
+  const { employeeId, setEmployeeId: setEmployeeIdBase } = useEmployeeDevelopmentSelection(
+    Boolean(employees.data?.items.length),
+    employees.data?.items,
+  );
   const [topic, setTopic] = useState("");
   const [promptOpen, setPromptOpen] = useState(false);
   const [recommendations, setRecommendations] = useState<TrainingCourseRecommendation[]>([]);
@@ -49,7 +57,6 @@ export function EmployeeTrainingPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const employees = useEmployees({ status: "active", page: 1, pageSize: 200 });
   const departments = useDepartments();
   const assigned = useEmployeeTrainingList(
     employeeId === "" ? null : Number(employeeId),
@@ -57,11 +64,6 @@ export function EmployeeTrainingPage() {
   );
   const recommend = useRecommendEmployeeTraining();
   const assign = useAssignEmployeeTraining();
-
-  useEffect(() => {
-    if (employeeId !== "" || !employees.data?.items.length) return;
-    setEmployeeId(employees.data.items[0].id);
-  }, [employeeId, employees.data]);
 
   const selectedEmployee = useMemo(
     () => (employees.data?.items ?? []).find((e) => e.id === employeeId),
@@ -75,7 +77,7 @@ export function EmployeeTrainingPage() {
   }, [departments.data, selectedEmployee]);
 
   function onEmployeeChange(id: number | "") {
-    setEmployeeId(id);
+    setEmployeeIdBase(id);
     setRecommendations([]);
     setSelected(new Set());
     setTopic("");
@@ -138,8 +140,14 @@ export function EmployeeTrainingPage() {
         <PageHeader title="Employee Training" breadcrumb="Employee Development / Employee Training" />
         <div className="page">
           <EmptyState
-            title="Write access required"
-            description="You can view assigned courses under Things To Learn. Assigning training requires KPI write permission."
+            title={selfService ? "HR assigns training for you" : "Write access required"}
+            description={
+              selfService
+                ? "Assigned courses appear under Things To Learn on your account."
+                : canListEmployees
+                  ? "You can view assigned courses under Things To Learn. Assigning training requires KPI write permission."
+                  : "You need employees read access to pick someone for training. View your own courses under Things To Learn."
+            }
           />
         </div>
       </>
@@ -167,12 +175,29 @@ export function EmployeeTrainingPage() {
               }
             >
               <option value="">Select employee…</option>
-              {(employees.data?.items ?? []).map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.fullName} ({e.employeeCode}) — {e.roleTitle}
+              {employees.isLoading ? (
+                <option value="" disabled>
+                  Loading employees…
                 </option>
-              ))}
+              ) : employees.isError ? (
+                <option value="" disabled>
+                  Could not load employees
+                </option>
+              ) : (
+                (employees.data?.items ?? []).map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.fullName} ({e.employeeCode}) — {e.roleTitle}
+                  </option>
+                ))
+              )}
             </select>
+            {employees.isError ? (
+              <span className="form-field__error">
+                {employees.error instanceof ApiError
+                  ? employees.error.message
+                  : "Could not load the employee list."}
+              </span>
+            ) : null}
           </label>
           {selectedEmployee ? (
             <p style={{ marginBottom: 0, fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>

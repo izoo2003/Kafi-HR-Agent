@@ -103,3 +103,19 @@ class EmployeeTrainingAssignment(Base, TimestampMixin):
     assigned_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmployeeResignationNotice(Base, TimestampMixin):
+    """HR-issued resignation letter awaiting employee acceptance."""
+
+    __tablename__ = "employee_resignation_notices"
+
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    letter_body: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    issued_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

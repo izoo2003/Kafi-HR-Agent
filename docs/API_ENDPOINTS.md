@@ -56,6 +56,7 @@
 | GET | `/employees` | List employees (filter by department, status) |
 | POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
 | POST | `/cnic/verify` | Verify typed CNIC + front/back card images (format + OCR match; images only, not NADRA). Prefer this path. |
+| POST | `/education-documents/verify` | Upload marks sheet and/or grade sheet (PDF or image); AI reads documents and checks whether named schools/colleges/universities appear to be real institutions (not an official registry lookup). |
 | POST | `/employees/cnic/verify` | Deprecated alias of `/cnic/verify` |
 | GET | `/employees/{id}` | Employee detail incl. documents + references |
 | GET | `/employees/{id}/letters/appointment` | Download stored appointment letter (404 if not created yet) |
@@ -207,6 +208,13 @@
 | POST | `/employee-training/assign` | Persist selected recommended courses to employee (Things To Learn) |
 | GET | `/employee-training` | List training assignments (`employee_id` optional; self-service = own only) |
 | PATCH | `/employee-training/{id}` | Update assignment status (`assigned` / `in_progress` / `completed`) |
+| POST | `/employee-resignations/generate` | Generate resignation letter text for an employee (kpi write) |
+| GET | `/employee-resignations` | List resignation notices (`employee_id` optional; self-service = own) |
+| POST | `/employee-resignations` | Send resignation letter to employee (pending) |
+| GET | `/employee-resignations/{id}` | Notice detail |
+| PATCH | `/employee-resignations/{id}` | Edit pending notice or set `status=cancelled` |
+| DELETE | `/employee-resignations/{id}` | Delete non-accepted notice |
+| POST | `/employee-resignations/{id}/accept` | Employee accepts → terminate employee + deactivate login |
 
 ### Notifications (in-app)
 

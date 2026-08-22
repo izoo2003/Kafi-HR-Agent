@@ -141,7 +141,7 @@ export function DepartmentManagePage() {
 
   return (
     <>
-      <PageHeader title="Departments" breadcrumb="Organization / Employees / Departments" />
+      <PageHeader title="Departments" breadcrumb="Organization / Employees Management / Departments" />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           Create departments with their job description and SOPs. These are the roles you assign on

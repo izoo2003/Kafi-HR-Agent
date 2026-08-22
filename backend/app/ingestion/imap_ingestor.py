@@ -27,9 +27,13 @@ from app.ingestion.cv_submission import CvSubmission, SourceFetchResult
 
 logger = logging.getLogger(__name__)
 
-MAX_MESSAGES_PER_RUN = 8
+MAX_MESSAGES_PER_RUN = 20
 LOOKBACK_DAYS = 30
 STATE_FILENAME = "imap_processed_uids.json"
+
+
+def _max_messages_per_run(settings: Settings) -> int:
+    return int(getattr(settings, "cv_sync_batch_size", MAX_MESSAGES_PER_RUN) or MAX_MESSAGES_PER_RUN)
 
 
 def _create_connection_ipv4(address: tuple[str, int], timeout: float | None) -> socket.socket:
@@ -415,8 +419,8 @@ def _fetch(
             return []
 
         uids = data[0].split() if data and data[0] else []
-        # Newest first, cap to MAX_MESSAGES_PER_RUN
-        uids = list(reversed(uids))[:MAX_MESSAGES_PER_RUN]
+        # Newest first, cap per sync run
+        uids = list(reversed(uids))[: _max_messages_per_run(settings)]
 
         state = _load_state(settings)
         mailbox_key = f"{user}@{host}"

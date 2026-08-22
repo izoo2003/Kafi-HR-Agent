@@ -1,6 +1,12 @@
 import { NavLink } from "react-router-dom";
 
-export function EmployeeDevelopmentSectionMenus({ open }: { open: boolean }) {
+type Props = {
+  open: boolean;
+  /** HR/staff with employees read — show assign/manage subsections. */
+  canManage?: boolean;
+};
+
+export function EmployeeDevelopmentSectionMenus({ open, canManage = true }: Props) {
   if (!open) return null;
 
   return (
@@ -11,12 +17,26 @@ export function EmployeeDevelopmentSectionMenus({ open }: { open: boolean }) {
       >
         Employee Performance
       </NavLink>
-      <NavLink
-        to="/employee-development/training"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
-      >
-        Employee Training
-      </NavLink>
+      {canManage ? (
+        <>
+          <NavLink
+            to="/employee-development/training"
+            className={({ isActive }) =>
+              `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`
+            }
+          >
+            Employee Training
+          </NavLink>
+          <NavLink
+            to="/employee-development/resignation"
+            className={({ isActive }) =>
+              `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`
+            }
+          >
+            Employee Resignation
+          </NavLink>
+        </>
+      ) : null}
       <NavLink
         to="/employee-development/things-to-learn"
         className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
