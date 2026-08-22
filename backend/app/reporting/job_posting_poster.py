@@ -317,6 +317,220 @@ def _section_icon(
         )
 
 
+# Default recruitment poster palette (high-contrast red / yellow / black template)
+_TEMPLATE_BLACK = (12, 12, 14)
+_TEMPLATE_RED = (233, 49, 70)
+_TEMPLATE_YELLOW = (255, 214, 0)
+_TEMPLATE_YELLOW_SOFT = (252, 228, 90)
+
+
+def _draw_dot_grid(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    *,
+    cols: int = 4,
+    rows: int = 4,
+    spacing: int = 14,
+    radius: int = 3,
+    color: tuple[int, int, int] = _WHITE,
+) -> None:
+    for row in range(rows):
+        for col in range(cols):
+            cx = x + col * spacing
+            cy = y + row * spacing
+            draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=color)
+
+
+def _description_lines(raw: str, *, limit: int = 6) -> list[str]:
+    """Split description into display lines (bullets if present, else sentences)."""
+    bullets = _bullet_lines(raw, limit=limit)
+    if bullets:
+        return bullets
+    body = _description_body(raw)
+    if not body:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", body)
+    lines = [p.strip() for p in parts if p.strip()]
+    return lines[:limit] if lines else [body[:220]]
+
+
+def generate_default_template_poster_png(
+    *,
+    title: str,
+    description_text: str,
+    requirements_text: str,
+    apply_email: str,
+) -> bytes:
+    """Classic red/black/yellow hiring poster when no custom poster fields are supplied."""
+    width, height = 1080, 1350
+    footer_h = 320
+    body_bottom = height - footer_h
+
+    img = Image.new("RGB", (width, height), _TEMPLATE_BLACK)
+    draw = ImageDraw.Draw(img)
+
+    font_title = _load_font(52, bold=True)
+    font_banner = _load_font(22, bold=True)
+    font_section = _load_font(20, bold=True)
+    font_body = _load_font(16, bold=False)
+    font_body_bold = _load_font(16, bold=True)
+    font_btn = _load_font(28, bold=True)
+    font_footer = _load_font(18, bold=False)
+    font_email = _load_font(20, bold=True)
+
+    role = (title or "OPEN ROLE").strip().upper()
+    email = (apply_email or "hr@kafi-group.com").strip()
+
+    # Decorative dot grids
+    _draw_dot_grid(draw, 36, 28, color=_WHITE)
+    _draw_dot_grid(draw, width - 90, 28, color=_WHITE)
+    _draw_dot_grid(draw, 36, body_bottom - 70, color=_TEMPLATE_BLACK)
+    _draw_dot_grid(draw, width - 90, height - 90, color=_TEMPLATE_RED)
+
+    # Top yellow accent lines
+    draw.rectangle((0, 0, width, 6), fill=_TEMPLATE_YELLOW)
+    draw.rectangle((0, 14, width, 18), fill=_TEMPLATE_YELLOW)
+
+    # Title bubble (replaces generic "JOB VACANCY")
+    bubble_top = 48
+    bubble_h = 150
+    _rounded_rect(draw, (60, bubble_top, width - 60, bubble_top + bubble_h), 36, _TEMPLATE_RED)
+    title_lines = _wrap(draw, role, font_title, width - 200)[:2]
+    ty = bubble_top + 36
+    for line in title_lines:
+        draw.text((width / 2, ty), line, fill=_WHITE, font=font_title, anchor="mm")
+        ty += 58
+
+    # "WE'RE HIRING" slanted banner
+    banner_y = bubble_top + bubble_h + 18
+    banner_poly = [(120, banner_y), (width - 80, banner_y - 8), (width - 60, banner_y + 44), (100, banner_y + 52)]
+    draw.polygon(banner_poly, fill=_WHITE)
+    draw.text((width / 2, banner_y + 24), "WE'RE HIRING", fill=_TEMPLATE_BLACK, font=font_banner, anchor="mm")
+
+    # Two-column body
+    col_gap = 28
+    col_w = (width - 80 - col_gap) // 2
+    left_x = 40
+    right_x = left_x + col_w + col_gap
+    content_top = banner_y + 80
+    col_content_h = body_bottom - content_top - 40
+
+    desc_lines = _description_lines(description_text, limit=6)
+    req_lines = _bullet_lines(requirements_text, limit=6)
+    if not req_lines:
+        req_lines = ["SEE JOB POSTING FOR FULL REQUIREMENTS"]
+
+    def _draw_column(
+        x: int,
+        heading: str,
+        lines: list[str],
+        *,
+        header_fill: tuple[int, int, int],
+        header_text: tuple[int, int, int],
+        body_fill: tuple[int, int, int],
+        body_text: tuple[int, int, int],
+        round_left: bool,
+    ) -> None:
+        header_h = 44
+        if round_left:
+            _rounded_rect(draw, (x, content_top, x + col_w, content_top + header_h), 18, header_fill)
+            draw.rectangle((x + col_w - 18, content_top, x + col_w, content_top + header_h), fill=header_fill)
+        else:
+            _rounded_rect(draw, (x, content_top, x + col_w, content_top + header_h), 18, header_fill)
+            draw.rectangle((x, content_top, x + 18, content_top + header_h), fill=header_fill)
+        draw.text(
+            (x + col_w / 2, content_top + header_h / 2),
+            heading,
+            fill=header_text,
+            font=font_section,
+            anchor="mm",
+        )
+
+        body_top = content_top + header_h + 10
+        _rounded_rect(
+            draw,
+            (x, body_top, x + col_w, body_top + col_content_h - header_h - 10),
+            22,
+            body_fill,
+        )
+        ty = body_top + 22
+        line_h = 26
+        max_lines = max(1, (col_content_h - header_h - 50) // line_h)
+        for item in lines[:max_lines]:
+            wrapped = _wrap(draw, item.upper(), font_body_bold, col_w - 36)
+            for line in wrapped[:2]:
+                if ty > body_top + col_content_h - header_h - 30:
+                    break
+                prefix = "• " if heading == "REQUIREMENTS" else ""
+                draw.text((x + 20, ty), f"{prefix}{line}", fill=body_text, font=font_body_bold)
+                ty += line_h
+
+    _draw_column(
+        left_x,
+        "DESCRIPTION",
+        desc_lines or ["ROLE OVERVIEW WILL BE SHARED DURING INTERVIEW"],
+        header_fill=_TEMPLATE_RED,
+        header_text=_WHITE,
+        body_fill=_TEMPLATE_YELLOW,
+        body_text=_TEMPLATE_BLACK,
+        round_left=False,
+    )
+    _draw_column(
+        right_x,
+        "REQUIREMENTS",
+        req_lines,
+        header_fill=_TEMPLATE_YELLOW,
+        header_text=_TEMPLATE_BLACK,
+        body_fill=_TEMPLATE_RED,
+        body_text=_WHITE,
+        round_left=True,
+    )
+
+    # Footer — white panel
+    draw.rectangle((0, body_bottom, width, height), fill=_WHITE)
+    draw.rectangle((0, body_bottom, width, body_bottom + 5), fill=_TEMPLATE_YELLOW)
+    draw.rectangle((0, body_bottom + 5, width, body_bottom + 8), fill=_TEMPLATE_BLACK)
+
+    btn_w, btn_h = 360, 64
+    btn_x = (width - btn_w) // 2
+    btn_y = body_bottom + 36
+    _rounded_rect(draw, (btn_x, btn_y, btn_x + btn_w, btn_y + btn_h), 32, _TEMPLATE_RED)
+    draw.text(
+        (width / 2, btn_y + btn_h / 2),
+        "APPLY NOW",
+        fill=_WHITE,
+        font=font_btn,
+        anchor="mm",
+    )
+
+    draw.text(
+        (width / 2, btn_y + btn_h + 34),
+        "SEND YOUR CV TO :",
+        fill=_TEMPLATE_BLACK,
+        font=font_footer,
+        anchor="ma",
+    )
+    draw.text(
+        (width / 2, btn_y + btn_h + 62),
+        email,
+        fill=_TEMPLATE_BLACK,
+        font=font_email,
+        anchor="ma",
+    )
+
+    # Bottom accents
+    draw.polygon(
+        [(0, height - 28), (220, height), (0, height)],
+        fill=_TEMPLATE_RED,
+    )
+    draw.rectangle((0, height - 6, width, height), fill=_TEMPLATE_BLACK)
+
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+
 def generate_hiring_poster_png(
     *,
     title: str,

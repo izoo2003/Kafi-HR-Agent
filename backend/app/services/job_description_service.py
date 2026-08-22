@@ -97,6 +97,7 @@ def generate_ai_image(db: Session, payload: JobPostingAiImageRequest) -> JobPost
 
     from app.reporting.job_posting_poster import (
         append_apply_here_line,
+        generate_default_template_poster_png,
         generate_hiring_poster_png,
     )
     from app.scoring.job_posting_generator import generate_job_posting_draft
@@ -112,23 +113,35 @@ def generate_ai_image(db: Session, payload: JobPostingAiImageRequest) -> JobPost
         department_name=dept.name,
         settings=settings,
     )
-    poster_description = (payload.poster_description_text or "").strip() or draft.description_text
-    requirements = (payload.requirements_text or "").strip() or draft.requirements_text
-    skills = [s.name.strip() for s in (payload.skills or []) if (s.name or "").strip()]
-    if not skills:
-        skills = [s.name for s in draft.skills if s.name.strip()]
+    user_poster_description = (payload.poster_description_text or "").strip()
+    user_requirements = (payload.requirements_text or "").strip()
+    user_skills = [s.name.strip() for s in (payload.skills or []) if (s.name or "").strip()]
+    use_default_template = not user_poster_description and not user_requirements and not user_skills
+
+    poster_description = user_poster_description or draft.description_text
+    requirements = user_requirements or draft.requirements_text
+    skills = user_skills or [s.name for s in draft.skills if s.name.strip()]
 
     form_url = _application_form_url() or ""
-    png = generate_hiring_poster_png(
-        title=payload.title.strip(),
-        company_name=(settings.company_display_name or "Kafi Group").strip(),
-        description_text=poster_description,
-        requirements_text=requirements,
-        skill_names=skills,
-        form_url=form_url,
-        apply_email=(settings.hiring_apply_email or "hr@kafi-group.com").strip(),
-        settings=settings,
-    )
+    apply_email = (settings.hiring_apply_email or "hr@kafi-group.com").strip()
+    if use_default_template:
+        png = generate_default_template_poster_png(
+            title=payload.title.strip(),
+            description_text=poster_description,
+            requirements_text=requirements,
+            apply_email=apply_email,
+        )
+    else:
+        png = generate_hiring_poster_png(
+            title=payload.title.strip(),
+            company_name=(settings.company_display_name or "Kafi Group").strip(),
+            description_text=poster_description,
+            requirements_text=requirements,
+            skill_names=skills,
+            form_url=form_url,
+            apply_email=apply_email,
+            settings=settings,
+        )
     # Job description_text stays LinkedIn-safe: title line + apply CTA only.
     # Poster AI description is returned separately and must not be saved into
     # description_text / LinkedIn commentary.
