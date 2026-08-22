@@ -1,49 +1,42 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  BriefcaseBusiness,
   ChevronDown,
-  ClipboardList,
-  FileSpreadsheet,
-  Gauge,
-  LayoutDashboard,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  ScrollText,
-  TrendingUp,
-  UserRound,
-  Users,
-  Wallet,
   X,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { isSelfService } from "../../lib/selfService";
 import { Button } from "../ui/Button";
+import { HrModuleIcon } from "../ui/HrModuleIcon";
+import { SIDEBAR_ICON_BY_PATH } from "../../constants/hrModuleIcons";
+import type { HrModuleIconKey } from "../../constants/hrModuleIcons";
 import { NotificationBell } from "./NotificationBell";
 import { EmployeeSectionMenus } from "../../pages/Employees/EmployeeSectionMenus";
 import { EmployeeDevelopmentSectionMenus } from "../../pages/EmployeeDevelopment/EmployeeDevelopmentSectionMenus";
 import "./AppShell.css";
 
-const NAV = [
-  { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: LayoutDashboard },
-  { to: "/employees", label: "Employees Management", module: "employees", icon: UserRound },
-  { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: BriefcaseBusiness },
-  { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: ClipboardList },
-  { to: "/attendance", label: "Attendance", module: "attendance", icon: FileSpreadsheet },
-  { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: Wallet },
-  { to: "/kpi/dashboard", label: "KPI", module: "kpi", icon: Gauge },
+const NAV: { to: string; label: string; module: string | null; icon: HrModuleIconKey }[] = [
+  { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: "analyticsDashboard" },
+  { to: "/employees", label: "Employees Management", module: "employees", icon: "employeeDirectory" },
+  { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: "recruitment" },
+  { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: "documentManagement" },
+  { to: "/attendance", label: "Attendance", module: "attendance", icon: "attendance" },
+  { to: "/payroll/runs", label: "Payroll", module: "payroll", icon: "payroll" },
+  { to: "/kpi/dashboard", label: "KPI", module: "kpi", icon: "goalsOkrs" },
   {
     to: "/employee-development/performance",
     label: "Employee Development",
     module: "kpi",
-    icon: TrendingUp,
+    icon: "trainingDevelopment",
   },
-  { to: "/hr-policies", label: "HR Policies", module: null, icon: ScrollText },
-  { to: "/admin/users", label: "User Management", module: "users", icon: Users },
-] as const;
+  { to: "/hr-policies", label: "HR Policies", module: null, icon: "compliancePolicies" },
+  { to: "/admin/users", label: "User Management", module: "users", icon: "addEmployee" },
+];
 
 const SIDEBAR_STORAGE_KEY = "kafi.sidebar.collapsed";
 
@@ -143,7 +136,9 @@ export function AppShell() {
       ) : null}
       <aside className="sidebar" id="app-sidebar">
         <div className="sidebar__brand">
-          <span className="sidebar__brand-mark">K</span>
+          <span className="sidebar__brand-mark">
+            <HrModuleIcon icon="hrAiAssistant" size="sm" label="Kafi HR" />
+          </span>
           <div className="sidebar__brand-text">
             <strong>Kafi HR</strong>
             <span>{selfService ? "My workspace" : "Admin Agent"}</span>
@@ -172,7 +167,7 @@ export function AppShell() {
         </div>
         <nav className="sidebar__nav" aria-label="Modules">
           {navItems.map((item) => {
-            const Icon = item.icon;
+            const iconKey = SIDEBAR_ICON_BY_PATH[item.to] ?? item.icon;
             const link = (
               <NavLink
                 to={item.to}
@@ -188,7 +183,7 @@ export function AppShell() {
                   return `sidebar__link${active ? " sidebar__link--active" : ""}`;
                 }}
               >
-                <Icon size={18} strokeWidth={1.75} aria-hidden />
+                <HrModuleIcon icon={iconKey} size="md" label={item.label} />
                 <span>{item.label}</span>
               </NavLink>
             );

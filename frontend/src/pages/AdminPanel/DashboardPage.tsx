@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
-import { Card } from "../../components/ui/Card";
+import { HrModuleIcon } from "../../components/ui/HrModuleIcon";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
@@ -9,6 +9,8 @@ import { useAdminDashboard, useAuditLogs } from "../../hooks/useAdmin";
 import { usePagination } from "../../hooks/usePagination";
 import { ApiError } from "../../api/client";
 import type { AdminDashboard } from "../../types/admin";
+import type { HrModuleIconKey } from "../../constants/hrModuleIcons";
+import "./DashboardPage.css";
 
 function MetricCard({
   label,
@@ -16,45 +18,38 @@ function MetricCard({
   hint,
   to,
   status,
+  icon,
+  accent,
 }: {
   label: string;
   value: number | string;
   hint?: string;
   to?: string;
   status?: string;
+  icon: HrModuleIconKey;
+  accent?: "blue" | "green" | "amber" | "rose" | "violet" | "slate";
 }) {
   const body = (
-    <Card status={status}>
-      <div
-        style={{
-          fontSize: "var(--text-xs)",
-          color: "var(--color-text-secondary)",
-          textTransform: "uppercase",
-          letterSpacing: "0.02em",
-          fontWeight: "var(--weight-semibold)",
-        }}
-      >
-        {label}
+    <article
+      className={`dashboard-metric dashboard-metric--${accent ?? "slate"}`}
+      data-status={status}
+    >
+      <div className="dashboard-metric__icon-wrap">
+        <HrModuleIcon icon={icon} size="lg" />
       </div>
-      <div className="font-data" style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-2)" }}>
-        {value}
+      <div className="dashboard-metric__body">
+        <div className="dashboard-metric__label">{label}</div>
+        <div className="dashboard-metric__value font-data">{value}</div>
+        {hint ? <p className="dashboard-metric__hint">{hint}</p> : null}
       </div>
-      {hint ? (
-        <p style={{ margin: "var(--space-2) 0 0", fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
-          {hint}
-        </p>
-      ) : null}
-    </Card>
+      {to ? <span className="dashboard-metric__arrow" aria-hidden>→</span> : null}
+    </article>
   );
 
   if (!to) return body;
 
   return (
-    <Link
-      to={to}
-      style={{ textDecoration: "none", color: "inherit", display: "block" }}
-      className="dashboard-metric-link"
-    >
+    <Link to={to} className="dashboard-metric-link">
       {body}
     </Link>
   );
@@ -72,13 +67,22 @@ function agentStatusRail(status: AdminDashboard["agentStatus"]): string {
   return "critical";
 }
 
+const QUICK_LINKS: { to: string; label: string; icon: HrModuleIconKey }[] = [
+  { to: "/employees", label: "Employees", icon: "employeeDirectory" },
+  { to: "/cv-screening", label: "CV Screening", icon: "recruitment" },
+  { to: "/attendance", label: "Attendance", icon: "attendance" },
+  { to: "/payroll/runs", label: "Payroll", icon: "payroll" },
+  { to: "/employee-development/performance", label: "Development", icon: "trainingDevelopment" },
+  { to: "/hr-policies", label: "HR Policies", icon: "compliancePolicies" },
+];
+
 export function DashboardPage() {
   const dash = useAdminDashboard();
 
   return (
     <>
       <PageHeader title="Admin Dashboard" breadcrumb="Admin / Dashboard" />
-      <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
+      <div className="page dashboard-page">
         {dash.isLoading ? <Spinner label="Loading dashboard" /> : null}
         {dash.isError ? (
           <EmptyState
@@ -93,58 +97,97 @@ export function DashboardPage() {
 
         {dash.data ? (
           <>
-            <section
-              style={{
-                display: "grid",
-                gap: "var(--space-4)",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
-              }}
-            >
-              <MetricCard
-                label="User Accounts"
-                value={dash.data.registeredEmployeesActive}
-                hint="Registered logins (username + PIN)"
-                to="/admin/users"
-                status="positive"
-              />
-              <MetricCard
-                label="HR employee records"
-                value={dash.data.hrEmployeeRecordsActive}
-                hint="Roster maintained in Employees module"
-                to="/employees"
-              />
-              <MetricCard
-                label="Departments"
-                value={dash.data.departments}
-                to="/employees"
-              />
-              <MetricCard
-                label="Agent status"
-                value={agentStatusLabel(dash.data.agentStatus)}
-                hint={dash.data.agentMode === "standalone" ? "Standalone mode" : "Registered with orchestrator"}
-                status={agentStatusRail(dash.data.agentStatus)}
-              />
+            <section className="dashboard-hero" aria-label="Overview">
+              <div className="dashboard-hero__glow dashboard-hero__glow--a" aria-hidden />
+              <div className="dashboard-hero__glow dashboard-hero__glow--b" aria-hidden />
+              <div className="dashboard-hero__content">
+                <div className="dashboard-hero__badge">
+                  <HrModuleIcon icon="hrAiAssistant" size="sm" label="" />
+                  <span>HR Admin Agent</span>
+                </div>
+                <h2 className="dashboard-hero__title">Operations at a glance</h2>
+                <p className="dashboard-hero__subtitle">
+                  {dash.data.registeredEmployeesActive} active accounts ·{" "}
+                  {dash.data.hrEmployeeRecordsActive} HR records ·{" "}
+                  {dash.data.departments} departments
+                </p>
+                <div className="dashboard-hero__status" data-status={agentStatusRail(dash.data.agentStatus)}>
+                  <HrModuleIcon icon="analyticsDashboard" size="sm" />
+                  <span>
+                    Agent {agentStatusLabel(dash.data.agentStatus)}
+                    {dash.data.agentMode === "standalone" ? " · Standalone" : " · Orchestrator"}
+                  </span>
+                </div>
+              </div>
+              <div className="dashboard-hero__visual" aria-hidden>
+                <HrModuleIcon icon="analyticsDashboard" size="xl" className="dashboard-hero__featured-icon" />
+              </div>
             </section>
 
-            <section>
-              <h2 style={{ margin: "0 0 var(--space-3)", fontSize: "var(--text-lg)" }}>Needs attention</h2>
-              <div
-                style={{
-                  display: "grid",
-                  gap: "var(--space-4)",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
-                }}
-              >
+            <section className="dashboard-quick-links" aria-label="Quick navigation">
+              {QUICK_LINKS.map((item) => (
+                <Link key={item.to} to={item.to} className="dashboard-quick-link">
+                  <HrModuleIcon icon={item.icon} size="md" />
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </section>
+
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__title">Organization</h2>
+              <div className="dashboard-grid">
+                <MetricCard
+                  label="User accounts"
+                  value={dash.data.registeredEmployeesActive}
+                  hint="Registered logins"
+                  to="/admin/users"
+                  icon="addEmployee"
+                  accent="violet"
+                  status="positive"
+                />
+                <MetricCard
+                  label="HR employee records"
+                  value={dash.data.hrEmployeeRecordsActive}
+                  hint="Employees module roster"
+                  to="/employees"
+                  icon="employeeDirectory"
+                  accent="blue"
+                />
+                <MetricCard
+                  label="Departments"
+                  value={dash.data.departments}
+                  to="/employees/departments"
+                  icon="employeeDirectory"
+                  accent="slate"
+                />
+                <MetricCard
+                  label="Agent status"
+                  value={agentStatusLabel(dash.data.agentStatus)}
+                  hint={dash.data.agentMode === "standalone" ? "Standalone mode" : "Orchestrator linked"}
+                  icon="hrAiAssistant"
+                  accent="green"
+                  status={agentStatusRail(dash.data.agentStatus)}
+                />
+              </div>
+            </section>
+
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__title">Needs attention</h2>
+              <div className="dashboard-grid">
                 <MetricCard
                   label="Open job postings"
                   value={dash.data.openJobDescriptions}
                   to="/job-descriptions"
+                  icon="recruitment"
+                  accent="green"
                   status={dash.data.openJobDescriptions > 0 ? "info" : undefined}
                 />
                 <MetricCard
                   label="CVs pending review"
                   value={dash.data.candidatesPendingReview}
                   to="/cv-screening"
+                  icon="documentManagement"
+                  accent="amber"
                   status={dash.data.candidatesPendingReview > 0 ? "warning" : undefined}
                 />
                 <MetricCard
@@ -152,62 +195,70 @@ export function DashboardPage() {
                   value={dash.data.leaveRequestsPending}
                   hint="Awaiting approval"
                   to="/attendance/leave-requests"
+                  icon="leave"
+                  accent="rose"
                   status={dash.data.leaveRequestsPending > 0 ? "warning" : undefined}
                 />
                 <MetricCard
                   label="Payroll awaiting approval"
                   value={dash.data.payrollRunsPendingApproval}
                   to="/payroll/runs"
+                  icon="salaryReports"
+                  accent="violet"
                   status={dash.data.payrollRunsPendingApproval > 0 ? "warning" : undefined}
                 />
               </div>
             </section>
 
-            <section>
-              <h2 style={{ margin: "0 0 var(--space-3)", fontSize: "var(--text-lg)" }}>
-                Attendance today
-              </h2>
-              <div
-                style={{
-                  display: "grid",
-                  gap: "var(--space-4)",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                }}
-              >
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__title">Attendance today</h2>
+              <div className="dashboard-grid dashboard-grid--compact">
                 <MetricCard
                   label="Present"
                   value={dash.data.attendanceToday.present}
                   to="/attendance"
+                  icon="attendance"
+                  accent="green"
                   status="positive"
                 />
                 <MetricCard
                   label="Late"
                   value={dash.data.attendanceToday.late}
                   to="/attendance"
+                  icon="timeShift"
+                  accent="amber"
                   status="warning"
                 />
                 <MetricCard
                   label="Absent"
                   value={dash.data.attendanceToday.absent}
                   to="/attendance"
+                  icon="attendance"
+                  accent="rose"
                   status="critical"
                 />
                 <MetricCard
                   label="On leave"
                   value={dash.data.attendanceToday.onLeave}
                   to="/attendance/leave-requests"
+                  icon="leave"
+                  accent="blue"
                   status="info"
                 />
                 <MetricCard
                   label="Half day"
                   value={dash.data.attendanceToday.halfDay}
                   to="/attendance"
+                  icon="timeShift"
+                  accent="slate"
                 />
                 <MetricCard
                   label="Marked today"
                   value={dash.data.attendanceToday.totalMarked}
-                  hint="Records logged for today"
+                  hint="Records logged"
                   to="/attendance/records"
+                  icon="attendance"
+                  accent="slate"
                 />
               </div>
             </section>

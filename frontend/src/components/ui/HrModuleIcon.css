@@ -1,0 +1,36 @@
+.hr-module-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  background-image: url("/hr-module-icons.png");
+  background-size: 700% 300%;
+  background-repeat: no-repeat;
+  border-radius: var(--radius-sm);
+  transition: transform 150ms ease, filter 150ms ease;
+}
+
+.hr-module-icon--lg,
+.hr-module-icon--xl {
+  border-radius: var(--radius-md);
+}
+
+.sidebar__link:hover .hr-module-icon,
+.dashboard-metric-link:hover .hr-module-icon,
+.dashboard-quick-link:hover .hr-module-icon {
+  transform: scale(1.06);
+}
+
+.sidebar__link--active .hr-module-icon {
+  filter: saturate(1.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-module-icon {
+    transition: none;
+  }
+
+  .sidebar__link:hover .hr-module-icon,
+  .dashboard-metric-link:hover .hr-module-icon,
+  .dashboard-quick-link:hover .hr-module-icon {
+    transform: none;
+  }
+}
