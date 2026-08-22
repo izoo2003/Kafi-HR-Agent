@@ -66,14 +66,14 @@ export async function verifyCnic(
   });
 }
 
-/** Education marks/grade sheet read + AI institution existence check. Not an official registry lookup. */
-export async function verifyEducationDocuments(files: {
-  marksSheet?: File | null;
-  gradeSheet?: File | null;
-}): Promise<EducationVerificationResult> {
+/** Education document upload + AI institution existence check. Not an official registry lookup. */
+export async function verifyEducationDocuments(
+  files: File[],
+): Promise<EducationVerificationResult> {
   const form = new FormData();
-  if (files.marksSheet) form.append("marks_sheet", files.marksSheet);
-  if (files.gradeSheet) form.append("grade_sheet", files.gradeSheet);
+  for (const file of files) {
+    form.append("documents", file);
+  }
   return apiRequest<EducationVerificationResult>("/education-documents/verify", {
     method: "POST",
     formData: form,

@@ -283,41 +283,33 @@ def _verify_institutions(
 
 def verify_education_documents(
     *,
-    marks_sheet_bytes: bytes | None = None,
-    marks_sheet_filename: str | None = None,
-    marks_sheet_mime: str | None = None,
-    grade_sheet_bytes: bytes | None = None,
-    grade_sheet_filename: str | None = None,
-    grade_sheet_mime: str | None = None,
+    uploads: list[tuple[bytes, str, str | None]] | None = None,
     settings: Settings | None = None,
 ) -> EducationVerificationResult:
     settings = settings or get_settings()
     disclaimer = (
-        "This uses AI to read your marks sheet / grade sheet and check whether named schools, "
+        "This uses AI to read your education documents and check whether named schools, "
         "colleges, or universities appear to be real institutions. It is NOT an official board, "
         "university, or HEC registry verification and does not prove the document is authentic "
         "or that grades were issued by that institution."
     )
 
-    marks = _prepare_doc(
-        data=marks_sheet_bytes,
-        filename=marks_sheet_filename,
-        mime_type=marks_sheet_mime,
-        label="marks_sheet",
-    )
-    grades = _prepare_doc(
-        data=grade_sheet_bytes,
-        filename=grade_sheet_filename,
-        mime_type=grade_sheet_mime,
-        label="grade_sheet",
-    )
-    docs = [d for d in (marks, grades) if d is not None]
+    docs: list[_UploadedDoc] = []
+    for index, (data, filename, mime_type) in enumerate(uploads or [], start=1):
+        prepared = _prepare_doc(
+            data=data,
+            filename=filename,
+            mime_type=mime_type,
+            label=f"document_{index}",
+        )
+        if prepared is not None:
+            docs.append(prepared)
 
     if not docs:
         return EducationVerificationResult(
             status="needs_documents",
             verified=False,
-            message="Upload at least one marks sheet or grade sheet (PDF or image) to verify.",
+            message="Upload at least one education document (PDF or image) to verify.",
             documents=[],
             institutions=[],
             checks=EducationVerificationChecks(),
@@ -369,11 +361,11 @@ def verify_education_documents(
     if not doc_summaries and docs:
         doc_summaries = [
             EducationDocumentSummary(
-                document_type="marks_sheet" if d.label == "marks_sheet" else "grade_sheet",
+                document_type="unknown",
                 readable=False,
                 looks_like_education_document=False,
             )
-            for d in docs
+            for _d in docs
         ]
 
     raw_institutions = extracted.get("institutions") or []
@@ -434,8 +426,7 @@ def verify_education_documents(
     any_verified = any(i.verified for i in institutions)
 
     checks = EducationVerificationChecks(
-        marks_sheet_provided=marks is not None,
-        grade_sheet_provided=grades is not None,
+        documents_provided=len(docs),
         documents_readable=readable,
         looks_like_education_documents=looks_edu,
         all_institutions_verified=all_verified,
@@ -457,7 +448,7 @@ def verify_education_documents(
         return EducationVerificationResult(
             status="not_education_document",
             verified=False,
-            message="The uploaded files do not look like marks sheets or grade sheets. Upload the correct documents.",
+            message="The uploaded files do not look like education documents. Upload marks sheets, grade sheets, or transcripts.",
             documents=doc_summaries,
             institutions=institutions,
             checks=checks,

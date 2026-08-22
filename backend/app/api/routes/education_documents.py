@@ -17,34 +17,27 @@ from app.services.education_verification_service import verify_education_documen
 router = APIRouter(prefix="/education-documents", tags=["education-documents"])
 
 
-async def _load_upload(upload: UploadFile | None) -> tuple[bytes | None, str | None, str | None]:
-    if upload is None or not (upload.filename or "").strip():
-        return None, None, None
-    data = await upload.read()
-    if not data:
-        raise ValidationFailed(f"{upload.filename} is empty")
-    return data, upload.filename, upload.content_type
+async def _load_uploads(uploads: list[UploadFile]) -> list[tuple[bytes, str, str | None]]:
+    loaded: list[tuple[bytes, str, str | None]] = []
+    for upload in uploads:
+        if upload is None or not (upload.filename or "").strip():
+            continue
+        data = await upload.read()
+        if not data:
+            raise ValidationFailed(f"{upload.filename} is empty")
+        loaded.append((data, upload.filename or "document", upload.content_type))
+    return loaded
 
 
 @router.post("/verify", response_model=EducationVerificationResult)
 async def verify_education_documents_endpoint(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
-    marks_sheet: Annotated[UploadFile | None, File()] = None,
-    grade_sheet: Annotated[UploadFile | None, File()] = None,
+    documents: Annotated[list[UploadFile] | None, File()] = None,
 ) -> EducationVerificationResult:
-    """AI-assisted read of marks/grade sheets + plausibility check that named institutions exist."""
-    marks_bytes, marks_name, marks_mime = await _load_upload(marks_sheet)
-    grade_bytes, grade_name, grade_mime = await _load_upload(grade_sheet)
-
-    result = verify_education_documents(
-        marks_sheet_bytes=marks_bytes,
-        marks_sheet_filename=marks_name,
-        marks_sheet_mime=marks_mime,
-        grade_sheet_bytes=grade_bytes,
-        grade_sheet_filename=grade_name,
-        grade_sheet_mime=grade_mime,
-    )
+    """AI-assisted read of education documents + plausibility check that named institutions exist."""
+    uploads = await _load_uploads(documents or [])
+    result = verify_education_documents(uploads=uploads)
     audit_service.log_from_auth(
         db,
         auth,
@@ -56,8 +49,7 @@ async def verify_education_documents_endpoint(
             "verified": result.verified,
             "institution_count": len(result.institutions),
             "institutions_verified": [i.name for i in result.institutions if i.verified],
-            "had_marks_sheet": bool(marks_bytes),
-            "had_grade_sheet": bool(grade_bytes),
+            "documents_provided": result.checks.documents_provided,
         },
     )
     return result

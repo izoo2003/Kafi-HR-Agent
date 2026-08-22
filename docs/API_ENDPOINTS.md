@@ -56,7 +56,7 @@
 | GET | `/employees` | List employees (filter by department, status) |
 | POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
 | POST | `/cnic/verify` | Verify typed CNIC + front/back card images (format + OCR match; images only, not NADRA). Prefer this path. |
-| POST | `/education-documents/verify` | Upload marks sheet and/or grade sheet (PDF or image); AI reads documents and checks whether named schools/colleges/universities appear to be real institutions (not an official registry lookup). |
+| POST | `/education-documents/verify` | Upload one or more education documents (multipart `documents[]`, PDF or image); AI reads them and checks whether named schools/colleges/universities appear to be real institutions (not an official registry lookup). |
 | POST | `/employees/cnic/verify` | Deprecated alias of `/cnic/verify` |
 | GET | `/employees/{id}` | Employee detail incl. documents + references |
 | GET | `/employees/{id}/letters/appointment` | Download stored appointment letter (404 if not created yet) |

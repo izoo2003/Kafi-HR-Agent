@@ -30,8 +30,7 @@ export interface EducationInstitutionCheck {
 }
 
 export interface EducationVerificationChecks {
-  marksSheetProvided: boolean;
-  gradeSheetProvided: boolean;
+  documentsProvided: number;
   documentsReadable: boolean;
   looksLikeEducationDocuments: boolean;
   allInstitutionsVerified: boolean;

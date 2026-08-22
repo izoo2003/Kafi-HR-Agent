@@ -24,8 +24,7 @@ function institutionTypeLabel(type: string): string {
 }
 
 export function VerifyEducationPage() {
-  const [marksSheet, setMarksSheet] = useState<File | null>(null);
-  const [gradeSheet, setGradeSheet] = useState<File | null>(null);
+  const [documents, setDocuments] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EducationVerificationResult | null>(null);
@@ -34,16 +33,13 @@ export function VerifyEducationPage() {
     e.preventDefault();
     setError(null);
     setResult(null);
-    if (!marksSheet && !gradeSheet) {
-      setError("Upload at least one marks sheet or grade sheet (PDF or image).");
+    if (documents.length === 0) {
+      setError("Upload at least one education document (PDF or image).");
       return;
     }
     setLoading(true);
     try {
-      const res = await verifyEducationDocuments({
-        marksSheet,
-        gradeSheet,
-      });
+      const res = await verifyEducationDocuments(documents);
       setResult(res);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Education verification failed");
@@ -86,7 +82,7 @@ export function VerifyEducationPage() {
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
             <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>How this works</h2>
             <ol style={{ margin: 0, paddingLeft: "1.2rem", color: "var(--color-text-secondary)" }}>
-              <li>Upload your marks sheet and/or grade sheet (PDF or clear photo).</li>
+              <li>Upload your education documents — marks sheets, grade sheets, or transcripts (PDF or clear photo).</li>
               <li>AI reads the documents and finds school, college, or university names printed on them.</li>
               <li>
                 Each institution is checked to see if it appears to be a real place (using AI knowledge and
@@ -102,41 +98,37 @@ export function VerifyEducationPage() {
         <Card>
           <form onSubmit={onVerify} style={{ display: "grid", gap: "var(--space-4)" }}>
             <label className="form-field">
-              <span className="form-field__label">Marks sheet</span>
+              <span className="form-field__label">Upload your educational documents here</span>
               <input
                 className="form-field__input"
                 type="file"
                 accept={DOC_ACCEPT}
+                multiple
                 onChange={(e) => {
                   setResult(null);
                   setError(null);
-                  setMarksSheet(e.target.files?.[0] ?? null);
+                  setDocuments(Array.from(e.target.files ?? []));
                 }}
               />
-              <span className="form-field__hint">PDF or image — optional if grade sheet is uploaded</span>
+              <span className="form-field__hint">
+                PDF or image — you can select multiple files (marks sheet, grade sheet, transcript, etc.)
+              </span>
             </label>
 
-            <label className="form-field">
-              <span className="form-field__label">Grade sheet / transcript</span>
-              <input
-                className="form-field__input"
-                type="file"
-                accept={DOC_ACCEPT}
-                onChange={(e) => {
-                  setResult(null);
-                  setError(null);
-                  setGradeSheet(e.target.files?.[0] ?? null);
+            {documents.length > 0 ? (
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "1.2rem",
+                  fontSize: "var(--text-sm)",
+                  color: "var(--color-text-secondary)",
                 }}
-              />
-              <span className="form-field__hint">PDF or image — optional if marks sheet is uploaded</span>
-            </label>
-
-            {(marksSheet || gradeSheet) && (
-              <div style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                {marksSheet ? <div>Marks sheet: {marksSheet.name}</div> : null}
-                {gradeSheet ? <div>Grade sheet: {gradeSheet.name}</div> : null}
-              </div>
-            )}
+              >
+                {documents.map((file) => (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}`}>{file.name}</li>
+                ))}
+              </ul>
+            ) : null}
 
             {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
             <p
@@ -179,8 +171,7 @@ export function VerifyEducationPage() {
                   color: "var(--color-text-secondary)",
                 }}
               >
-                <div>Marks sheet uploaded: {result.checks.marksSheetProvided ? "Yes" : "No"}</div>
-                <div>Grade sheet uploaded: {result.checks.gradeSheetProvided ? "Yes" : "No"}</div>
+                <div>Documents uploaded: {result.checks.documentsProvided}</div>
                 <div>Documents readable: {result.checks.documentsReadable ? "Yes" : "No"}</div>
                 <div>
                   Look like education documents: {result.checks.looksLikeEducationDocuments ? "Yes" : "No"}

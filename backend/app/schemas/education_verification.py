@@ -33,8 +33,7 @@ class EducationInstitutionCheck(BaseModel):
 
 
 class EducationVerificationChecks(BaseModel):
-    marks_sheet_provided: bool = False
-    grade_sheet_provided: bool = False
+    documents_provided: int = 0
     documents_readable: bool = False
     looks_like_education_documents: bool = False
     all_institutions_verified: bool = False
