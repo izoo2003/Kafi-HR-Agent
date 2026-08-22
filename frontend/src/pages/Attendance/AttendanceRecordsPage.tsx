@@ -8,11 +8,13 @@ import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
+import { MonthlyAttendanceGrid } from "../../components/domain/MonthlyAttendanceGrid";
 import {
   useAttendanceRecords,
   useAttendanceRules,
   useCreateAttendance,
   useImportAttendance,
+  useMonthlyAttendanceGrid,
 } from "../../hooks/useAttendance";
 import { useEmployees } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
@@ -21,6 +23,13 @@ import { ATTENDANCE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import { isSelfService } from "../../lib/selfService";
+
+function currentMonthValue(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
 
 export function AttendanceRecordsPage() {
   const { user, hasPermission } = useAuth();
@@ -49,6 +58,13 @@ export function AttendanceRecordsPage() {
   const [error, setError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
   const [bioMsg, setBioMsg] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "monthly">("list");
+  const [monthValue, setMonthValue] = useState(currentMonthValue());
+  const monthlyYear = Number(monthValue.slice(0, 4));
+  const monthlyMonth = Number(monthValue.slice(5, 7));
+  const monthlyGrid = useMonthlyAttendanceGrid(
+    viewMode === "monthly" ? { year: monthlyYear, month: monthlyMonth } : null,
+  );
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -221,6 +237,71 @@ export function AttendanceRecordsPage() {
           </>
         ) : null}
 
+        <section className="card">
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "var(--space-3)",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "var(--space-4)",
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Attendance records</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", alignItems: "center" }}>
+              <Button
+                type="button"
+                variant={viewMode === "list" ? "primary" : "secondary"}
+                onClick={() => setViewMode("list")}
+              >
+                Daily list
+              </Button>
+              <Button
+                type="button"
+                variant={viewMode === "monthly" ? "primary" : "secondary"}
+                onClick={() => setViewMode("monthly")}
+              >
+                Monthly grid
+              </Button>
+              {viewMode === "monthly" ? (
+                <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>Month</span>
+                  <input
+                    className="form-field__input"
+                    type="month"
+                    value={monthValue}
+                    onChange={(e) => setMonthValue(e.target.value)}
+                    style={{ width: "auto", minWidth: 160 }}
+                  />
+                </label>
+              ) : null}
+            </div>
+          </div>
+
+          {viewMode === "monthly" ? (
+            <>
+              {monthlyGrid.isLoading ? <Spinner label="Loading monthly attendance" /> : null}
+              {monthlyGrid.isError ? (
+                <EmptyState
+                  title="Could not load monthly view"
+                  description={
+                    monthlyGrid.error instanceof ApiError
+                      ? monthlyGrid.error.message
+                      : "Please try again."
+                  }
+                />
+              ) : null}
+              {monthlyGrid.data ? (
+                <MonthlyAttendanceGrid
+                  periodStart={monthlyGrid.data.periodStart}
+                  periodEnd={monthlyGrid.data.periodEnd}
+                  totals={monthlyGrid.data.totals}
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
         {records.isLoading ? <Spinner label="Loading records" /> : null}
         {records.data && records.data.items.length === 0 ? (
           <EmptyState
@@ -263,6 +344,9 @@ export function AttendanceRecordsPage() {
             />
           </>
         ) : null}
+            </>
+          )}
+        </section>
       </div>
     </>
   );

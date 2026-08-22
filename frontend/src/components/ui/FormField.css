@@ -5,7 +5,7 @@
 }
 
 .form-field__label {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: var(--weight-medium);
   color: var(--color-text-secondary);
 }
@@ -15,6 +15,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
   color: var(--color-text-primary);
 }
 
@@ -23,11 +24,11 @@
 }
 
 .form-field__error {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--color-status-critical);
 }
 
 .form-field__hint {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
 }

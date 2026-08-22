@@ -14,6 +14,7 @@ from app.schemas.attendance import (
     AttendanceEmployeesFromExcelCreate,
     AttendanceEmployeesFromExcelResult,
     AttendanceImportResult,
+    AttendanceMonthlyGrid,
     AttendancePeriodReport,
     AttendanceRecordCreate,
     AttendanceRecordRead,
@@ -84,6 +85,17 @@ def list_attendance(
     )
 
 
+@router.get("/attendance/monthly/grid", response_model=AttendanceMonthlyGrid)
+def monthly_attendance_grid(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "read"))],
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    department_id: int | None = None,
+) -> AttendanceMonthlyGrid:
+    return svc.get_monthly_grid(db, auth, year=year, month=month, department_id=department_id)
+
+
 @router.post("/attendance", response_model=AttendanceRecordRead, status_code=201)
 def create_attendance(
     payload: AttendanceRecordCreate,
@@ -91,16 +103,6 @@ def create_attendance(
     auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
 ) -> AttendanceRecordRead:
     return AttendanceRecordRead.model_validate(svc.create_record(db, auth, payload))
-
-
-@router.patch("/attendance/{record_id}", response_model=AttendanceRecordRead)
-def patch_attendance(
-    record_id: int,
-    payload: AttendanceRecordUpdate,
-    db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
-) -> AttendanceRecordRead:
-    return AttendanceRecordRead.model_validate(svc.update_record(db, auth, record_id, payload))
 
 
 @router.post("/attendance/import", response_model=AttendanceImportResult)
@@ -184,6 +186,16 @@ def summary(
         period_start=period_start,
         period_end=period_end,
     )
+
+
+@router.patch("/attendance/{record_id}", response_model=AttendanceRecordRead)
+def patch_attendance(
+    record_id: int,
+    payload: AttendanceRecordUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("attendance", "write"))],
+) -> AttendanceRecordRead:
+    return AttendanceRecordRead.model_validate(svc.update_record(db, auth, record_id, payload))
 
 
 @router.get("/leave-requests", response_model=PaginatedResponse[LeaveRequestRead])

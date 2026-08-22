@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { HrModuleIcon } from "../../components/ui/HrModuleIcon";
+import { SIDEBAR_SUB_ICON } from "../../constants/hrModuleIcons";
+import {
+  SidebarSubnavItem,
+  SidebarSubnavLink,
+} from "../../components/layout/SidebarSubnavLink";
 
 export function EmployeeSectionMenus({ open }: { open: boolean }) {
   const location = useLocation();
@@ -20,24 +26,18 @@ export function EmployeeSectionMenus({ open }: { open: boolean }) {
 
   return (
     <div className="sidebar__subnav">
-      <NavLink
-        to="/employees/departments"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
-      >
+      <SidebarSubnavLink to="/employees/departments" icon={SIDEBAR_SUB_ICON.departments}>
         Departments
-      </NavLink>
-      <NavLink
+      </SidebarSubnavLink>
+      <SidebarSubnavLink
         to="/employees/letters/appointment"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
+        icon={SIDEBAR_SUB_ICON.appointmentLetter}
       >
         Appointment letter
-      </NavLink>
-      <NavLink
-        to="/employees/letters/contract"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
-      >
+      </SidebarSubnavLink>
+      <SidebarSubnavLink to="/employees/letters/contract" icon={SIDEBAR_SUB_ICON.contractLetter}>
         Contract letter
-      </NavLink>
+      </SidebarSubnavLink>
       {canWrite ? (
         <>
           <button
@@ -46,31 +46,25 @@ export function EmployeeSectionMenus({ open }: { open: boolean }) {
             aria-expanded={docVerificationOpen}
             onClick={() => setDocVerificationOpen((value) => !value)}
           >
-            <span>Employees Document Verification</span>
-            <ChevronDown size={14} className="sidebar__subchevron" aria-hidden />
+            <HrModuleIcon icon={SIDEBAR_SUB_ICON.documentVerification} size="sm" />
+            <span className="sidebar__sublink-label">Employees Document Verification</span>
+            <ChevronDown size={16} className="sidebar__subchevron" aria-hidden />
           </button>
           {docVerificationOpen ? (
             <ul className="sidebar__sublist">
               <li>
-                <NavLink
-                  to="/employees/verify-cnic"
-                  className={({ isActive }) =>
-                    `sidebar__subitem${isActive ? " sidebar__subitem--active" : ""}`
-                  }
-                >
+                <SidebarSubnavItem to="/employees/verify-cnic" icon={SIDEBAR_SUB_ICON.verifyCnic}>
                   Verify my CNIC
-                </NavLink>
+                </SidebarSubnavItem>
               </li>
               <li>
-                <NavLink
+                <SidebarSubnavItem
                   to="/employees/verify-education"
-                  className={({ isActive }) =>
-                    `sidebar__subitem${isActive ? " sidebar__subitem--active" : ""}`
-                  }
+                  icon={SIDEBAR_SUB_ICON.verifyEducation}
                   title="AI-assisted check only — not an official board or HEC verification"
                 >
                   Verify education documents
-                </NavLink>
+                </SidebarSubnavItem>
               </li>
             </ul>
           ) : null}

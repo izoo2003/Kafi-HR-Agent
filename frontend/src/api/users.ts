@@ -9,10 +9,9 @@ export async function listUsers(
 }
 
 export async function createUser(payload: {
-  fullName: string;
+  employeeId: number;
   username: string;
   pin: string;
-  departmentId: number;
 }): Promise<User> {
   return apiRequest<User>("/users", { method: "POST", body: payload });
 }

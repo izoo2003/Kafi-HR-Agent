@@ -10,6 +10,18 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
+# Retired model IDs → current GA replacements (see ai.google.dev/gemini-api/docs/changelog).
+_LEGACY_MODEL_MAP: dict[str, str] = {
+    "gemini-2.0-flash": "gemini-3.6-flash",
+    "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+    "gemini-1.5-flash": "gemini-3.5-flash",
+    "gemini-1.5-flash-8b": "gemini-3.1-flash-lite",
+}
+
+
+def _resolve_model_id(name: str) -> str:
+    return _LEGACY_MODEL_MAP.get(name, name)
+
 # Free-tier daily quotas typically reset at midnight Pacific Time.
 try:
     _PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -38,7 +50,10 @@ def parse_model_chain(primary: str, fallbacks_csv: str = "") -> list[str]:
     models: list[str] = []
     for raw in [primary, *fallbacks_csv.split(",")]:
         name = (raw or "").strip()
-        if name and name not in models:
+        if not name:
+            continue
+        name = _resolve_model_id(name)
+        if name not in models:
             models.append(name)
     return models
 
@@ -60,6 +75,16 @@ def _normalize_keys(keys: list[str] | str | None) -> list[str]:
 
 def _fingerprint(key: str) -> str:
     return key[-12:] if len(key) >= 12 else key
+
+
+def _is_model_unavailable(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return (
+        "404" in text
+        or "not found" in text
+        or "no longer available" in text
+        or "is not supported for generatecontent" in text
+    )
 
 
 def _is_quota_error(exc: BaseException) -> bool:
@@ -257,6 +282,14 @@ def generate_content_with_fallback(
                 return response
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
+                if _is_model_unavailable(exc):
+                    logger.warning(
+                        "Gemini model %s unavailable on key …%s: %s",
+                        model_name,
+                        _fingerprint(key),
+                        exc,
+                    )
+                    continue
                 if _is_quota_error(exc):
                     until = _quota_until(exc, now)
                     _mark_model_exhausted(pool_id, key, model_name, until)

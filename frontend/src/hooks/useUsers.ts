@@ -23,12 +23,14 @@ export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      fullName: string;
+      employeeId: number;
       username: string;
       pin: string;
-      departmentId: number;
     }) => usersApi.createUser(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+    },
   });
 }
 

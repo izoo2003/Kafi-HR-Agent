@@ -1,6 +1,7 @@
 """KPI definitions, entries, rollups, period close — FEATURE_KPI.md."""
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -41,6 +42,8 @@ from app.schemas.kpi import (
     SeedDefaultsResponse,
 )
 from app.services import audit_service
+
+logger = logging.getLogger(__name__)
 
 Band = Literal["on_target", "at_risk", "below_target", "complete"]
 
@@ -296,7 +299,42 @@ def _is_work_log_definition(defn: KpiDefinition) -> bool:
     return (defn.name or "").strip() == WORK_LOG_KPI_NAME
 
 
+def cleanup_duplicate_work_log_definitions(db: Session) -> int:
+    """Archive duplicate department 'Work submission' KPI rows (keep lowest id per department)."""
+    rows = (
+        db.query(KpiDefinition)
+        .filter(
+            KpiDefinition.owner_employee_id.is_(None),
+            KpiDefinition.name == WORK_LOG_KPI_NAME,
+            KpiDefinition.is_archived.is_(False),
+        )
+        .order_by(KpiDefinition.department_id, KpiDefinition.id)
+        .all()
+    )
+    by_department: dict[int, list[KpiDefinition]] = {}
+    for row in rows:
+        by_department.setdefault(row.department_id, []).append(row)
+
+    archived = 0
+    for department_id, department_rows in by_department.items():
+        if len(department_rows) <= 1:
+            continue
+        for duplicate in department_rows[1:]:
+            duplicate.is_archived = True
+            archived += 1
+        logger.warning(
+            "Archived %d duplicate work-log KPI definitions for department %s (kept id=%s)",
+            len(department_rows) - 1,
+            department_id,
+            department_rows[0].id,
+        )
+    if archived:
+        db.flush()
+    return archived
+
+
 def _ensure_work_log_definition(db: Session, department_id: int) -> KpiDefinition:
+    cleanup_duplicate_work_log_definitions(db)
     row = (
         db.query(KpiDefinition)
         .filter(
@@ -305,7 +343,8 @@ def _ensure_work_log_definition(db: Session, department_id: int) -> KpiDefinitio
             KpiDefinition.name == WORK_LOG_KPI_NAME,
             KpiDefinition.is_archived.is_(False),
         )
-        .one_or_none()
+        .order_by(KpiDefinition.id)
+        .first()
     )
     if row is not None:
         return row
@@ -396,6 +435,7 @@ def _require_weights_complete(db: Session, department_id: int) -> None:
 
 def ensure_kpi_config(db: Session) -> None:
     _ensure_kpi_schema(db)
+    cleanup_duplicate_work_log_definitions(db)
     if db.query(SystemConfig).filter_by(key="kpi.score_cap").one_or_none() is None:
         db.add(SystemConfig(key="kpi.score_cap", value={"cap": 1.5}))
     if db.query(SystemConfig).filter_by(key="kpi.score_bands").one_or_none() is None:
@@ -853,7 +893,8 @@ def _work_log_entry(
             KpiEntry.period_start == period_start,
             KpiEntry.period_end == period_end,
         )
-        .one_or_none()
+        .order_by(KpiEntry.id)
+        .first()
     )
 
 

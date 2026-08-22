@@ -5,6 +5,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessRuleViolation, EntityNotFound, ValidationFailed
+from app.core.gemini_client import GeminiQuotaExhausted
 from app.models.cv_screening import Candidate, CandidateRanking, CandidateScore, JobDescription, ScoringCriteria
 from app.models.employees import Department
 from app.schemas.common import AuthContext, PaginatedResponse
@@ -21,7 +22,11 @@ from app.schemas.job_descriptions import (
     ScoringCriteriaCreate,
     ScoringCriteriaReplace,
 )
-from app.scoring.job_posting_generator import append_application_link, generate_job_posting_draft
+from app.scoring.job_posting_generator import (
+    append_application_link,
+    fallback_job_posting_draft,
+    generate_job_posting_draft,
+)
 from app.services import audit_service
 from app.services.linkedin_service import publish_job_if_open
 
@@ -77,11 +82,14 @@ def generate_ai_draft(db: Session, payload: JobPostingAiDraftRequest) -> JobPost
     if dept is None:
         raise ValidationFailed("department_id does not exist")
     settings = get_settings()
-    draft = generate_job_posting_draft(
-        title=payload.title,
-        department_name=dept.name,
-        settings=settings,
-    )
+    try:
+        draft = generate_job_posting_draft(
+            title=payload.title,
+            department_name=dept.name,
+            settings=settings,
+        )
+    except GeminiQuotaExhausted as exc:
+        raise BusinessRuleViolation(str(exc)) from exc
     return JobPostingAiDraftResult(
         description_text=draft.description_text,
         requirements_text=draft.requirements_text,
@@ -92,13 +100,24 @@ def generate_ai_draft(db: Session, payload: JobPostingAiDraftRequest) -> JobPost
     )
 
 
+def _poster_requirements_for_image(requirements: str, skill_names: list[str]) -> str:
+    """Merge requirements + skills into one REQUIREMENTS column for the recruitment poster."""
+    parts: list[str] = []
+    req = (requirements or "").strip()
+    if req:
+        parts.append(req)
+    skills = [s.strip() for s in skill_names if s.strip()]
+    if skills:
+        parts.append("\n".join(f"• {name}" for name in skills))
+    return "\n\n".join(parts)
+
+
 def generate_ai_image(db: Session, payload: JobPostingAiImageRequest) -> JobPostingAiImageResult:
     import base64
 
     from app.reporting.job_posting_poster import (
         append_apply_here_line,
         generate_default_template_poster_png,
-        generate_hiring_poster_png,
     )
     from app.scoring.job_posting_generator import generate_job_posting_draft
 
@@ -107,41 +126,39 @@ def generate_ai_image(db: Session, payload: JobPostingAiImageRequest) -> JobPost
         raise ValidationFailed("department_id does not exist")
 
     settings = get_settings()
-    # Always AI-draft content for the poster from title + department.
-    draft = generate_job_posting_draft(
-        title=payload.title.strip(),
-        department_name=dept.name,
-        settings=settings,
-    )
     user_poster_description = (payload.poster_description_text or "").strip()
     user_requirements = (payload.requirements_text or "").strip()
     user_skills = [s.name.strip() for s in (payload.skills or []) if (s.name or "").strip()]
-    use_default_template = not user_poster_description and not user_requirements and not user_skills
 
-    poster_description = user_poster_description or draft.description_text
-    requirements = user_requirements or draft.requirements_text
-    skills = user_skills or [s.name for s in draft.skills if s.name.strip()]
+    draft = None
+    if not user_poster_description or not user_requirements or not user_skills:
+        try:
+            draft = generate_job_posting_draft(
+                title=payload.title.strip(),
+                department_name=dept.name,
+                settings=settings,
+            )
+        except GeminiQuotaExhausted:
+            draft = fallback_job_posting_draft(payload.title.strip(), dept.name)
+
+    poster_description = user_poster_description or (
+        draft.description_text if draft else ""
+    )
+    requirements = user_requirements or (draft.requirements_text if draft else "")
+    skills = user_skills or (
+        [s.name for s in draft.skills if s.name.strip()] if draft else []
+    )
+    poster_requirements = _poster_requirements_for_image(requirements, skills)
 
     form_url = _application_form_url() or ""
     apply_email = (settings.hiring_apply_email or "hr@kafi-group.com").strip()
-    if use_default_template:
-        png = generate_default_template_poster_png(
-            title=payload.title.strip(),
-            description_text=poster_description,
-            requirements_text=requirements,
-            apply_email=apply_email,
-        )
-    else:
-        png = generate_hiring_poster_png(
-            title=payload.title.strip(),
-            company_name=(settings.company_display_name or "Kafi Group").strip(),
-            description_text=poster_description,
-            requirements_text=requirements,
-            skill_names=skills,
-            form_url=form_url,
-            apply_email=apply_email,
-            settings=settings,
-        )
+    # Always use the red/black/yellow DESCRIPTION + REQUIREMENTS recruitment template.
+    png = generate_default_template_poster_png(
+        title=payload.title.strip(),
+        description_text=poster_description,
+        requirements_text=poster_requirements,
+        apply_email=apply_email,
+    )
     # Job description_text stays LinkedIn-safe: title line + apply CTA only.
     # Poster AI description is returned separately and must not be saved into
     # description_text / LinkedIn commentary.

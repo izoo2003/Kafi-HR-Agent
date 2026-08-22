@@ -25,7 +25,10 @@ export function useCreateAttendance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: AttendanceRecordCreate) => api.createAttendance(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["attendance-monthly-grid"] });
+    },
   });
 }
 
@@ -33,7 +36,10 @@ export function useImportAttendance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (file: File) => api.importAttendance(file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["attendance-monthly-grid"] });
+    },
   });
 }
 
@@ -56,6 +62,7 @@ export function useAttendancePeriodReport() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["attendance-summary"] });
+      qc.invalidateQueries({ queryKey: ["attendance-monthly-grid"] });
     },
   });
 }
@@ -68,6 +75,14 @@ export function useCreateEmployeesFromAttendanceExcel() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
     },
+  });
+}
+
+export function useMonthlyAttendanceGrid(params: { year: number; month: number } | null) {
+  return useQuery({
+    queryKey: ["attendance-monthly-grid", params],
+    queryFn: () => api.getMonthlyAttendanceGrid(params!),
+    enabled: Boolean(params),
   });
 }
 

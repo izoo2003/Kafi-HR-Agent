@@ -219,7 +219,7 @@ export function JobDescriptionFormPage() {
         setPendingImages((current) => [...current, file]);
       }
       setAiMessage(
-        "Hiring poster generated (Kafi logo + AI description on the image). Poster description is not included in LinkedIn posts.",
+        "Hiring poster generated (red/black/yellow template). Poster description is not included in LinkedIn posts.",
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Image generation failed");
@@ -436,9 +436,9 @@ export function JobDescriptionFormPage() {
             <div style={{ flex: "1 1 220px" }}>
               <strong style={{ display: "block", marginBottom: 4 }}>Generate Image</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                From title + department, AI writes a poster description (not used on LinkedIn), then
-                builds a hiring image with the Kafi logo. Edit the poster description below and
-                regenerate if you want to tweak the image copy.
+                From title + department, AI writes poster copy (not used on LinkedIn), then builds the
+                red/black/yellow hiring poster: job title header, DESCRIPTION and REQUIREMENTS
+                columns, footer hr@kafi-group.com. Edit fields below and regenerate to tweak copy.
               </span>
             </div>
             <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>

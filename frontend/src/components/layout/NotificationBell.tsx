@@ -27,7 +27,7 @@ export function NotificationBell() {
         aria-label="Notifications"
         onClick={() => setOpen((v) => !v)}
       >
-        <Bell size={18} strokeWidth={1.75} aria-hidden />
+        <Bell size={20} strokeWidth={1.75} aria-hidden />
         {unread > 0 ? <span className="notif-bell__badge font-data">{unread > 9 ? "9+" : unread}</span> : null}
       </button>
       {open ? (

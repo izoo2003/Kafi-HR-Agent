@@ -63,8 +63,8 @@ class Settings(BaseSettings):
     # Primary + rotation key: when one is quota-exhausted, switch to the other.
     gemini_api_key: str = ""
     gemini_api_key_2: str = ""
-    gemini_model: str = "gemini-flash-latest"
-    gemini_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Sync CVs: route a fetched CV to the best matching job (any status)
     gemini_cv_match_api_key: str = Field(
         default="",
@@ -81,38 +81,38 @@ class Settings(BaseSettings):
             "gemini_cv_match_api_key_2",
         ),
     )
-    gemini_cv_match_model: str = "gemini-flash-latest"
-    gemini_cv_match_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_cv_match_model: str = "gemini-3.5-flash-lite"
+    gemini_cv_match_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # CNIC image verification (falls back to gemini_api_key pool)
     gemini_cnic_api_key: str = ""
     gemini_cnic_api_key_2: str = ""
-    gemini_cnic_model: str = "gemini-flash-latest"
-    gemini_cnic_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_cnic_model: str = "gemini-3.5-flash-lite"
+    gemini_cnic_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Education marks/grade sheet verification — separate key (falls back to gemini_api_key pool)
     gemini_education_api_key: str = ""
     gemini_education_api_key_2: str = ""
-    gemini_education_model: str = "gemini-flash-latest"
-    gemini_education_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_education_model: str = "gemini-3.5-flash-lite"
+    gemini_education_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
     gemini_job_posting_api_key_2: str = ""
-    gemini_job_posting_model: str = "gemini-flash-latest"
-    gemini_job_posting_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_job_posting_model: str = "gemini-3.5-flash-lite"
+    gemini_job_posting_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Payroll salary-sheet AI summary (payment modes + narrative) — separate key
     gemini_payroll_api_key: str = ""
     gemini_payroll_api_key_2: str = ""
-    gemini_payroll_model: str = "gemini-flash-latest"
-    gemini_payroll_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_payroll_model: str = "gemini-3.5-flash-lite"
+    gemini_payroll_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Employee performance monthly AI summary — separate key
     gemini_performance_api_key: str = ""
     gemini_performance_api_key_2: str = ""
-    gemini_performance_model: str = "gemini-flash-latest"
-    gemini_performance_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_performance_model: str = "gemini-3.5-flash-lite"
+    gemini_performance_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Employee training course recommendations — separate key
     gemini_training_api_key: str = ""
     gemini_training_api_key_2: str = ""
-    gemini_training_model: str = "gemini-flash-latest"
-    gemini_training_model_fallbacks: str = "gemini-2.0-flash,gemini-1.5-flash"
+    gemini_training_model: str = "gemini-3.5-flash-lite"
+    gemini_training_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
 
     # Cloudflare Workers AI — job posting recruitment image generation
     cloudflare_account_id: str = Field(
@@ -300,10 +300,10 @@ class Settings(BaseSettings):
         return self.resolved_gemini_api_keys()
 
     def resolved_gemini_cv_match_model(self) -> str:
-        return (self.gemini_cv_match_model or self.gemini_model or "gemini-flash-latest").strip()
+        return (self.gemini_cv_match_model or self.gemini_model or "gemini-3.5-flash-lite").strip()
 
     def resolved_gemini_models(self) -> list[str]:
-        primary = (self.gemini_model or "gemini-flash-latest").strip()
+        primary = (self.gemini_model or "gemini-3.5-flash-lite").strip()
         return parse_model_chain(primary, self.gemini_model_fallbacks)
 
     def resolved_gemini_cv_match_models(self) -> list[str]:
@@ -323,7 +323,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_cnic_models(self) -> list[str]:
         primary = (
-            self.gemini_cnic_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_cnic_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = self.gemini_cnic_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)
@@ -342,7 +342,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_education_models(self) -> list[str]:
         primary = (
-            self.gemini_education_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_education_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = (
             self.gemini_education_model_fallbacks or self.gemini_model_fallbacks
@@ -360,7 +360,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_job_posting_models(self) -> list[str]:
         primary = (
-            self.gemini_job_posting_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_job_posting_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = (
             self.gemini_job_posting_model_fallbacks or self.gemini_model_fallbacks
@@ -377,7 +377,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_payroll_models(self) -> list[str]:
         primary = (
-            self.gemini_payroll_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_payroll_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = self.gemini_payroll_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)
@@ -392,7 +392,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_performance_models(self) -> list[str]:
         primary = (
-            self.gemini_performance_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_performance_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = (
             self.gemini_performance_model_fallbacks or self.gemini_model_fallbacks
@@ -409,7 +409,7 @@ class Settings(BaseSettings):
 
     def resolved_gemini_training_models(self) -> list[str]:
         primary = (
-            self.gemini_training_model or self.gemini_model or "gemini-flash-latest"
+            self.gemini_training_model or self.gemini_model or "gemini-3.5-flash-lite"
         ).strip()
         fallbacks = self.gemini_training_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)

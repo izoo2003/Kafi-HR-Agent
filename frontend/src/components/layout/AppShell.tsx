@@ -18,6 +18,7 @@ import type { HrModuleIconKey } from "../../constants/hrModuleIcons";
 import { NotificationBell } from "./NotificationBell";
 import { EmployeeSectionMenus } from "../../pages/Employees/EmployeeSectionMenus";
 import { EmployeeDevelopmentSectionMenus } from "../../pages/EmployeeDevelopment/EmployeeDevelopmentSectionMenus";
+import { UserManagementSectionMenus } from "../../pages/AdminPanel/UserManagementSectionMenus";
 import "./AppShell.css";
 
 const NAV: { to: string; label: string; module: string | null; icon: HrModuleIconKey }[] = [
@@ -137,7 +138,7 @@ export function AppShell() {
       <aside className="sidebar" id="app-sidebar">
         <div className="sidebar__brand">
           <span className="sidebar__brand-mark">
-            <HrModuleIcon icon="hrAiAssistant" size="sm" label="Kafi HR" />
+            <HrModuleIcon icon="hrAiAssistant" size="md" label="Kafi HR" />
           </span>
           <div className="sidebar__brand-text">
             <strong>Kafi HR</strong>
@@ -152,7 +153,7 @@ export function AppShell() {
               aria-controls="app-sidebar"
               onClick={toggleSidebar}
             >
-              {collapsed ? <PanelLeftOpen size={18} aria-hidden /> : <PanelLeftClose size={18} aria-hidden />}
+              {collapsed ? <PanelLeftOpen size={20} aria-hidden /> : <PanelLeftClose size={20} aria-hidden />}
             </button>
           ) : (
             <button
@@ -161,7 +162,7 @@ export function AppShell() {
               aria-label="Close menu"
               onClick={() => setMobileOpen(false)}
             >
-              <X size={18} aria-hidden />
+              <X size={20} aria-hidden />
             </button>
           )}
         </div>
@@ -178,12 +179,14 @@ export function AppShell() {
                       ? location.pathname.startsWith("/employees")
                       : item.to.startsWith("/employee-development")
                         ? location.pathname.startsWith("/employee-development")
-                        : location.pathname === item.to ||
-                          location.pathname.startsWith(`${item.to}/`);
+                        : item.to === "/admin/users"
+                          ? location.pathname.startsWith("/admin/users")
+                          : location.pathname === item.to ||
+                            location.pathname.startsWith(`${item.to}/`);
                   return `sidebar__link${active ? " sidebar__link--active" : ""}`;
                 }}
               >
-                <HrModuleIcon icon={iconKey} size="md" label={item.label} />
+                <HrModuleIcon icon={iconKey} size="lg" label={item.label} />
                 <span>{item.label}</span>
               </NavLink>
             );
@@ -206,6 +209,15 @@ export function AppShell() {
                 />
               );
             }
+            if (item.to === "/admin/users") {
+              return (
+                <UserManagementNavGroup
+                  key={`${item.to}-${item.label}`}
+                  link={link}
+                  allowSubnav={!railCollapsed}
+                />
+              );
+            }
             return (
               <span key={`${item.to}-${item.label}`} className="sidebar__nav-item">
                 {link}
@@ -225,7 +237,7 @@ export function AppShell() {
               navigate("/login");
             }}
           >
-            <LogOut size={16} aria-hidden />
+            <LogOut size={18} aria-hidden />
             <span>Sign out</span>
           </Button>
           <p className="sidebar__credit">
@@ -244,7 +256,7 @@ export function AppShell() {
               aria-controls="app-sidebar"
               onClick={() => setMobileOpen(true)}
             >
-              <Menu size={18} aria-hidden />
+              <Menu size={20} aria-hidden />
             </button>
           ) : null}
           <div className="shell__chrome-end">
@@ -290,7 +302,7 @@ function EmployeeNavGroup({
             }
             onClick={() => setOpen((value) => !value)}
           >
-            <ChevronDown size={16} aria-hidden />
+            <ChevronDown size={18} aria-hidden />
           </button>
         ) : null}
       </div>
@@ -310,17 +322,15 @@ function EmployeeDevelopmentNavGroup({
 }) {
   const location = useLocation();
   const onSection = location.pathname.startsWith("/employee-development");
-  const [manualClose, setManualClose] = useState(false);
+  const [open, setOpen] = useState(onSection);
 
   useEffect(() => {
-    setManualClose(false);
-  }, [location.pathname]);
+    if (onSection) setOpen(true);
+  }, [onSection]);
 
   useEffect(() => {
-    if (!allowSubnav) setManualClose(false);
+    if (!allowSubnav) setOpen(false);
   }, [allowSubnav]);
-
-  const open = onSection && !manualClose;
 
   return (
     <div className="sidebar__group">
@@ -334,13 +344,55 @@ function EmployeeDevelopmentNavGroup({
             aria-label={
               open ? "Collapse Employee Development menu" : "Expand Employee Development menu"
             }
-            onClick={() => setManualClose((value) => !value)}
+            onClick={() => setOpen((value) => !value)}
           >
-            <ChevronDown size={16} aria-hidden />
+            <ChevronDown size={18} aria-hidden />
           </button>
         ) : null}
       </div>
       <EmployeeDevelopmentSectionMenus open={allowSubnav && open} canManage={canManage} />
+    </div>
+  );
+}
+
+function UserManagementNavGroup({
+  link,
+  allowSubnav,
+}: {
+  link: ReactNode;
+  allowSubnav: boolean;
+}) {
+  const location = useLocation();
+  const onSection = location.pathname.startsWith("/admin/users");
+  const [open, setOpen] = useState(onSection);
+
+  useEffect(() => {
+    if (onSection) setOpen(true);
+  }, [onSection]);
+
+  useEffect(() => {
+    if (!allowSubnav) setOpen(false);
+  }, [allowSubnav]);
+
+  return (
+    <div className="sidebar__group">
+      <div className="sidebar__link-row">
+        {link}
+        {allowSubnav ? (
+          <button
+            type="button"
+            className={`sidebar__group-toggle${open ? " is-open" : ""}`}
+            aria-expanded={open}
+            aria-label={
+              open ? "Collapse User Management menu" : "Expand User Management menu"
+            }
+            onClick={() => setOpen((value) => !value)}
+          >
+            <ChevronDown size={18} aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      <UserManagementSectionMenus open={allowSubnav && open} />
     </div>
   );
 }

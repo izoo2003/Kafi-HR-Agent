@@ -1,4 +1,5 @@
-import { NavLink } from "react-router-dom";
+import { SIDEBAR_SUB_ICON } from "../../constants/hrModuleIcons";
+import { SidebarSubnavLink } from "../../components/layout/SidebarSubnavLink";
 
 type Props = {
   open: boolean;
@@ -11,38 +12,31 @@ export function EmployeeDevelopmentSectionMenus({ open, canManage = true }: Prop
 
   return (
     <div className="sidebar__subnav">
-      <NavLink
+      <SidebarSubnavLink
         to="/employee-development/performance"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
+        icon={SIDEBAR_SUB_ICON.employeePerformance}
       >
         Employee Performance
-      </NavLink>
+      </SidebarSubnavLink>
       {canManage ? (
         <>
-          <NavLink
+          <SidebarSubnavLink
             to="/employee-development/training"
-            className={({ isActive }) =>
-              `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`
-            }
+            icon={SIDEBAR_SUB_ICON.employeeTraining}
           >
             Employee Training
-          </NavLink>
-          <NavLink
+          </SidebarSubnavLink>
+          <SidebarSubnavLink
             to="/employee-development/resignation"
-            className={({ isActive }) =>
-              `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`
-            }
+            icon={SIDEBAR_SUB_ICON.employeeResignation}
           >
             Employee Resignation
-          </NavLink>
+          </SidebarSubnavLink>
         </>
       ) : null}
-      <NavLink
-        to="/employee-development/things-to-learn"
-        className={({ isActive }) => `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`}
-      >
+      <SidebarSubnavLink to="/employee-development/things-to-learn" icon={SIDEBAR_SUB_ICON.thingsToLearn}>
         Things To Learn
-      </NavLink>
+      </SidebarSubnavLink>
     </div>
   );
 }

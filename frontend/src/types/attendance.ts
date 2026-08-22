@@ -71,6 +71,49 @@ export interface LateEvent {
   checkInTime: string;
 }
 
+export interface PeriodDayEntry {
+  date: string;
+  weekday: string;
+  status: string;
+  dayType: string;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  notes: string | null;
+}
+
+export interface AttendanceMonthlyDayCell {
+  date: string;
+  weekday: string;
+  status: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  notes: string | null;
+}
+
+export interface AttendanceMonthlyEmployeeRow {
+  employeeId: number;
+  fullName: string;
+  employeeCode: string;
+  days: AttendanceMonthlyDayCell[];
+}
+
+export interface AttendanceMonthlyTotals {
+  daysPresent: number;
+  daysAbsent: number;
+  daysLate: number;
+  daysHalfDay: number;
+  daysOff: number;
+  lateAbsents: number;
+  latesPerOff: number;
+  employeeCount: number;
+}
+
+export interface AttendanceMonthlyGrid {
+  periodStart: string;
+  periodEnd: string;
+  totals: AttendanceMonthlyTotals;
+}
+
 export interface DayClassification {
   date: string;
   dayType: string;
@@ -110,6 +153,7 @@ export interface PeriodEmployeeReport {
   sundayDates: string[];
   absentDates: string[];
   overtimeDates: string[];
+  dailyEntries: PeriodDayEntry[];
 }
 
 export interface AttendancePeriodReport {

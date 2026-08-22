@@ -26,10 +26,9 @@ class UserRead(BaseModel):
 
 
 class UserCreate(BaseModel):
-    full_name: str = Field(min_length=2, max_length=200)
+    employee_id: int
     username: str = Field(min_length=3, max_length=32)
     pin: str = Field(min_length=4, max_length=8)
-    department_id: int
 
     @field_validator("username")
     @classmethod

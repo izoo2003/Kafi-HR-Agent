@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useState, useMemo, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -11,7 +11,7 @@ import { Table } from "../../components/ui/Table";
 import { Pagination } from "../../components/ui/Pagination";
 import { ApiError } from "../../api/client";
 import { useCreateUser, useDeactivateUser, useSetUserPassword, useUsers } from "../../hooks/useUsers";
-import { useDepartments } from "../../hooks/useEmployees";
+import { useEmployees } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import { useAuth } from "../../hooks/useAuth";
 import type { User } from "../../types/users";
@@ -24,43 +24,6 @@ const STAFF_ROLES = new Set([
   "recruiter",
   "readonly_auditor",
 ]);
-
-const selectStyle: CSSProperties = {
-  minWidth: 180,
-  padding: "var(--space-2) var(--space-3)",
-  border: "1px solid var(--color-border-strong)",
-  borderRadius: "var(--radius-sm)",
-  background: "var(--color-surface)",
-  fontFamily: "var(--font-ui)",
-  fontSize: "var(--text-sm)",
-  color: "var(--color-text-primary)",
-};
-
-function UsersSectionMenu({ current }: { current: "list" | "create" }) {
-  const navigate = useNavigate();
-  const { hasPermission } = useAuth();
-  const canWrite = hasPermission("users", "write");
-
-  return (
-    <label className="form-field" style={{ margin: 0 }}>
-      <span className="form-field__label">User Management</span>
-      <select
-        className="form-field__input"
-        style={selectStyle}
-        value={current}
-        aria-label="User Management section"
-        onChange={(e) => {
-          const value = e.target.value;
-          if (value === "create") navigate("/admin/users/new");
-          else navigate("/admin/users");
-        }}
-      >
-        <option value="list">View Users</option>
-        {canWrite ? <option value="create">Create Users</option> : null}
-      </select>
-    </label>
-  );
-}
 
 export function UserManagementPage() {
   const { hasPermission, user } = useAuth();
@@ -107,7 +70,6 @@ export function UserManagementPage() {
       <PageHeader
         title="View Users"
         breadcrumb="Admin / User Management / View Users"
-        actions={<UsersSectionMenu current="list" />}
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
@@ -165,7 +127,7 @@ export function UserManagementPage() {
             {users.data.items.length === 0 ? (
               <EmptyState
                 title="No user accounts yet"
-                description="Open User Management and choose Create Users to add a username, PIN, and department."
+                description="Use Create Users in the sidebar to pick an employee and assign a username and PIN."
               />
             ) : (
               <Table headers={["Name", "Username", "PIN / password", "Department", "Active", ""]}>
@@ -223,13 +185,19 @@ export function CreateUserPage() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("users", "write");
-  const departments = useDepartments(canWrite);
+  const employees = useEmployees({ page: 1, pageSize: 500, status: "active", enabled: canWrite });
   const createUser = useCreateUser();
-  const [fullName, setFullName] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
-  const [departmentId, setDepartmentId] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const employeesWithoutLogin = useMemo(
+    () => (employees.data?.items ?? []).filter((e) => e.userId == null),
+    [employees.data?.items],
+  );
+
+  const selectedEmployee = employeesWithoutLogin.find((e) => String(e.id) === employeeId);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -237,10 +205,9 @@ export function CreateUserPage() {
     setError(null);
     try {
       await createUser.mutateAsync({
-        fullName: fullName.trim(),
+        employeeId: Number(employeeId),
         username: username.trim().toLowerCase(),
         pin,
-        departmentId: Number(departmentId),
       });
       navigate("/admin/users", { replace: true });
     } catch (err) {
@@ -254,7 +221,6 @@ export function CreateUserPage() {
         <PageHeader
           title="Create Users"
           breadcrumb="Admin / User Management / Create Users"
-          actions={<UsersSectionMenu current="create" />}
         />
         <div className="page">
           <EmptyState
@@ -271,25 +237,62 @@ export function CreateUserPage() {
       <PageHeader
         title="Create Users"
         breadcrumb="Admin / User Management / Create Users"
-        actions={<UsersSectionMenu current="create" />}
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-          Set a full name, username, 4–8 digit PIN, and department. That person can then sign in. The
-          PIN stays visible under View Users after save.
+          Choose an employee who does not have a login yet, then set their username and 4–8 digit PIN.
+          Department comes from the employee record automatically.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+        {employees.isLoading ? <Spinner label="Loading employees" /> : null}
+        {employeesWithoutLogin.length === 0 && !employees.isLoading ? (
+          <EmptyState
+            title="No employees without logins"
+            description="Every active employee already has an account, or you need to add employees first under Employees."
+          />
+        ) : null}
         <Card>
           <form
             onSubmit={onCreate}
             style={{ display: "grid", gap: "var(--space-3)", maxWidth: 420 }}
           >
-            <FormField
-              label="Full name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-            />
+            <label style={{ display: "grid", gap: "var(--space-1)" }}>
+              <span
+                style={{
+                  fontSize: "var(--text-sm)",
+                  fontWeight: "var(--weight-medium)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                Employee
+              </span>
+              <select
+                required
+                className="form-field__input"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                disabled={employeesWithoutLogin.length === 0}
+              >
+                <option value="">Select employee</option>
+                {employeesWithoutLogin.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.fullName} ({emp.employeeCode}) — {emp.roleTitle}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedEmployee ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "var(--text-sm)",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                Login will be linked to{" "}
+                <strong>{selectedEmployee.fullName}</strong> in {selectedEmployee.roleTitle}.
+              </p>
+            ) : null}
             <FormField
               label="Username"
               value={username}
@@ -310,32 +313,12 @@ export function CreateUserPage() {
               maxLength={8}
               hint="4–8 digits. Shown under View Users after save."
             />
-            <label style={{ display: "grid", gap: "var(--space-1)" }}>
-              <span
-                style={{
-                  fontSize: "var(--text-sm)",
-                  fontWeight: "var(--weight-medium)",
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                Department
-              </span>
-              <select
-                required
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                style={selectStyle}
-              >
-                <option value="">Select department</option>
-                {(departments.data ?? []).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              <Button type="submit" variant="primary" disabled={createUser.isPending}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={createUser.isPending || employeesWithoutLogin.length === 0}
+              >
                 {createUser.isPending ? "Creating…" : "Create account"}
               </Button>
               <Button type="button" variant="secondary" onClick={() => navigate("/admin/users")}>

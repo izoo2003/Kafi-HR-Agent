@@ -153,6 +153,7 @@ def _current_month_period(today: date | None = None) -> tuple[date, date]:
 
 def run_kpi_incomplete_reminders(db: Session) -> int:
     """18:00 job — departments with incomplete KPI entry coverage for current month."""
+    kpi_service.cleanup_duplicate_work_log_definitions(db)
     today = date.today()
     period_start, period_end = _current_month_period(today)
 
@@ -205,6 +206,7 @@ def run_kpi_incomplete_reminders(db: Session) -> int:
 
 def run_kpi_at_risk_reminders(db: Session) -> int:
     """18:20 job — departments below target / at risk for current month."""
+    kpi_service.cleanup_duplicate_work_log_definitions(db)
     today = date.today()
     period_start, period_end = _current_month_period(today)
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import Settings
 from app.core.exceptions import BusinessRuleViolation
-from app.core.gemini_client import generate_content_with_fallback
+from app.core.gemini_client import GeminiQuotaExhausted, generate_content_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,30 @@ def append_application_link(description: str, form_url: str) -> str:
     return text + application_cta_block(url)
 
 
+def fallback_job_posting_draft(title: str, department_name: str) -> JobPostingDraft:
+    """Static poster copy when Gemini quota is exhausted or unavailable."""
+    role = (title or "Open Role").strip()
+    dept = (department_name or "our team").strip()
+    return JobPostingDraft(
+        description_text=(
+            f"Kafi Group is hiring a {role} in {dept}. "
+            "Join us to deliver quality work, collaborate with colleagues, "
+            "and grow your career with a forward-looking organization."
+        ),
+        requirements_text=(
+            f"- Education and experience relevant to {role}\n"
+            "- Strong communication and teamwork\n"
+            "- Problem-solving mindset and attention to detail\n"
+            "- Willingness to learn and adapt in a dynamic environment"
+        ),
+        skills=[
+            DraftSkill(name="Role-specific technical skills", level=7),
+            DraftSkill(name="Communication", level=6),
+            DraftSkill(name="Team collaboration", level=6),
+        ],
+    )
+
+
 def generate_job_posting_draft(
     *,
     title: str,
@@ -129,6 +153,8 @@ Rules:
             pool_id="job_posting",
         )
         data = _parse_json_response(response.text)
+    except GeminiQuotaExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("Gemini job posting draft failed")
         raise BusinessRuleViolation(f"AI Analyzer failed to generate draft: {exc}") from exc

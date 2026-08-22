@@ -6,6 +6,10 @@ import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import {
+  MonthlyAttendanceGrid,
+  aggregateAttendanceTotals,
+} from "../../components/domain/MonthlyAttendanceGrid";
+import {
   useAttendancePeriodReport,
   useCreateEmployeesFromAttendanceExcel,
 } from "../../hooks/useAttendance";
@@ -150,6 +154,7 @@ export function AttendancePeriodReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [reportView, setReportView] = useState<"summary" | "monthly">("summary");
   const [saturdayOffMode, setSaturdayOffMode] = useState<SaturdayOffMode>("second_saturday");
   const [saturdayOffDate, setSaturdayOffDate] = useState("");
   const unmatched = report?.unmatchedPeople ?? [];
@@ -159,6 +164,14 @@ export function AttendancePeriodReportPage() {
     () => unmatched.filter((p) => selected[`${p.fullName}|${p.excelEmployeeId ?? ""}`] !== false),
     [unmatched, selected],
   );
+  const monthlyTotals = useMemo(() => {
+    if (!report) return null;
+    const days = report.employees.flatMap((emp) => emp.dailyEntries ?? []);
+    return {
+      ...aggregateAttendanceTotals(days, report.latesPerOff),
+      employeeCount: report.employees.length,
+    };
+  }, [report]);
 
   async function runAnalyze(file: File) {
     if (saturdayOffMode === "date") {
@@ -496,59 +509,98 @@ export function AttendancePeriodReportPage() {
               )}
             </Card>
 
-            <Table
-              headers={[
-                "Employee",
-                "Present",
-                "Late",
-                "Half day",
-                "Sunday",
-                "Absent",
-                "OT",
-                "Est. net",
-                "Details",
-              ]}
-            >
-              {report.employees.map((emp) => (
-                <Fragment key={`${emp.fullName}-${emp.excelEmployeeId ?? emp.employeeId ?? ""}`}>
-                  <tr data-status={emp.daysAbsent > 0 ? "warning" : "positive"}>
-                    <td>
-                      <div>{emp.fullName}</div>
-                      <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
-                        {emp.matchedEmployee
-                          ? emp.employeeCode || "Linked employee"
-                          : "Not in Employees yet"}
-                      </div>
-                    </td>
-                    <td className="num">{emp.daysPresent}</td>
-                    <td className="num">{emp.daysLate}</td>
-                    <td className="num">{emp.daysHalfDay}</td>
-                    <td className="num">{emp.daysSundayPresent}</td>
-                    <td className="num">{emp.daysAbsent}</td>
-                    <td className="num">{emp.overtimeBonusDays}</td>
-                    <td className="num">{emp.estimatedNetSalary.toFixed(2)}</td>
-                    <td>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() =>
-                          setExpanded(expanded === emp.fullName ? null : emp.fullName)
-                        }
-                      >
-                        {expanded === emp.fullName ? "Hide" : "Show"}
-                      </Button>
-                    </td>
-                  </tr>
-                  {expanded === emp.fullName ? (
-                    <tr>
-                      <td colSpan={9}>
-                        <EmployeeDetail emp={emp} />
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              ))}
-            </Table>
+            <section className="card">
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "var(--space-3)",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "var(--space-4)",
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>Employee attendance</h2>
+                <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <Button
+                    type="button"
+                    variant={reportView === "summary" ? "primary" : "secondary"}
+                    onClick={() => setReportView("summary")}
+                  >
+                    Summary table
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={reportView === "monthly" ? "primary" : "secondary"}
+                    onClick={() => setReportView("monthly")}
+                  >
+                    Monthly grid
+                  </Button>
+                </div>
+              </div>
+
+              {reportView === "monthly" && monthlyTotals ? (
+                <MonthlyAttendanceGrid
+                  periodStart={report.periodStart}
+                  periodEnd={report.periodEnd}
+                  totals={monthlyTotals}
+                />
+              ) : reportView === "summary" ? (
+                <Table
+                  headers={[
+                    "Employee",
+                    "Present",
+                    "Late",
+                    "Half day",
+                    "Sunday",
+                    "Absent",
+                    "OT",
+                    "Est. net",
+                    "Details",
+                  ]}
+                >
+                  {report.employees.map((emp) => (
+                    <Fragment key={`${emp.fullName}-${emp.excelEmployeeId ?? emp.employeeId ?? ""}`}>
+                      <tr data-status={emp.daysAbsent > 0 ? "warning" : "positive"}>
+                        <td>
+                          <div>{emp.fullName}</div>
+                          <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
+                            {emp.matchedEmployee
+                              ? emp.employeeCode || "Linked employee"
+                              : "Not in Employees yet"}
+                          </div>
+                        </td>
+                        <td className="num">{emp.daysPresent}</td>
+                        <td className="num">{emp.daysLate}</td>
+                        <td className="num">{emp.daysHalfDay}</td>
+                        <td className="num">{emp.daysSundayPresent}</td>
+                        <td className="num">{emp.daysAbsent}</td>
+                        <td className="num">{emp.overtimeBonusDays}</td>
+                        <td className="num">{emp.estimatedNetSalary.toFixed(2)}</td>
+                        <td>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() =>
+                              setExpanded(expanded === emp.fullName ? null : emp.fullName)
+                            }
+                          >
+                            {expanded === emp.fullName ? "Hide" : "Show"}
+                          </Button>
+                        </td>
+                      </tr>
+                      {expanded === emp.fullName ? (
+                        <tr>
+                          <td colSpan={9}>
+                            <EmployeeDetail emp={emp} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                </Table>
+              ) : null}
+            </section>
           </>
         ) : null}
       </div>

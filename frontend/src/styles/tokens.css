@@ -56,12 +56,12 @@
   --font-ui: "Inter", -apple-system, "Segoe UI", sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, monospace;
 
-  --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 1.875rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.625rem;
+  --text-2xl: 2rem;
 
   --weight-regular: 400;
   --weight-medium: 500;
@@ -80,10 +80,10 @@
   --radius-md: 6px;
   --radius-none: 0px;
 
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 72px;
+  --sidebar-width: 272px;
+  --sidebar-collapsed-width: 80px;
   --content-max-width: 1440px;
-  --table-row-height: 44px;
+  --table-row-height: 48px;
 }
 
 *,

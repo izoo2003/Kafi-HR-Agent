@@ -48,6 +48,7 @@ from app.schemas.attendance import (
     ImportErrorRow,
     LateEvent,
     PeriodEmployeeReport,
+    PeriodDayEntry,
     UnmatchedAttendancePerson,
 )
 from app.schemas.common import AuthContext
@@ -609,6 +610,7 @@ def analyze_period_file(
         present_dates: list[date] = []
         ot_dates: list[date] = []
         sunday_dates: list[date] = []
+        daily_entries: list[PeriodDayEntry] = []
         days_late = days_half = days_absent = days_present = days_sunday = 0
 
         d = period_start
@@ -665,6 +667,23 @@ def analyze_period_file(
                     status = "present"
                     days_present += 1
                     present_dates.append(d)
+
+            check_in_time = local_in.strftime("%H:%M") if local_in else None
+            check_out_time = None
+            if cout is not None:
+                check_out_time = cout.astimezone(tz).time().strftime("%H:%M")
+
+            daily_entries.append(
+                PeriodDayEntry(
+                    date=d,
+                    weekday=d.strftime("%A"),
+                    status=status,
+                    day_type=dtype,
+                    check_in_time=check_in_time,
+                    check_out_time=check_out_time,
+                    notes=notes,
+                )
+            )
 
             if persist and emp is not None:
                 existing = (
@@ -754,6 +773,7 @@ def analyze_period_file(
                 sunday_dates=sunday_dates,
                 absent_dates=absent_dates,
                 overtime_dates=ot_dates,
+                daily_entries=daily_entries,
             )
         )
 

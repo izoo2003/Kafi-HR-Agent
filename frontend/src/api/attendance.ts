@@ -2,6 +2,7 @@ import { apiRequest, getAccessToken } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type {
   AttendanceImportResult,
+  AttendanceMonthlyGrid,
   AttendancePeriodReport,
   AttendanceRecord,
   AttendanceRecordCreate,
@@ -86,6 +87,14 @@ export async function createEmployeesFromAttendanceExcel(
     method: "POST",
     body: { people },
   });
+}
+
+export async function getMonthlyAttendanceGrid(params: {
+  year: number;
+  month: number;
+  departmentId?: number;
+}): Promise<AttendanceMonthlyGrid> {
+  return apiRequest<AttendanceMonthlyGrid>("/attendance/monthly/grid", { params });
 }
 
 export async function syncBiometric(): Promise<{ message: string; punchesFetched: number }> {

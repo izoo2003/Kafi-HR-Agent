@@ -45,3 +45,19 @@ export const SIDEBAR_ICON_BY_PATH: Record<string, HrModuleIconKey> = {
   "/hr-policies": "compliancePolicies",
   "/admin/users": "addEmployee",
 };
+
+/** Icons for sidebar subsection links (same sprite as top-level nav). */
+export const SIDEBAR_SUB_ICON: Record<string, HrModuleIconKey> = {
+  departments: "compliancePolicies",
+  appointmentLetter: "documentManagement",
+  contractLetter: "employeeHandbook",
+  documentVerification: "documentManagement",
+  verifyCnic: "addEmployee",
+  verifyEducation: "trainingDevelopment",
+  employeePerformance: "performanceReviews",
+  employeeTraining: "trainingDevelopment",
+  employeeResignation: "exitManagement",
+  thingsToLearn: "goalsOkrs",
+  viewUsers: "employeeDirectory",
+  createUsers: "addEmployee",
+};

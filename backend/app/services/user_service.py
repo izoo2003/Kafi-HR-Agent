@@ -109,22 +109,31 @@ def list_users(
 
 
 def create_user(db: Session, auth: AuthContext, payload: UserCreate) -> UserRead:
-    from app.schemas.auth import RegisterRequest
-
-    cleaned = RegisterRequest(
-        full_name=payload.full_name,
-        username=payload.username,
-        pin=payload.pin,
-        department_id=payload.department_id,
+    employee = (
+        db.query(Employee).filter(Employee.id == payload.employee_id).one_or_none()
     )
-    dept = db.query(Department).filter(Department.id == cleaned.department_id).one_or_none()
-    if dept is None:
-        raise ValidationFailed("department_id does not exist")
+    if employee is None:
+        raise EntityNotFound(f"Employee {payload.employee_id} not found")
+    if employee.user_id is not None:
+        raise ConflictError(
+            "This employee already has a login account. Use View Users to change their PIN."
+        )
+    if employee.status == "terminated":
+        raise BusinessRuleViolation("Cannot create a login for a terminated employee")
 
-    if db.query(User).filter(User.username == cleaned.username).one_or_none():
+    username = payload.username.strip().lower()
+    if not username.replace(".", "").replace("_", "").replace("-", "").isalnum():
+        raise ValidationFailed(
+            "Username may only contain letters, numbers, dots, underscores, and hyphens"
+        )
+    pin = payload.pin
+    if not pin.isdigit() or not (4 <= len(pin) <= 8):
+        raise ValidationFailed("PIN must be 4–8 digits")
+
+    if db.query(User).filter(User.username == username).one_or_none():
         raise ConflictError("That username is already taken")
 
-    email = f"{cleaned.username}@{SELF_SERVICE_EMAIL_DOMAIN}"
+    email = f"{username}@{SELF_SERVICE_EMAIL_DOMAIN}"
     if db.query(User).filter(User.email == email).one_or_none():
         raise ConflictError("That username is already taken")
 
@@ -132,30 +141,25 @@ def create_user(db: Session, auth: AuthContext, payload: UserCreate) -> UserRead
     if role is None:
         raise ValidationFailed("Employee role is not seeded")
 
+    dept = db.query(Department).filter(Department.id == employee.department_id).one_or_none()
+    if dept is None:
+        raise ValidationFailed("Employee department is missing — fix the employee record first")
+
     user = User(
         email=email,
-        username=cleaned.username,
-        password_hash=hash_password(cleaned.pin),
-        login_pin=cleaned.pin,
-        full_name=cleaned.full_name.strip(),
+        username=username,
+        password_hash=hash_password(pin),
+        login_pin=pin,
+        full_name=employee.full_name.strip(),
         is_active=True,
     )
     user.roles.append(role)
     db.add(user)
     db.flush()
 
-    employee = Employee(
-        user_id=user.id,
-        employee_code=f"S{user.id:05d}",
-        full_name=user.full_name,
-        department_id=dept.id,
-        role_title=dept.name or "Employee",
-        employment_type="full_time",
-        date_joined=date.today(),
-        status="active",
-        email=email,
-    )
-    db.add(employee)
+    employee.user_id = user.id
+    if not (employee.email or "").strip():
+        employee.email = email
     db.flush()
 
     audit_service.log_from_auth(
@@ -167,7 +171,7 @@ def create_user(db: Session, auth: AuthContext, payload: UserCreate) -> UserRead
         after_state={
             "username": user.username,
             "full_name": user.full_name,
-            "department_id": dept.id,
+            "department_id": employee.department_id,
             "employee_id": employee.id,
             "created_by_admin": True,
         },

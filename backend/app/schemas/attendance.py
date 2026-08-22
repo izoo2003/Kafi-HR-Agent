@@ -133,6 +133,51 @@ class LateEvent(BaseModel):
     check_in_time: str
 
 
+class PeriodDayEntry(BaseModel):
+    date: date
+    weekday: str
+    status: str
+    day_type: str
+    check_in_time: str | None = None
+    check_out_time: str | None = None
+    notes: str | None = None
+
+
+class AttendanceMonthlyDayCell(BaseModel):
+    date: date
+    weekday: str
+    status: str
+    check_in: datetime | None = None
+    check_out: datetime | None = None
+    notes: str | None = None
+
+
+class AttendanceMonthlyEmployeeRow(BaseModel):
+    employee_id: int
+    full_name: str
+    employee_code: str
+    days: list[AttendanceMonthlyDayCell]
+
+
+class AttendanceMonthlyTotals(BaseModel):
+    """Aggregate counts across all employees for a calendar month."""
+
+    days_present: int = 0
+    days_absent: int = 0
+    days_late: int = 0
+    days_half_day: int = 0
+    days_off: int = 0
+    late_absents: int = 0
+    lates_per_off: int = 3
+    employee_count: int = 0
+
+
+class AttendanceMonthlyGrid(BaseModel):
+    period_start: date
+    period_end: date
+    totals: AttendanceMonthlyTotals
+
+
 class DayClassification(BaseModel):
     date: date
     day_type: str
@@ -182,6 +227,7 @@ class PeriodEmployeeReport(BaseModel):
     sunday_dates: list[date] = []
     absent_dates: list[date] = []
     overtime_dates: list[date] = []
+    daily_entries: list[PeriodDayEntry] = []
 
 
 class AttendancePeriodReport(BaseModel):

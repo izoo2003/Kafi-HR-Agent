@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,8 @@ from app.models.employees import Employee
 from app.models.system import SystemConfig
 from app.schemas.attendance import (
     AttendanceImportResult,
+    AttendanceMonthlyGrid,
+    AttendanceMonthlyTotals,
     AttendanceRecordCreate,
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -352,6 +355,88 @@ def list_records(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+def get_monthly_grid(
+    db: Session,
+    auth: AuthContext,
+    *,
+    year: int,
+    month: int,
+    department_id: int | None = None,
+) -> AttendanceMonthlyGrid:
+    """Full-month attendance grid for all visible employees."""
+    if month < 1 or month > 12:
+        raise ValidationFailed("month must be between 1 and 12")
+    period_start = date(year, month, 1)
+    period_end = date(year, month, monthrange(year, month)[1])
+
+    emp_q = db.query(Employee).filter(Employee.status != "terminated")
+    own = own_employee_id(auth)
+    if own is not None:
+        emp_q = emp_q.filter(Employee.id == own)
+    if department_id is not None:
+        emp_q = emp_q.filter(Employee.department_id == department_id)
+    employees = emp_q.order_by(Employee.full_name).all()
+    emp_ids = [e.id for e in employees]
+
+    rec_map: dict[tuple[int, date], AttendanceRecord] = {}
+    if emp_ids:
+        rows = (
+            db.query(AttendanceRecord)
+            .filter(
+                AttendanceRecord.employee_id.in_(emp_ids),
+                AttendanceRecord.date >= period_start,
+                AttendanceRecord.date <= period_end,
+            )
+            .all()
+        )
+        for r in rows:
+            rec_map[(r.employee_id, r.date)] = r
+
+    from app.services.attendance_period_report import _office_policy
+
+    policy = _office_policy(db)
+    lates_per_off = max(1, int(policy.get("lates_per_off", 3)))
+
+    days_present = days_absent = days_late = days_half = days_off = 0
+    for emp in employees:
+        d = period_start
+        while d <= period_end:
+            rec = rec_map.get((emp.id, d))
+            if rec is None:
+                d += timedelta(days=1)
+                continue
+            status = rec.status
+            if status == "present":
+                days_present += 1
+            elif status == "absent":
+                days_absent += 1
+            elif status == "late":
+                days_late += 1
+            elif status == "half_day":
+                days_half += 1
+                days_late += 1
+            elif status == "holiday":
+                days_off += 1
+            d += timedelta(days=1)
+
+    late_absents = days_late // lates_per_off
+
+    return AttendanceMonthlyGrid(
+        period_start=period_start,
+        period_end=period_end,
+        totals=AttendanceMonthlyTotals(
+            days_present=days_present,
+            days_absent=days_absent,
+            days_late=days_late,
+            days_half_day=days_half,
+            days_off=days_off,
+            late_absents=late_absents,
+            lates_per_off=lates_per_off,
+            employee_count=len(employees),
+        ),
     )
 
 

@@ -9,7 +9,7 @@ type Props = {
   label?: string;
 };
 
-const SIZE_PX = { sm: 22, md: 28, lg: 36, xl: 48 } as const;
+const SIZE_PX = { sm: 24, md: 32, lg: 40, xl: 52 } as const;
 
 export function HrModuleIcon({ icon, size = "md", className = "", label }: Props) {
   const index = typeof icon === "number" ? icon : hrModuleIconIndex(icon);
