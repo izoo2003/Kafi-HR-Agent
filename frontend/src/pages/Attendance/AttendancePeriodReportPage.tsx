@@ -164,13 +164,14 @@ export function AttendancePeriodReportPage() {
     () => unmatched.filter((p) => selected[`${p.fullName}|${p.excelEmployeeId ?? ""}`] !== false),
     [unmatched, selected],
   );
-  const monthlyTotals = useMemo(() => {
+  const monthlyEmployees = useMemo(() => {
     if (!report) return null;
-    const days = report.employees.flatMap((emp) => emp.dailyEntries ?? []);
-    return {
-      ...aggregateAttendanceTotals(days, report.latesPerOff),
-      employeeCount: report.employees.length,
-    };
+    return report.employees.map((emp) => ({
+      employeeId: emp.employeeId ?? 0,
+      fullName: emp.fullName,
+      employeeCode: emp.employeeCode ?? "",
+      ...aggregateAttendanceTotals(emp.dailyEntries ?? [], report.latesPerOff),
+    }));
   }, [report]);
 
   async function runAnalyze(file: File) {
@@ -539,11 +540,12 @@ export function AttendancePeriodReportPage() {
                 </div>
               </div>
 
-              {reportView === "monthly" && monthlyTotals ? (
+              {reportView === "monthly" && monthlyEmployees ? (
                 <MonthlyAttendanceGrid
                   periodStart={report.periodStart}
                   periodEnd={report.periodEnd}
-                  totals={monthlyTotals}
+                  employees={monthlyEmployees}
+                  latesPerOff={report.latesPerOff}
                 />
               ) : reportView === "summary" ? (
                 <Table

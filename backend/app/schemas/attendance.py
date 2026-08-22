@@ -159,6 +159,20 @@ class AttendanceMonthlyEmployeeRow(BaseModel):
     days: list[AttendanceMonthlyDayCell]
 
 
+class AttendanceMonthlyEmployeeTotals(BaseModel):
+    """Per-employee attendance counts for a calendar month."""
+
+    employee_id: int
+    full_name: str
+    employee_code: str
+    days_present: int = 0
+    days_absent: int = 0
+    days_late: int = 0
+    days_half_day: int = 0
+    days_off: int = 0
+    late_absents: int = 0
+
+
 class AttendanceMonthlyTotals(BaseModel):
     """Aggregate counts across all employees for a calendar month."""
 
@@ -175,7 +189,8 @@ class AttendanceMonthlyTotals(BaseModel):
 class AttendanceMonthlyGrid(BaseModel):
     period_start: date
     period_end: date
-    totals: AttendanceMonthlyTotals
+    lates_per_off: int = 3
+    employees: list[AttendanceMonthlyEmployeeTotals]
 
 
 class DayClassification(BaseModel):

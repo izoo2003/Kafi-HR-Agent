@@ -25,7 +25,7 @@ from app.models.system import SystemConfig
 from app.schemas.attendance import (
     AttendanceImportResult,
     AttendanceMonthlyGrid,
-    AttendanceMonthlyTotals,
+    AttendanceMonthlyEmployeeTotals,
     AttendanceRecordCreate,
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -400,8 +400,9 @@ def get_monthly_grid(
     policy = _office_policy(db)
     lates_per_off = max(1, int(policy.get("lates_per_off", 3)))
 
-    days_present = days_absent = days_late = days_half = days_off = 0
+    employee_rows: list[AttendanceMonthlyEmployeeTotals] = []
     for emp in employees:
+        days_present = days_absent = days_late = days_half = days_off = 0
         d = period_start
         while d <= period_end:
             rec = rec_map.get((emp.id, d))
@@ -422,21 +423,25 @@ def get_monthly_grid(
                 days_off += 1
             d += timedelta(days=1)
 
-    late_absents = days_late // lates_per_off
+        employee_rows.append(
+            AttendanceMonthlyEmployeeTotals(
+                employee_id=emp.id,
+                full_name=emp.full_name,
+                employee_code=emp.employee_code,
+                days_present=days_present,
+                days_absent=days_absent,
+                days_late=days_late,
+                days_half_day=days_half,
+                days_off=days_off,
+                late_absents=days_late // lates_per_off,
+            )
+        )
 
     return AttendanceMonthlyGrid(
         period_start=period_start,
         period_end=period_end,
-        totals=AttendanceMonthlyTotals(
-            days_present=days_present,
-            days_absent=days_absent,
-            days_late=days_late,
-            days_half_day=days_half,
-            days_off=days_off,
-            late_absents=late_absents,
-            lates_per_off=lates_per_off,
-            employee_count=len(employees),
-        ),
+        lates_per_off=lates_per_off,
+        employees=employee_rows,
     )
 
 

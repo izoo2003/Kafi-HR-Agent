@@ -97,6 +97,18 @@ export interface AttendanceMonthlyEmployeeRow {
   days: AttendanceMonthlyDayCell[];
 }
 
+export interface AttendanceMonthlyEmployeeTotals {
+  employeeId: number;
+  fullName: string;
+  employeeCode: string;
+  daysPresent: number;
+  daysAbsent: number;
+  daysLate: number;
+  daysHalfDay: number;
+  daysOff: number;
+  lateAbsents: number;
+}
+
 export interface AttendanceMonthlyTotals {
   daysPresent: number;
   daysAbsent: number;
@@ -111,7 +123,8 @@ export interface AttendanceMonthlyTotals {
 export interface AttendanceMonthlyGrid {
   periodStart: string;
   periodEnd: string;
-  totals: AttendanceMonthlyTotals;
+  latesPerOff: number;
+  employees: AttendanceMonthlyEmployeeTotals[];
 }
 
 export interface DayClassification {

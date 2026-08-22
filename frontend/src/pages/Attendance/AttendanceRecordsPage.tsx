@@ -296,7 +296,8 @@ export function AttendanceRecordsPage() {
                 <MonthlyAttendanceGrid
                   periodStart={monthlyGrid.data.periodStart}
                   periodEnd={monthlyGrid.data.periodEnd}
-                  totals={monthlyGrid.data.totals}
+                  employees={monthlyGrid.data.employees}
+                  latesPerOff={monthlyGrid.data.latesPerOff}
                 />
               ) : null}
             </>
