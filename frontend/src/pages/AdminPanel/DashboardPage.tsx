@@ -38,7 +38,7 @@ function AnimatedNumber({ value }: { value: number }) {
     }
     const from = 0;
     const start = performance.now();
-    const duration = 420;
+    const duration = 900;
     let frame = 0;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
@@ -68,7 +68,7 @@ function MetricCard({
   status: StatusTone;
   icon: HrModuleIconKey;
 }) {
-  const tone = value > 0 ? status : "neutral";
+  const tone = status;
   return (
     <Link to={to} className="dashboard-action-link">
       <article className="dashboard-action" data-status={tone} data-active={value > 0 ? "true" : "false"}>
@@ -135,7 +135,13 @@ function AttendancePanel({ att }: { att: AttendanceTodaySnapshot }) {
         </div>
         <div className="dashboard-att__stats">
           {segments.map((seg) => (
-            <Link key={seg.key} to={seg.to} className="dashboard-att__stat" data-status={seg.status}>
+            <Link
+              key={seg.key}
+              to={seg.to}
+              className="dashboard-att__stat"
+              data-status={seg.status}
+              data-active={seg.count > 0 ? "true" : "false"}
+            >
               <span className="dashboard-att__stat-label">{seg.label}</span>
               <span className="dashboard-att__stat-value font-data">
                 <AnimatedNumber value={seg.count} />
