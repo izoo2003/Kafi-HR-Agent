@@ -46,10 +46,12 @@ export function aggregateAttendanceTotals(
         break;
       case "late":
         daysLate += 1;
+        daysPresent += 1;
         break;
       case "half_day":
         daysHalfDay += 1;
         daysLate += 1;
+        daysPresent += 1;
         break;
       case "holiday":
         daysOff += 1;
@@ -84,17 +86,17 @@ export function MonthlyAttendanceGrid({ periodStart, periodEnd, employees, lates
     status?: string;
     hint?: string;
   }> = [
-    { key: "daysPresent", label: "Presents", status: "positive" },
-    { key: "daysAbsent", label: "Absents", status: "critical", hint: "Actual absents only" },
+    { key: "daysPresent", label: "Presents", status: "positive", hint: "Includes late and half-day (they came in)" },
     { key: "daysLate", label: "Lates", status: "warning" },
-    { key: "daysHalfDay", label: "Half days", status: "warning" },
-    { key: "daysOff", label: "Off", status: "neutral", hint: "Holidays / company off" },
     {
       key: "lateAbsents",
       label: "Late absents",
-      status: "critical",
-      hint: `${latesPerOff} lates = 1 late absent (not in Absents)`,
+      status: "warning",
+      hint: `${latesPerOff} lates = 1 late absent (not a regular absent)`,
     },
+    { key: "daysAbsent", label: "Absents", status: "critical", hint: "Did not come in at all" },
+    { key: "daysHalfDay", label: "Half days", status: "warning" },
+    { key: "daysOff", label: "Off", status: "neutral", hint: "Holidays / company off" },
   ];
 
   return (
@@ -150,9 +152,10 @@ export function MonthlyAttendanceGrid({ periodStart, periodEnd, employees, lates
       </div>
 
       <p className="monthly-attendance__footnote">
-        Per-employee totals for attendance records in this period. Late absents: every{" "}
-        <span className="font-data">{latesPerOff}</span> late check-ins (including half days) count
-        as <span className="font-data">1</span> late absent — not added to Absents.
+        Presents include every day the person came in (on time, late, or half day). Absents are only
+        days they did not come in at all. Late absents: every{" "}
+        <span className="font-data">{latesPerOff}</span> late check-ins count as{" "}
+        <span className="font-data">1</span> late absent — that is not added to Absents.
       </p>
     </div>
   );

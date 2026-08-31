@@ -2,7 +2,11 @@ import { apiRequest, fetchBlob } from "./client";
 import type { PaginatedResponse, PaginationParams } from "../types/common";
 import type {
   Department,
+  DepartmentAiDraftRequest,
+  DepartmentAiDraftResult,
   DepartmentCreate,
+  DepartmentDocument,
+  DepartmentDocumentKind,
   DepartmentUpdate,
   Employee,
   EmployeeCreate,
@@ -22,6 +26,10 @@ export async function listDepartments(): Promise<Department[]> {
   return apiRequest<Department[]>("/departments");
 }
 
+export async function getMyDepartment(): Promise<Department> {
+  return apiRequest<Department>("/departments/me");
+}
+
 export async function createDepartment(payload: DepartmentCreate): Promise<Department> {
   return apiRequest<Department>("/departments", { method: "POST", body: payload });
 }
@@ -35,6 +43,45 @@ export async function updateDepartment(
 
 export async function deleteDepartment(id: number): Promise<void> {
   return apiRequest<void>(`/departments/${id}`, { method: "DELETE" });
+}
+
+export async function generateDepartmentAiDraft(
+  payload: DepartmentAiDraftRequest,
+): Promise<DepartmentAiDraftResult> {
+  return apiRequest<DepartmentAiDraftResult>("/departments/ai-draft", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function uploadDepartmentDocuments(
+  departmentId: number,
+  kind: DepartmentDocumentKind,
+  files: File[],
+): Promise<DepartmentDocument[]> {
+  const form = new FormData();
+  form.append("kind", kind);
+  for (const file of files) form.append("files", file);
+  return apiRequest<DepartmentDocument[]>(`/departments/${departmentId}/documents`, {
+    method: "POST",
+    formData: form,
+  });
+}
+
+export async function downloadDepartmentDocument(
+  departmentId: number,
+  documentId: number,
+): Promise<Blob> {
+  return fetchBlob(`/departments/${departmentId}/documents/${documentId}/file`);
+}
+
+export async function deleteDepartmentDocument(
+  departmentId: number,
+  documentId: number,
+): Promise<void> {
+  return apiRequest<void>(`/departments/${departmentId}/documents/${documentId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function listEmployees(

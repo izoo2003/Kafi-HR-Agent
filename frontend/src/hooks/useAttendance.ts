@@ -50,14 +50,17 @@ export function useAttendancePeriodReport() {
       file,
       saturdayOffMode,
       saturdayOffDate,
+      extraHolidayDates,
     }: {
       file: File;
-      saturdayOffMode?: "second_saturday" | "date" | "auto";
+      saturdayOffMode?: "second_saturday" | "date";
       saturdayOffDate?: string | null;
+      extraHolidayDates?: string[];
     }) =>
       api.uploadAttendancePeriodReport(file, {
         saturdayOffMode,
         saturdayOffDate,
+        extraHolidayDates,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance"] });

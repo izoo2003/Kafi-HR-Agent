@@ -317,4 +317,7 @@ def run_all_seeds(db: Session) -> None:
     ensure_attendance_config(db)
     ensure_kpi_config(db)
     ensure_default_tax_year(db)
+    from app.services.employee_resignation_service import ensure_resignation_schema
+
+    ensure_resignation_schema(db)
     db.commit()

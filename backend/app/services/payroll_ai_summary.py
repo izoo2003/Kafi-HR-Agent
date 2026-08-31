@@ -5,14 +5,27 @@ import logging
 from calendar import month_name
 from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import Settings
 from app.core.exceptions import BusinessRuleViolation
 from app.core.gemini_client import generate_content_with_fallback
-from app.schemas.payroll import PayrollComputeResult
+from app.models.system import SystemConfig
+from app.schemas.common import AuthContext
+from app.schemas.payroll import PayrollAiSummaryRead, PayrollComputeResult
+from app.services import audit_service
 from app.services.payroll_service import _normalize_payment_mode
 
 logger = logging.getLogger(__name__)
+
+AI_SUMMARY_KEY_PREFIX = "payroll.ai_summary."
+
+
+def ai_summary_config_key(period_year: int, period_month: int) -> str:
+    return f"{AI_SUMMARY_KEY_PREFIX}{period_year}-{period_month:02d}"
 
 
 @dataclass
@@ -121,4 +134,85 @@ Tone: calm, precise, back-office. No fluff. Currency as PKR figures already give
         employee_count=len(result.employees),
         total_net_payable=round(total_net, 2),
         summary_text=text,
+    )
+
+
+def _to_read(payload: dict, period_year: int, period_month: int) -> PayrollAiSummaryRead | None:
+    text = str(payload.get("summary_text") or "").strip()
+    if not text:
+        return None
+    counts = payload.get("payment_mode_counts") or {}
+    if not isinstance(counts, dict):
+        counts = {}
+    generated_at = payload.get("generated_at")
+    parsed_at: datetime | None = None
+    if isinstance(generated_at, datetime):
+        parsed_at = generated_at
+    elif isinstance(generated_at, str) and generated_at.strip():
+        try:
+            parsed_at = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        except ValueError:
+            parsed_at = None
+    return PayrollAiSummaryRead(
+        period_month=int(payload.get("period_month") or period_month),
+        period_year=int(payload.get("period_year") or period_year),
+        employee_count=int(payload.get("employee_count") or 0),
+        total_net_payable=float(payload.get("total_net_payable") or 0),
+        payment_mode_counts={str(k): int(v or 0) for k, v in counts.items()},
+        summary_text=text,
+        generated_at=parsed_at,
+    )
+
+
+def load_saved_payroll_ai_summary(
+    db: Session, period_year: int, period_month: int
+) -> PayrollAiSummaryRead | None:
+    row = (
+        db.query(SystemConfig)
+        .filter(SystemConfig.key == ai_summary_config_key(period_year, period_month))
+        .one_or_none()
+    )
+    if not row or not isinstance(row.value, dict):
+        return None
+    return _to_read(row.value, period_year, period_month)
+
+
+def save_payroll_ai_summary(
+    db: Session, auth: AuthContext, summary: PayrollAiSummaryResult
+) -> PayrollAiSummaryRead:
+    key = ai_summary_config_key(summary.period_year, summary.period_month)
+    generated_at = datetime.now(UTC)
+    payload = {
+        "summary_text": summary.summary_text,
+        "payment_mode_counts": summary.payment_mode_counts,
+        "employee_count": summary.employee_count,
+        "total_net_payable": summary.total_net_payable,
+        "generated_at": generated_at.isoformat(),
+        "period_month": summary.period_month,
+        "period_year": summary.period_year,
+    }
+    existing = db.query(SystemConfig).filter(SystemConfig.key == key).one_or_none()
+    before = dict(existing.value) if existing and isinstance(existing.value, dict) else None
+    if existing is None:
+        db.add(SystemConfig(key=key, value=payload, updated_by=auth.user_id))
+    else:
+        existing.value = payload
+        existing.updated_by = auth.user_id
+        flag_modified(existing, "value")
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action="payroll.ai_summary.generated",
+        entity_type="system_config",
+        before_state={"summary_text": (before or {}).get("summary_text")} if before else None,
+        after_state={"period": f"{summary.period_year}-{summary.period_month:02d}"},
+    )
+    return PayrollAiSummaryRead(
+        period_month=summary.period_month,
+        period_year=summary.period_year,
+        employee_count=summary.employee_count,
+        total_net_payable=summary.total_net_payable,
+        payment_mode_counts=summary.payment_mode_counts,
+        summary_text=summary.summary_text,
+        generated_at=generated_at,
     )

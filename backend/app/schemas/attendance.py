@@ -98,6 +98,8 @@ class LeaveRequestRead(BaseModel):
     reason: str | None
     created_at: datetime
     updated_at: datetime
+    employee_name: str | None = None
+    employee_code: str | None = None
 
 
 class AttendanceSummary(BaseModel):
@@ -111,6 +113,14 @@ class AttendanceSummary(BaseModel):
     days_on_leave: int
     total_working_days: int
     overtime_hours: float = 0.0
+    base_salary: Decimal | None = None
+    month_days: int = 30
+    lates_per_off: int = 3
+    late_absents: int = 0
+    per_day_rate: Decimal = Decimal("0")
+    deduction_days: float = 0
+    attendance_deduction: Decimal = Decimal("0")
+    estimated_net_salary: Decimal | None = None
 
 
 class ImportErrorRow(BaseModel):
@@ -260,3 +270,4 @@ class AttendancePeriodReport(BaseModel):
     unmatched_people: list[UnmatchedAttendancePerson] = []
     saturday_off_mode: str = "second_saturday"
     saturday_off_dates: list[date] = []
+    extra_holiday_dates: list[date] = []

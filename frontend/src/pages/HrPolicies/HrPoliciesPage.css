@@ -82,3 +82,38 @@
   margin: 0;
   line-height: 1.6;
 }
+
+.hr-policies__edit-stack,
+.hr-policies__edit-items {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.hr-policies__section-title-field {
+  margin-bottom: var(--space-3);
+}
+
+.hr-policies__edit-item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.hr-policies__edit-item-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.hr-policies__quote-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}

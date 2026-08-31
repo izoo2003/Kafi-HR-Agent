@@ -6,6 +6,7 @@ import io
 import re
 from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -152,6 +153,24 @@ def _holiday_dates(db: Session) -> set[date]:
         except ValueError:
             continue
     return out
+
+
+def merge_holiday_dates(db: Session, extra: list[date]) -> set[date]:
+    """Union extra dates into attendance.holidays and return the full set."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    existing = _holiday_dates(db)
+    if not extra:
+        return existing
+    merged = existing | set(extra)
+    payload = sorted(d.isoformat() for d in merged)
+    row = db.query(SystemConfig).filter(SystemConfig.key == "attendance.holidays").one_or_none()
+    if row is None:
+        db.add(SystemConfig(key="attendance.holidays", value=payload))
+    else:
+        row.value = payload
+        flag_modified(row, "value")
+    return merged
 
 
 def get_applicable_rule(db: Session, employee: Employee) -> AttendanceRule:
@@ -416,9 +435,11 @@ def get_monthly_grid(
                 days_absent += 1
             elif status == "late":
                 days_late += 1
+                days_present += 1
             elif status == "half_day":
                 days_half += 1
                 days_late += 1
+                days_present += 1
             elif status == "holiday":
                 days_off += 1
             d += timedelta(days=1)
@@ -566,8 +587,20 @@ def list_leave_requests(
         .limit(page_size)
         .all()
     )
+    emp_ids = {r.employee_id for r in rows}
+    names = {
+        e.id: (e.full_name, e.employee_code)
+        for e in db.query(Employee).filter(Employee.id.in_(emp_ids)).all()
+    } if emp_ids else {}
+    items: list[LeaveRequestRead] = []
+    for r in rows:
+        item = LeaveRequestRead.model_validate(r)
+        name, code = names.get(r.employee_id, (None, None))
+        item.employee_name = name
+        item.employee_code = code
+        items.append(item)
     return PaginatedResponse(
-        items=[LeaveRequestRead.model_validate(r) for r in rows],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -711,15 +744,21 @@ def attendance_summary(
             continue
         total_working += 1
         rec = by_date.get(d)
-        status = rec.status if rec else (
-            "on_leave" if is_on_approved_leave(db, employee_id, d) else "absent"
-        )
+        if rec is None:
+            if is_on_approved_leave(db, employee_id, d):
+                days_leave += 1
+            d += timedelta(days=1)
+            continue
+        status = rec.status
         if status == "present":
             days_present += 1
         elif status == "late":
             days_late += 1
+            days_present += 1
         elif status == "half_day":
             days_half += 1
+            days_late += 1
+            days_present += 1
         elif status == "on_leave":
             days_leave += 1
         elif status == "absent":
@@ -727,6 +766,29 @@ def attendance_summary(
         if rec:
             overtime += overtime_hours_for_record(rec.check_out, rule, d, tz)
         d += timedelta(days=1)
+
+    from app.services.attendance_period_report import _office_policy
+
+    policy = _office_policy(db)
+    lates_per_off = max(1, int(policy.get("lates_per_off", 3)))
+    month_days = max(1, int(policy.get("month_days", 30)))
+    late_absents = days_late // lates_per_off
+    deduction_days = (
+        Decimal(days_absent)
+        + Decimal(late_absents)
+        + (Decimal(days_half) * Decimal("0.5"))
+    )
+    base = Decimal(str(emp.base_salary)) if emp.base_salary is not None else None
+    if base is None:
+        per_day = Decimal("0")
+        attendance_deduction = Decimal("0")
+        net = None
+    else:
+        per_day = (base / Decimal(month_days)).quantize(Decimal("0.01"))
+        attendance_deduction = (deduction_days * per_day).quantize(Decimal("0.01"))
+        net = (base - attendance_deduction).quantize(Decimal("0.01"))
+        if net < 0:
+            net = Decimal("0")
 
     return AttendanceSummary(
         employee_id=employee_id,
@@ -739,6 +801,14 @@ def attendance_summary(
         days_on_leave=days_leave,
         total_working_days=total_working,
         overtime_hours=round(overtime, 2),
+        base_salary=base,
+        month_days=month_days,
+        lates_per_off=lates_per_off,
+        late_absents=late_absents,
+        per_day_rate=per_day,
+        deduction_days=float(deduction_days),
+        attendance_deduction=attendance_deduction,
+        estimated_net_salary=net,
     )
 
 

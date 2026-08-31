@@ -10,6 +10,12 @@ import { useEmployees } from "../../hooks/useEmployees";
 import { useAuth } from "../../hooks/useAuth";
 import { isSelfService } from "../../lib/selfService";
 import { ATTENDANCE_STATUS_LABELS } from "../../constants/statusLabels";
+import "./AttendanceOverview.css";
+
+function money(n: string | number | null | undefined): string {
+  if (n == null || n === "") return "—";
+  return Number(n).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
 
 function monthRange(ym: string): { from: string; to: string } {
   const [y, m] = ym.split("-").map(Number);
@@ -131,6 +137,12 @@ export function AttendanceOverviewPage() {
           )}
         </div>
 
+        {!selfService && !scopedEmployeeId ? (
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
+            Select an employee to see their attendance counts and this month&apos;s net salary.
+          </p>
+        ) : null}
+
         {summary.data ? (
           <div
             style={{
@@ -145,8 +157,8 @@ export function AttendanceOverviewPage() {
                 ["Late", summary.data.daysLate, "late"],
                 ["Half day", summary.data.daysHalfDay, "half_day"],
                 ["Absent", summary.data.daysAbsent, "absent"],
+                ["Late absences", summary.data.lateAbsents, "warning"],
                 ["On leave", summary.data.daysOnLeave, "on_leave"],
-                ["OT hours", summary.data.overtimeHours, "info"],
               ] as const
             ).map(([label, value, status]) => (
               <Card key={label} status={status}>
@@ -159,6 +171,64 @@ export function AttendanceOverviewPage() {
               </Card>
             ))}
           </div>
+        ) : null}
+
+        {summary.data ? (
+          <section className="attendance-pay" aria-label="Attendance salary" data-status="info">
+            <div className="attendance-pay__hero">
+              <p className="attendance-pay__kicker">Net salary this month</p>
+              {summary.data.estimatedNetSalary == null ? (
+                <p className="attendance-pay__empty">
+                  HR has not set a base salary on this employee record yet.
+                </p>
+              ) : (
+                <p className="attendance-pay__net font-data">
+                  Rs {money(summary.data.estimatedNetSalary)}
+                </p>
+              )}
+              <p className="attendance-pay__hint">
+                From attendance for this month. Every {summary.data.latesPerOff} lates count as 1
+                extra absent day. Approved leave is not deducted.
+              </p>
+            </div>
+            {summary.data.estimatedNetSalary != null ? (
+              <dl className="attendance-pay__breakdown">
+                <div className="attendance-pay__row">
+                  <dt>Base salary</dt>
+                  <dd className="font-data">Rs {money(summary.data.baseSalary)}</dd>
+                </div>
+                <div className="attendance-pay__row">
+                  <dt>Per day ({summary.data.monthDays}-day month)</dt>
+                  <dd className="font-data">Rs {money(summary.data.perDayRate)}</dd>
+                </div>
+                <div className="attendance-pay__row">
+                  <dt>Absents ({summary.data.daysAbsent})</dt>
+                  <dd className="font-data">
+                    − Rs {money(Number(summary.data.perDayRate) * summary.data.daysAbsent)}
+                  </dd>
+                </div>
+                <div className="attendance-pay__row">
+                  <dt>
+                    Late absences ({summary.data.daysLate} lates → {summary.data.lateAbsents}{" "}
+                    day{summary.data.lateAbsents === 1 ? "" : "s"})
+                  </dt>
+                  <dd className="font-data">
+                    − Rs {money(Number(summary.data.perDayRate) * summary.data.lateAbsents)}
+                  </dd>
+                </div>
+                <div className="attendance-pay__row">
+                  <dt>Half days ({summary.data.daysHalfDay})</dt>
+                  <dd className="font-data">
+                    − Rs {money(Number(summary.data.perDayRate) * summary.data.daysHalfDay * 0.5)}
+                  </dd>
+                </div>
+                <div className="attendance-pay__row attendance-pay__row--net">
+                  <dt>Net after attendance</dt>
+                  <dd className="font-data">Rs {money(summary.data.estimatedNetSalary)}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </section>
         ) : null}
 
         {records.isLoading ? <Spinner label="Loading attendance" /> : null}

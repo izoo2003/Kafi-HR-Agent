@@ -123,13 +123,15 @@ async def attendance_period_report(
     file: UploadFile = File(...),
     saturday_off_mode: Annotated[str, Form()] = "second_saturday",
     saturday_off_date: Annotated[str | None, Form()] = None,
+    extra_holiday_dates: Annotated[str | None, Form()] = None,
 ) -> AttendancePeriodReport:
     """Upload biometric Excel/CSV and return full office policy report.
 
     saturday_off_mode:
     - second_saturday (Recommended): 2nd Saturday of each month in the file period
     - date: use saturday_off_date (YYYY-MM-DD) as the company Saturday off
-    - auto: Don't know — AI/heuristic picks Saturday(s) from punch patterns
+
+    extra_holiday_dates: comma-separated YYYY-MM-DD extra holidays (not counted as absent).
     """
     content = await file.read()
     name = file.filename or "attendance.xlsx"
@@ -140,6 +142,17 @@ async def attendance_period_report(
             parsed_date = date.fromisoformat(raw[:10])
         except ValueError as exc:
             raise ValidationFailed("saturday_off_date must be YYYY-MM-DD") from exc
+    extra: list[date] = []
+    extra_raw = (extra_holiday_dates or "").strip()
+    if extra_raw:
+        for part in extra_raw.replace(";", ",").split(","):
+            token = part.strip()
+            if not token:
+                continue
+            try:
+                extra.append(date.fromisoformat(token[:10]))
+            except ValueError as exc:
+                raise ValidationFailed(f"Invalid holiday date: {token}") from exc
     return analyze_period_file(
         db,
         auth,
@@ -148,6 +161,7 @@ async def attendance_period_report(
         persist=True,
         saturday_off_mode=saturday_off_mode,
         saturday_off_date=parsed_date,
+        extra_holiday_dates=extra,
     )
 
 

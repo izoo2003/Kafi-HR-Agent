@@ -12,10 +12,11 @@ Canonical upload format (WebHR-style export):
 Policy (Kafi office):
 - Working week: Mon–Sat; Sunday always official off (never counts as absent)
 - Late and half-day still count as present (they showed up); tracked separately
-- One Saturday off per month: HR selects the date (default Recommended = 2nd Saturday),
-  or "don't know" → AI/heuristic picks from punch patterns
+- One Saturday off per month: HR selects the date (default Recommended = 2nd Saturday)
+  or picks a specific Saturday
+- Extra holidays can be entered manually on upload (gazetted / extra company days)
 - Presence on those off days (or Sunday) → +1 OT, not present
-- 3 lates = 1 extra absent day
+- 3 lates = 1 late absent (salary deduction), not a regular absent (no-show only)
 - Tenure ≥ 6 months → 1 leave allowance / month (only when name matches an Employee)
 - Salary math uses fixed 30-day month (base from matched Employee when available)
 """
@@ -59,6 +60,7 @@ from app.services.attendance_service import (
     _parse_dt,
     build_employee_indexes,
     match_employee,
+    merge_holiday_dates,
 )
 
 logger = logging.getLogger(__name__)
@@ -451,6 +453,7 @@ def analyze_period_file(
     persist: bool = True,
     saturday_off_mode: str = "second_saturday",
     saturday_off_date: date | None = None,
+    extra_holiday_dates: list[date] | None = None,
 ) -> AttendancePeriodReport:
     policy = _office_policy(db)
     late_after = _time_from_policy(policy["late_after"], LATE_AFTER)
@@ -462,7 +465,8 @@ def analyze_period_file(
     monthly_leave = int(policy["monthly_leave_allowance"])
 
     tz = _company_tz(db)
-    configured_holidays = _holiday_dates(db)
+    extra_holidays = list(extra_holiday_dates or [])
+    configured_holidays = merge_holiday_dates(db, extra_holidays) if extra_holidays else _holiday_dates(db)
     rows = _parse_excel_or_csv(content, filename)
     if not rows:
         raise ValidationFailed("No data rows found in file")
@@ -547,15 +551,13 @@ def analyze_period_file(
     roster_keys = sorted(punches.keys(), key=lambda k: display_names[k].lower())
 
     mode = (saturday_off_mode or "second_saturday").strip().lower()
-    if mode not in ("second_saturday", "date", "auto"):
-        raise ValidationFailed(
-            "saturday_off_mode must be second_saturday, date, or auto (don't know)"
-        )
+    if mode not in ("second_saturday", "date"):
+        raise ValidationFailed("saturday_off_mode must be second_saturday or date")
 
     forced_saturday_offs: set[date] = set()
     if mode == "date":
         if saturday_off_date is None:
-            raise ValidationFailed("Pick a Saturday off date, or choose Don't know / Recommended")
+            raise ValidationFailed("Pick a Saturday off date, or choose Recommended")
         if saturday_off_date.weekday() != 5:
             raise ValidationFailed(
                 f"{saturday_off_date.isoformat()} is not a Saturday — pick a Saturday"
@@ -566,15 +568,8 @@ def analyze_period_file(
                 f"({period_start} → {period_end})"
             )
         forced_saturday_offs = {saturday_off_date}
-    elif mode == "second_saturday":
-        forced_saturday_offs = _second_saturdays(period_start, period_end)
     else:
-        # Don't know → AI (with heuristic fallback) picks among Saturdays
-        sat_list = _saturdays_in_period(period_start, period_end)
-        rates = {
-            d: _absent_rate_for_day(d, roster_keys, punches) for d in sat_list
-        }
-        forced_saturday_offs = _detect_saturday_off_with_ai(sat_list, rates, majority)
+        forced_saturday_offs = _second_saturdays(period_start, period_end)
 
     # Classify each calendar day using Excel roster (not DB headcount)
     day_types: dict[date, str] = {}
@@ -728,9 +723,7 @@ def analyze_period_file(
         leave_allowance = monthly_leave if emp and tenure_m >= leave_after_months else 0
         leave_used = min(leave_allowance, days_absent)
         raw_absents_after_leave = max(0, days_absent - leave_used)
-        # 3 lates = 1 off day — counts in absent tally for reporting
-        days_absent_reported = days_absent + late_off_days
-        absents_after_leave_reported = raw_absents_after_leave + late_off_days
+        # Late absents stay in late_off_days — they are not regular absents (no-show only).
         deduction_days = (
             Decimal(raw_absents_after_leave)
             + Decimal(late_off_days)
@@ -759,8 +752,8 @@ def analyze_period_file(
                 days_late=days_late,
                 days_half_day=days_half,
                 days_sunday_present=days_sunday,
-                days_absent=days_absent_reported,
-                absents_after_leave=absents_after_leave_reported,
+                days_absent=days_absent,
+                absents_after_leave=raw_absents_after_leave,
                 late_off_days=late_off_days,
                 overtime_bonus_days=ot_days,
                 deduction_days=float(deduction_days),
@@ -814,6 +807,7 @@ def analyze_period_file(
                 "excel_people": len(roster_keys),
                 "saturday_off_mode": mode,
                 "saturday_off_dates": sorted(d.isoformat() for d in forced_saturday_offs),
+                "extra_holiday_dates": sorted(d.isoformat() for d in extra_holidays),
             },
         )
 
@@ -842,6 +836,7 @@ def analyze_period_file(
         unmatched_people=unmatched,
         saturday_off_mode=mode,
         saturday_off_dates=sorted(forced_saturday_offs),
+        extra_holiday_dates=sorted(extra_holidays),
     )
 
 

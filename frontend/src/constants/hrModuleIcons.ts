@@ -35,6 +35,7 @@ export function hrModuleIconIndex(key: HrModuleIconKey): number {
 /** Map sidebar routes to the best-fit generated icon. */
 export const SIDEBAR_ICON_BY_PATH: Record<string, HrModuleIconKey> = {
   "/admin/dashboard": "analyticsDashboard",
+  "/my-role": "employeeHandbook",
   "/employees": "employeeDirectory",
   "/job-descriptions": "recruitment",
   "/cv-screening": "documentManagement",

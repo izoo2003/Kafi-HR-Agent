@@ -71,6 +71,17 @@ This is the **user role matrix** (in-scope item 6) — who can access which agen
 | job_description_text | TEXT NULL | department-level duties / job description |
 | sops_text | TEXT NULL | department standard operating procedures |
 
+### `department_documents`
+Image or PDF attachments on a department's Job Description or SOP.
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| department_id | INTEGER FK → departments.id | |
+| kind | TEXT NOT NULL | `job_description` or `sop` |
+| file_path | TEXT NOT NULL | Prefer `supabase://{bucket}/departments/{id}/...`; local fallback under `data/uploads/departments/` |
+| original_filename | TEXT NOT NULL | |
+| mime_type | TEXT NULL | |
+
 ### `employees`
 | Column | Type | Notes |
 |---|---|---|
@@ -419,7 +430,7 @@ Courses recommended by AI and assigned to an employee (Things To Learn).
 | updated_at | DATETIME | |
 
 ### `employee_resignation_notices`
-HR-issued resignation letters. When the employee accepts, the employee is terminated and their login is deactivated.
+Resignation letters in either direction. `direction=hr`: HR sends, employee accepts. `direction=employee`: employee drafts/sends, HR accepts or rejects. On accept, the employee is terminated and their login is deactivated.
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
@@ -428,10 +439,14 @@ HR-issued resignation letters. When the employee accepts, the employee is termin
 | letter_body | TEXT NOT NULL | full letter text |
 | reason | TEXT NULL | |
 | effective_date | DATE NULL | exit date applied on accept |
-| status | TEXT | `pending`, `accepted`, `cancelled` |
-| issued_by | INTEGER FK → users.id | |
+| status | TEXT | `draft`, `pending`, `accepted`, `rejected`, `cancelled` |
+| direction | TEXT | `hr` (HR→employee) or `employee` (employee→HR); default `hr` |
+| issued_by | INTEGER FK → users.id | author |
 | issued_at | DATETIME | |
 | accepted_at | DATETIME NULL | |
+| rejected_at | DATETIME NULL | set when HR rejects an employee-authored letter |
+| rejection_reason | TEXT NULL | optional note from HR |
+| reviewed_by | INTEGER FK → users.id NULL | HR user who accepted or rejected an employee-authored letter |
 | created_at | DATETIME | |
 | updated_at | DATETIME | |
 
@@ -487,7 +502,7 @@ Generic key-value store for scoring weight defaults, KPI templates, etc. (avoids
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER PK | |
-| key | TEXT UNIQUE | |
+| key | TEXT UNIQUE | Known keys include `payroll.ai_summary.{YYYY-MM}` (saved salary-sheet AI narrative) and `hr.policies` (HR policies document) |
 | value | JSON | |
 | updated_by | INTEGER FK → users.id NULL | |
 

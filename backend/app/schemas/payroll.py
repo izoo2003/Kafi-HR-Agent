@@ -185,6 +185,16 @@ class PayrollTaxSlabLite(BaseModel):
     excess_over: Decimal
 
 
+class PayrollAiSummaryRead(BaseModel):
+    period_month: int
+    period_year: int
+    employee_count: int
+    total_net_payable: float
+    payment_mode_counts: dict[str, int]
+    summary_text: str
+    generated_at: datetime | None = None
+
+
 class PayrollComputeResult(BaseModel):
     period_month: int
     period_year: int
@@ -197,12 +207,4 @@ class PayrollComputeResult(BaseModel):
     company_name: str = "KAFI COMMODITIES (PVT) LTD"
     tax_slabs: list[PayrollTaxSlabLite] = []
     employees: list[PayrollComputeRow]
-
-
-class PayrollAiSummaryRead(BaseModel):
-    period_month: int
-    period_year: int
-    employee_count: int
-    total_net_payable: float
-    payment_mode_counts: dict[str, int]
-    summary_text: str
+    ai_summary: PayrollAiSummaryRead | None = None

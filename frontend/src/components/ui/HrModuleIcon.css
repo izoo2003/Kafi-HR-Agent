@@ -14,8 +14,7 @@
 }
 
 .sidebar__link:hover .hr-module-icon,
-.dashboard-metric-link:hover .hr-module-icon,
-.dashboard-quick-link:hover .hr-module-icon {
+.dashboard-action-link:hover .hr-module-icon {
   transform: scale(1.06);
 }
 
@@ -29,8 +28,7 @@
   }
 
   .sidebar__link:hover .hr-module-icon,
-  .dashboard-metric-link:hover .hr-module-icon,
-  .dashboard-quick-link:hover .hr-module-icon {
+  .dashboard-action-link:hover .hr-module-icon {
     transform: none;
   }
 }

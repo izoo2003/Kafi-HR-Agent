@@ -49,10 +49,15 @@
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/departments` | List departments (any signed-in user; needed for self-service KPI/attendance) |
+| GET | `/departments` | List departments (any signed-in user; needed for self-service KPI/attendance). JD/SOP text and attachments are included for HR (`employees` read) or for the caller's own department only |
+| GET | `/departments/me` | Signed-in user's assigned department with job description, SOPs, and attachments |
 | POST | `/departments` | Create department |
+| POST | `/departments/ai-draft` | Generate Job Description or SOP text from the department name (`kind`: `job_description` \| `sop`) |
 | PATCH | `/departments/{id}` | Update department |
 | DELETE | `/departments/{id}` | Remove department (blocked if employees or other records still use it) |
+| POST | `/departments/{id}/documents` | Upload JD/SOP attachments (multipart: `kind`, `files[]`) — PDF or image |
+| GET | `/departments/{id}/documents/{document_id}/file` | Download/preview a department attachment (HR, or the employee whose department it is) |
+| DELETE | `/departments/{id}/documents/{document_id}` | Remove a department attachment |
 | GET | `/employees` | List employees (filter by department, status) |
 | POST | `/employees` | Create employee record (personal, role/department, bank, salary fields) |
 | POST | `/cnic/verify` | Verify typed CNIC + front/back card images (format + OCR match; images only, not NADRA). Prefer this path. |
@@ -76,6 +81,8 @@
 | POST | `/employees/{id}/references/{reference_id}/documents` | Upload referral CNIC/related files (multipart `files[]`) |
 | GET | `/employees/{id}/references/{reference_id}/documents/{document_id}/file` | Download a reference document |
 | DELETE | `/employees/{id}/references/{reference_id}/documents/{document_id}` | Remove a reference document |
+| GET | `/hr-policies` | HR policies document (any signed-in user) |
+| PUT | `/hr-policies` | Replace the HR policies document (`employees` write); stored in `system_config` key `hr.policies` |
 
 ---
 
@@ -139,10 +146,10 @@
 | POST | `/attendance` | Manually create/correct a record |
 | PATCH | `/attendance/{id}` | Edit a record (requires reason, audit-logged) |
 | POST | `/attendance/import` | Bulk import from biometric device export (Excel/CSV; `name` or `employee_code` + date + check_in) |
-| POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. Form fields: `saturday_off_mode` (`second_saturday` Recommended / `date` / `auto` Don't know+AI) and optional `saturday_off_date` (YYYY-MM-DD). Chosen Saturday is holiday, not absent. |
+| POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. Form: `saturday_off_mode` (`second_saturday` Recommended / `date`) + optional `saturday_off_date`; optional `extra_holiday_dates` (comma-separated YYYY-MM-DD extra holidays, not counted as absent). |
 | POST | `/attendance/sync-biometric` | Pull latest data from biometric device integration (stubbed until device access confirmed) |
-| GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period — feeds payroll |
-| GET | `/leave-requests` | List leave requests (filter by employee, status); self-service sees own only |
+| GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period, plus attendance-based net salary (`late_absents` = lates ÷ 3, deduction from absents + late-offs + half days) |
+| GET | `/leave-requests` | List leave requests (filter by employee, status); includes `reason` and employee name; self-service sees own only |
 | POST | `/leave-requests` | Submit leave (self-service: own employee only with attendance read; HR needs write for others) |
 | PATCH | `/leave-requests/{id}` | Approve/reject leave request (attendance approve) |
 
@@ -154,9 +161,9 @@
 |---|---|---|
 | GET | `/payroll/salaries` | List active employees with current `base_salary` (paginated) |
 | PATCH | `/payroll/salaries/{employee_id}` | Update an active employee's `base_salary` (audit-logged; requires payroll write) |
-| GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`); includes salary-sheet columns |
-| GET | `/payroll/compute/export` | Download the month's salary sheet as Excel (Kafi salary-sheet layout + Payment Summary sheet) |
-| POST | `/payroll/compute/ai-summary` | AI narrative salary-sheet summary (includes IBFT / Cash / Cheque payment mode counts); query: `period_month`, `period_year`, `tax_year_id` |
+| GET | `/payroll/compute` | Net salary for month/year using attendance + selected tax year (`tax_year_id`); includes salary-sheet columns and any saved AI summary for that month |
+| GET | `/payroll/compute/export` | Download the month's salary sheet as Excel (Kafi salary-sheet layout + Payment Summary; includes AI summary on the sheet and an AI Summary tab when one has been generated) |
+| POST | `/payroll/compute/ai-summary` | Generate AI narrative, persist it on the month's salary sheet (`system_config` `payroll.ai_summary.{YYYY-MM}`), and return it so the sheet + Excel download include it |
 | PUT | `/payroll/sheet-adjustments` | Save monthly salary-sheet extras (allowance, loan, advance, payment mode, remarks) and optional base salary |
 | GET | `/payroll/tax-years` | List tax years with progressive slabs |
 | POST | `/payroll/tax-years` | Create a tax year (optional initial slabs) |
@@ -208,13 +215,16 @@
 | POST | `/employee-training/assign` | Persist selected recommended courses to employee (Things To Learn) |
 | GET | `/employee-training` | List training assignments (`employee_id` optional; self-service = own only) |
 | PATCH | `/employee-training/{id}` | Update assignment status (`assigned` / `in_progress` / `completed`) |
-| POST | `/employee-resignations/generate` | Generate resignation letter text for an employee (kpi write) |
-| GET | `/employee-resignations` | List resignation notices (`employee_id` optional; self-service = own) |
-| POST | `/employee-resignations` | Send resignation letter to employee (pending) |
+| POST | `/employee-resignations/generate` | Generate letter text (self-service = own first-person letter; HR = confirmation letter) |
+| GET | `/employee-resignations` | List notices (`employee_id` optional; self-service = own only) |
+| POST | `/employee-resignations` | HR: send letter to employee (`direction=hr`, `pending`). Self-service: save draft or `submit=true` to send to HR (`direction=employee`) |
 | GET | `/employee-resignations/{id}` | Notice detail |
-| PATCH | `/employee-resignations/{id}` | Edit pending notice or set `status=cancelled` |
-| DELETE | `/employee-resignations/{id}` | Delete non-accepted notice |
-| POST | `/employee-resignations/{id}/accept` | Employee accepts → terminate employee + deactivate login |
+| PATCH | `/employee-resignations/{id}` | Employee: edit `draft`/`rejected` own letter. HR: edit pending HR-issued letter or set `status=cancelled` |
+| DELETE | `/employee-resignations/{id}` | Employee: delete own `draft`/`rejected`. HR: delete non-accepted HR-issued notice |
+| POST | `/employee-resignations/{id}/submit` | Employee sends `draft`/`rejected` letter to HR (`pending`) |
+| POST | `/employee-resignations/{id}/withdraw` | Employee pulls pending letter back to `draft` |
+| POST | `/employee-resignations/{id}/accept` | HR-issued: employee accepts. Employee-authored: HR accepts. Then terminate employee + deactivate login |
+| POST | `/employee-resignations/{id}/reject` | HR rejects employee-submitted letter (optional reason); employee can edit and resend |
 
 ### Notifications (in-app)
 

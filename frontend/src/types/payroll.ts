@@ -117,6 +117,7 @@ export interface PayrollComputeResult {
   companyName: string;
   taxSlabs: PayrollTaxSlabLite[];
   employees: PayrollComputeRow[];
+  aiSummary?: PayrollAiSummary | null;
 }
 
 export interface PayrollAiSummary {
@@ -126,6 +127,7 @@ export interface PayrollAiSummary {
   totalNetPayable: number;
   paymentModeCounts: Record<string, number>;
   summaryText: string;
+  generatedAt?: string | null;
 }
 
 export interface PayrollSheetAdjustmentInput {

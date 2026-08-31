@@ -10,6 +10,7 @@ from app.models.cv_screening import (
 )
 from app.models.employees import (
     Department,
+    DepartmentDocument,
     Employee,
     EmployeeDocument,
     EmployeeReference,
@@ -52,6 +53,7 @@ __all__ = [
     "Permission",
     "RolePermission",
     "Department",
+    "DepartmentDocument",
     "Employee",
     "EmployeeDocument",
     "EmployeeReference",

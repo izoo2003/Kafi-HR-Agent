@@ -60,7 +60,7 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
           Tenure: <span className="num">{emp.tenureMonths}</span> months
         </div>
         <div>
-          Late → absent days: <span className="num">{emp.lateOffDays}</span>
+          Late absents (3 lates = 1): <span className="num">{emp.lateOffDays}</span>
         </div>
         <div>
           Absents after leave: <span className="num">{emp.absentsAfterLeave}</span>
@@ -157,6 +157,7 @@ export function AttendancePeriodReportPage() {
   const [reportView, setReportView] = useState<"summary" | "monthly">("summary");
   const [saturdayOffMode, setSaturdayOffMode] = useState<SaturdayOffMode>("second_saturday");
   const [saturdayOffDate, setSaturdayOffDate] = useState("");
+  const [extraHolidays, setExtraHolidays] = useState<string[]>([]);
   const unmatched = report?.unmatchedPeople ?? [];
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
@@ -177,7 +178,7 @@ export function AttendancePeriodReportPage() {
   async function runAnalyze(file: File) {
     if (saturdayOffMode === "date") {
       if (!saturdayOffDate) {
-        setError("Pick the Saturday off date on the calendar, or choose Recommended / Don't know.");
+        setError("Pick the Saturday off date on the calendar, or choose Recommended.");
         return;
       }
       if (!isSaturdayIso(saturdayOffDate)) {
@@ -185,6 +186,7 @@ export function AttendancePeriodReportPage() {
         return;
       }
     }
+    const holidayDates = extraHolidays.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
     setError(null);
     setInfo(null);
     setReport(null);
@@ -194,6 +196,7 @@ export function AttendancePeriodReportPage() {
         file,
         saturdayOffMode,
         saturdayOffDate: saturdayOffMode === "date" ? saturdayOffDate : null,
+        extraHolidayDates: holidayDates,
       });
       setReport(res);
       const next: Record<string, boolean> = {};
@@ -201,12 +204,16 @@ export function AttendancePeriodReportPage() {
         next[`${p.fullName}|${p.excelEmployeeId ?? ""}`] = true;
       }
       setSelected(next);
+      const notes: string[] = [];
       const offs = res.saturdayOffDates ?? [];
       if (offs.length > 0) {
-        setInfo(`Saturday off treated as holiday (not absent): ${offs.join(", ")}.`);
-      } else if (saturdayOffMode === "auto") {
-        setInfo("Don't know: no clear Saturday off was detected from this file.");
+        notes.push(`Saturday off treated as holiday (not absent): ${offs.join(", ")}.`);
       }
+      const extras = res.extraHolidayDates ?? holidayDates;
+      if (extras.length > 0) {
+        notes.push(`Extra holidays (not absent): ${extras.join(", ")}.`);
+      }
+      setInfo(notes.length ? notes.join(" ") : null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed");
     }
@@ -273,7 +280,8 @@ export function AttendancePeriodReportPage() {
             <strong>Employee ID</strong>, <strong>First Name</strong>, <strong>Date</strong>,{" "}
             <strong>First Punch</strong>). Late and half-day count as <strong>present</strong>. Sundays
             are official off. Tell us which <strong>Saturday is off</strong> below so that day is a
-            holiday, not absent. Anyone who punched that day gets +1 OT. 3 lates = 1 extra absent day.
+            holiday, not absent. Use <strong>Add more holidays</strong> for gazetted or extra company
+            days. Anyone who punched that day gets +1 OT. 3 lates = 1 extra absent day.
           </p>
 
           <fieldset style={{ border: 0, padding: 0, margin: "0 0 var(--space-4)" }}>
@@ -362,26 +370,67 @@ export function AttendancePeriodReportPage() {
                   </span>
                 ) : null}
               </label>
+            </div>
+          </fieldset>
 
-              <label
-                style={{
-                  ...optionRow,
-                  borderColor:
-                    saturdayOffMode === "auto" ? "var(--color-accent)" : "var(--color-border)",
-                  background:
-                    saturdayOffMode === "auto"
-                      ? "var(--color-accent-subtle)"
-                      : "var(--color-surface)",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="saturday-off"
-                  checked={saturdayOffMode === "auto"}
-                  onChange={() => setSaturdayOffMode("auto")}
-                />
-                <span>Don&apos;t know — detect automatically with AI</span>
-              </label>
+          <fieldset style={{ border: 0, padding: 0, margin: "0 0 var(--space-4)" }}>
+            <legend
+              style={{
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--weight-semibold)",
+                color: "var(--color-text-secondary)",
+                marginBottom: "var(--space-2)",
+              }}
+            >
+              Add more holidays
+            </legend>
+            <p
+              style={{
+                margin: "0 0 var(--space-3)",
+                color: "var(--color-text-muted)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              Enter extra holiday dates (for example Independence Day). Those days are not counted as
+              absent.
+            </p>
+            <div style={radioStyle}>
+              {extraHolidays.map((value, index) => (
+                <div key={index} style={optionRow}>
+                  <label className="form-field" style={{ margin: 0, minWidth: 200 }}>
+                    <span className="form-field__label">Holiday date</span>
+                    <input
+                      className="form-field__input"
+                      type="date"
+                      value={value}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setExtraHolidays((prev) =>
+                          prev.map((d, i) => (i === index ? next : d)),
+                        );
+                      }}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() =>
+                      setExtraHolidays((prev) => prev.filter((_, i) => i !== index))
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setExtraHolidays((prev) => [...prev, ""])}
+                >
+                  Add more holidays
+                </Button>
+              </div>
             </div>
           </fieldset>
 
@@ -553,6 +602,7 @@ export function AttendancePeriodReportPage() {
                     "Employee",
                     "Present",
                     "Late",
+                    "Late absent",
                     "Half day",
                     "Sunday",
                     "Absent",
@@ -574,6 +624,7 @@ export function AttendancePeriodReportPage() {
                         </td>
                         <td className="num">{emp.daysPresent}</td>
                         <td className="num">{emp.daysLate}</td>
+                        <td className="num">{emp.lateOffDays}</td>
                         <td className="num">{emp.daysHalfDay}</td>
                         <td className="num">{emp.daysSundayPresent}</td>
                         <td className="num">{emp.daysAbsent}</td>
@@ -593,7 +644,7 @@ export function AttendancePeriodReportPage() {
                       </tr>
                       {expanded === emp.fullName ? (
                         <tr>
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             <EmployeeDetail emp={emp} />
                           </td>
                         </tr>

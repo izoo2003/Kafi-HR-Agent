@@ -1,0 +1,24 @@
+.leave-form {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.leave-form__reason {
+  grid-column: 1 / -1;
+}
+
+.leave-form__reason textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.leave-reason {
+  white-space: pre-wrap;
+  max-width: 28rem;
+  color: var(--color-text-primary);
+}
+
+.leave-reason--empty {
+  color: var(--color-text-muted);
+}

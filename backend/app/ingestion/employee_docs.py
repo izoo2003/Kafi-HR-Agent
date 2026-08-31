@@ -146,6 +146,54 @@ def read_stored_file(file_path: str) -> bytes:
     return path.read_bytes()
 
 
+def store_department_file(
+    *,
+    department_id: int,
+    kind: str,
+    filename: str,
+    content: bytes,
+) -> tuple[str, str | None]:
+    """Persist a department JD/SOP attachment (PDF or image)."""
+    raw_name = (filename or "").strip() or "upload.bin"
+    suffix = Path(raw_name).suffix.lower()
+    if suffix not in ALLOWED_SUFFIXES:
+        raise ValidationFailed("Attachment must be a PDF or an image (PNG, JPG, WEBP, GIF, or HEIC)")
+    if not content:
+        raise ValidationFailed("Uploaded file is empty")
+    if len(content) > MAX_BYTES:
+        raise ValidationFailed("File exceeds 15MB limit")
+
+    mime, _ = mimetypes.guess_type(raw_name)
+    if suffix == ".pdf":
+        mime = "application/pdf"
+    settings = get_settings()
+    safe = _safe_name(raw_name)
+    object_name = f"{uuid4().hex[:10]}_{safe}"
+    folder = "job_description" if kind == "job_description" else "sop"
+    relative = f"departments/{department_id}/{folder}/{object_name}"
+
+    if supabase_storage.storage_configured(settings):
+        try:
+            uri = supabase_storage.upload_bytes(
+                object_path=relative,
+                content=content,
+                content_type=mime,
+                settings=settings,
+            )
+            return uri, mime
+        except Exception as exc:
+            logger.warning("Department file Storage upload failed, saving locally: %s", exc)
+
+    dest_dir = settings.data_dir / "uploads" / "departments" / f"dept_{department_id}" / folder
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / object_name
+        dest.write_bytes(content)
+    except OSError as exc:
+        raise ValidationFailed(f"Could not store department attachment ({exc}).") from exc
+    return str(dest), mime
+
+
 def store_job_image(
     *,
     job_id: int,

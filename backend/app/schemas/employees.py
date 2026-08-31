@@ -41,6 +41,10 @@ CNIC_IMAGE_CATEGORIES = frozenset({"cnic_front", "cnic_back", "cnic"})
 IMAGE_ONLY_DOCUMENT_CATEGORIES = CNIC_IMAGE_CATEGORIES | frozenset({"photo"})
 
 
+DEPARTMENT_DOCUMENT_KINDS = frozenset({"job_description", "sop"})
+DepartmentDocumentKind = Literal["job_description", "sop"]
+
+
 class DepartmentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     head_employee_id: int | None = None
@@ -55,6 +59,18 @@ class DepartmentUpdate(BaseModel):
     sops_text: str | None = None
 
 
+class DepartmentDocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    department_id: int
+    kind: str
+    original_filename: str
+    mime_type: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class DepartmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -63,8 +79,19 @@ class DepartmentRead(BaseModel):
     head_employee_id: int | None
     job_description_text: str | None = None
     sops_text: str | None = None
+    documents: list[DepartmentDocumentRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class DepartmentAiDraftRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    kind: DepartmentDocumentKind
+
+
+class DepartmentAiDraftResult(BaseModel):
+    kind: DepartmentDocumentKind
+    text: str
 
 
 def _validate_salary(value: Decimal | None) -> Decimal | None:

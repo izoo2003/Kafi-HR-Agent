@@ -43,8 +43,11 @@ export function SalaryComputePage() {
     if (compute.data) {
       setDrafts(draftFromResult(compute.data));
     }
-    setAiSummary(null);
   }, [compute.data]);
+
+  useEffect(() => {
+    setAiSummary(null);
+  }, [month, year]);
 
   function patchDraft(employeeId: number, patch: Partial<SheetDraft>) {
     setDrafts((prev) => ({
@@ -52,7 +55,6 @@ export function SalaryComputePage() {
       [employeeId]: { ...prev[employeeId], ...patch } as SheetDraft,
     }));
     setMessage(null);
-    setAiSummary(null);
   }
 
   async function save() {
@@ -225,42 +227,13 @@ export function SalaryComputePage() {
           <p style={{ color: "var(--color-status-critical)" }}>Could not compute payroll.</p>
         ) : null}
 
-        {aiSummary ? (
-          <Card>
-            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>AI salary sheet summary</h2>
-            <p style={{ margin: "0 0 var(--space-3)", color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              Payment modes — IBFT {aiSummary.paymentModeCounts.IBFT ?? 0}, Cash{" "}
-              {aiSummary.paymentModeCounts.Cash ?? 0}, Cheque {aiSummary.paymentModeCounts.Cheque ?? 0}
-              {" · "}
-              {aiSummary.employeeCount} employees · net{" "}
-              <span className="font-data">
-                {Number(aiSummary.totalNetPayable).toLocaleString("en-PK", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            </p>
-            <pre
-              style={{
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--text-sm)",
-                lineHeight: 1.55,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              {aiSummary.summaryText}
-            </pre>
-          </Card>
-        ) : null}
-
         {compute.data ? (
           <SalarySheet
             result={compute.data}
             drafts={drafts}
             canEdit={canEdit}
             onDraftChange={patchDraft}
+            aiSummary={aiSummary ?? compute.data.aiSummary}
           />
         ) : null}
       </div>

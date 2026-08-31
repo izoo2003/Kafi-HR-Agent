@@ -6,7 +6,7 @@ import type {
 } from "../types/employeeResignation";
 
 export async function generateEmployeeResignation(payload: {
-  employeeId: number;
+  employeeId?: number;
   reason?: string;
   effectiveDate?: string;
 }): Promise<EmployeeResignationGenerate> {
@@ -22,11 +22,12 @@ export async function listEmployeeResignations(params?: {
 }
 
 export async function createEmployeeResignation(payload: {
-  employeeId: number;
+  employeeId?: number;
   subject: string;
   letterBody: string;
   reason?: string;
   effectiveDate?: string;
+  submit?: boolean;
 }): Promise<EmployeeResignation> {
   return apiRequest("/employee-resignations", { method: "POST", body: payload });
 }
@@ -48,6 +49,24 @@ export async function deleteEmployeeResignation(noticeId: number): Promise<{ mes
   return apiRequest(`/employee-resignations/${noticeId}`, { method: "DELETE" });
 }
 
+export async function submitEmployeeResignation(noticeId: number): Promise<EmployeeResignation> {
+  return apiRequest(`/employee-resignations/${noticeId}/submit`, { method: "POST" });
+}
+
+export async function withdrawEmployeeResignation(noticeId: number): Promise<EmployeeResignation> {
+  return apiRequest(`/employee-resignations/${noticeId}/withdraw`, { method: "POST" });
+}
+
 export async function acceptEmployeeResignation(noticeId: number): Promise<EmployeeResignation> {
   return apiRequest(`/employee-resignations/${noticeId}/accept`, { method: "POST" });
+}
+
+export async function rejectEmployeeResignation(
+  noticeId: number,
+  reason?: string,
+): Promise<EmployeeResignation> {
+  return apiRequest(`/employee-resignations/${noticeId}/reject`, {
+    method: "POST",
+    body: { reason: reason || null },
+  });
 }

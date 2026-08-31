@@ -212,6 +212,8 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
     for col in (2, 8, 14):
         ws.cell(sign_row, col).font = Font(name="Calibri", italic=True, color="4B5567", size=10)
 
+    _write_ai_summary(wb, ws, result, sign_row + 2, last_col)
+
     for i, w in enumerate(_COL_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -224,6 +226,70 @@ def build_salary_sheet_workbook(result: PayrollComputeResult) -> Workbook:
     ws.print_title_rows = "1:4"
     ws.sheet_view.showGridLines = False
     return wb
+
+
+def _write_ai_summary(
+    wb: Workbook,
+    ws,
+    result: PayrollComputeResult,
+    start_row: int,
+    last_col: int,
+) -> None:
+    summary = result.ai_summary
+    text = (summary.summary_text if summary else "") or ""
+    text = text.strip()
+    if not text:
+        return
+
+    title_font = Font(name="Calibri", bold=True, color="2B4C7E", size=11)
+    body_font = Font(name="Calibri", color="101828", size=10)
+    meta_font = Font(name="Calibri", italic=True, color="4B5567", size=9)
+
+    modes = (summary.payment_mode_counts if summary else {}) or {}
+    meta_bits = [
+        f"IBFT {int(modes.get('IBFT') or 0)}",
+        f"Cash {int(modes.get('Cash') or 0)}",
+        f"Cheque {int(modes.get('Cheque') or 0)}",
+    ]
+    if summary:
+        meta_bits.append(f"{summary.employee_count} employees")
+        meta_bits.append(f"net {float(summary.total_net_payable):,.2f}")
+
+    ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=last_col)
+    title = ws.cell(start_row, 1, "AI salary sheet summary")
+    title.font = title_font
+    title.alignment = Alignment(vertical="center")
+    ws.row_dimensions[start_row].height = 20
+
+    meta_row = start_row + 1
+    ws.merge_cells(start_row=meta_row, start_column=1, end_row=meta_row, end_column=last_col)
+    meta = ws.cell(meta_row, 1, "Payment modes — " + " · ".join(meta_bits))
+    meta.font = meta_font
+    meta.alignment = Alignment(vertical="center")
+
+    body_row = start_row + 2
+    ws.merge_cells(start_row=body_row, start_column=1, end_row=body_row, end_column=last_col)
+    body = ws.cell(body_row, 1, text)
+    body.font = body_font
+    body.alignment = Alignment(wrap_text=True, vertical="top")
+    line_count = max(text.count("\n") + 1, 4)
+    ws.row_dimensions[body_row].height = min(420, max(72, line_count * 15))
+
+    ai_ws = wb.create_sheet("AI Summary")
+    ai_ws["A1"] = "AI salary sheet summary"
+    ai_ws["A1"].font = Font(name="Calibri", bold=True, size=14, color="101828")
+    ai_ws["A2"] = "Payment modes — " + " · ".join(meta_bits)
+    ai_ws["A2"].font = meta_font
+    ai_ws.merge_cells("A4:F4")
+    cell = ai_ws["A4"]
+    cell.value = text
+    cell.font = body_font
+    cell.alignment = Alignment(wrap_text=True, vertical="top")
+    ai_ws.row_dimensions[4].height = min(480, max(90, line_count * 16))
+    ai_ws.column_dimensions["A"].width = 22
+    for col in range(2, 7):
+        ai_ws.column_dimensions[get_column_letter(col)].width = 18
+    ai_ws.sheet_view.showGridLines = False
 
 
 def salary_sheet_xlsx_bytes(result: PayrollComputeResult) -> bytes:

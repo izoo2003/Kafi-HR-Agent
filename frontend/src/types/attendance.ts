@@ -38,6 +38,8 @@ export interface LeaveRequest {
   status: string;
   approvedBy: number | null;
   reason: string | null;
+  employeeName?: string | null;
+  employeeCode?: string | null;
 }
 
 export interface LeaveRequestCreate {
@@ -59,6 +61,14 @@ export interface AttendanceSummary {
   daysOnLeave: number;
   totalWorkingDays: number;
   overtimeHours: number;
+  baseSalary: string | number | null;
+  monthDays: number;
+  latesPerOff: number;
+  lateAbsents: number;
+  perDayRate: string | number;
+  deductionDays: number;
+  attendanceDeduction: string | number;
+  estimatedNetSalary: string | number | null;
 }
 
 export interface AttendanceImportResult {
@@ -184,11 +194,13 @@ export interface AttendancePeriodReport {
   unmatchedPeople: UnmatchedAttendancePerson[];
   saturdayOffMode?: string;
   saturdayOffDates?: string[];
+  extraHolidayDates?: string[];
 }
 
-export type SaturdayOffMode = "second_saturday" | "date" | "auto";
+export type SaturdayOffMode = "second_saturday" | "date";
 
 export interface AttendancePeriodReportOptions {
   saturdayOffMode: SaturdayOffMode;
   saturdayOffDate?: string | null;
+  extraHolidayDates?: string[];
 }

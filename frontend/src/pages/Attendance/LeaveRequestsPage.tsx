@@ -11,10 +11,11 @@ import { Pagination } from "../../components/ui/Pagination";
 import { useCreateLeave, useLeaveRequests, useUpdateLeave } from "../../hooks/useAttendance";
 import { useEmployees } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
-import { LEAVE_STATUS_LABELS } from "../../constants/statusLabels";
+import { LEAVE_STATUS_LABELS, LEAVE_TYPE_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import { isSelfService } from "../../lib/selfService";
+import "./LeaveRequestsPage.css";
 
 export function LeaveRequestsPage() {
   const { hasPermission, user } = useAuth();
@@ -68,7 +69,7 @@ export function LeaveRequestsPage() {
         leaveType: form.leaveType,
         startDate: form.startDate,
         endDate: form.endDate,
-        reason: form.reason || undefined,
+        reason: form.reason.trim() || undefined,
       });
       setForm((prev) => ({
         ...prev,
@@ -111,14 +112,7 @@ export function LeaveRequestsPage() {
                 after approval.
               </p>
             ) : null}
-            <form
-              onSubmit={onSubmit}
-              style={{
-                display: "grid",
-                gap: "var(--space-3)",
-                gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
-              }}
-            >
+            <form onSubmit={onSubmit} className="leave-form">
               {selfService ? null : (
                 <label className="form-field">
                   <span className="form-field__label">Employee</span>
@@ -166,11 +160,16 @@ export function LeaveRequestsPage() {
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                 required
               />
-              <FormField
-                label="Reason"
-                value={form.reason}
-                onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              />
+              <label className="form-field leave-form__reason">
+                <span className="form-field__label">Reason / notes</span>
+                <textarea
+                  className="form-field__input"
+                  value={form.reason}
+                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                  placeholder="Why is this leave needed? Admins see this note, not only the leave type."
+                  rows={3}
+                />
+              </label>
               <div style={{ alignSelf: "end" }}>
                 <Button type="submit" variant="primary" disabled={create.isPending}>
                   {create.isPending ? "Submitting…" : "Submit Leave Request"}
@@ -196,16 +195,30 @@ export function LeaveRequestsPage() {
             <Table
               headers={
                 selfService
-                  ? ["Type", "From", "To", "Status"]
-                  : ["Employee", "Type", "From", "To", "Status", "Actions"]
+                  ? ["Type", "From", "To", "Reason", "Status"]
+                  : ["Employee", "Type", "From", "To", "Reason", "Status", "Actions"]
               }
             >
               {leaves.data.items.map((l) => (
                 <tr key={l.id} data-status={l.status === "approved" ? "on_leave" : l.status}>
-                  {selfService ? null : <td className="num">{l.employeeId}</td>}
-                  <td>{l.leaveType}</td>
+                  {selfService ? null : (
+                    <td>
+                      {l.employeeName ?? `Employee #${l.employeeId}`}
+                      {l.employeeCode ? ` (${l.employeeCode})` : ""}
+                    </td>
+                  )}
+                  <td>
+                    {LEAVE_TYPE_LABELS[l.leaveType as keyof typeof LEAVE_TYPE_LABELS] ?? l.leaveType}
+                  </td>
                   <td className="num">{l.startDate}</td>
                   <td className="num">{l.endDate}</td>
+                  <td>
+                    {l.reason?.trim() ? (
+                      <span className="leave-reason">{l.reason}</span>
+                    ) : (
+                      <span className="leave-reason leave-reason--empty">No reason given</span>
+                    )}
+                  </td>
                   <td>
                     <StatusBadge status={l.status === "approved" ? "on_leave" : l.status}>
                       {LEAVE_STATUS_LABELS[l.status as keyof typeof LEAVE_STATUS_LABELS] ?? l.status}

@@ -1,4 +1,4 @@
-import type { PayrollComputeResult } from "../../types/payroll";
+import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
 import {
   applyAttendancePatch,
   computeLiveRow,
@@ -27,6 +27,7 @@ type Props = {
   drafts: Record<number, SheetDraft>;
   canEdit: boolean;
   onDraftChange: (employeeId: number, patch: Partial<SheetDraft>) => void;
+  aiSummary?: PayrollAiSummary | null;
 };
 
 function NumInput({
@@ -53,13 +54,14 @@ function NumInput({
   );
 }
 
-export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
+export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary }: Props) {
   const monthDays = result.monthDays || 30;
   const latesPerOff = result.latesPerOff || 3;
   const slabs = slabsFromResult(result);
   const rows = result.employees.map((e) =>
     computeLiveRow(e, drafts[e.employeeId], { monthDays, latesPerOff, slabs }),
   );
+  const summary = aiSummary ?? result.aiSummary ?? null;
 
   const totals = rows.reduce(
     (acc, r) => {
@@ -379,6 +381,26 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange }: Props) {
               <div className="salary-sheet__signoff-line">Approved By</div>
             </td>
           </tr>
+          {summary?.summaryText ? (
+            <tr className="salary-sheet__ai">
+              <td colSpan={20}>
+                <h2 className="salary-sheet__ai-title">AI salary sheet summary</h2>
+                <p className="salary-sheet__ai-meta">
+                  Payment modes — IBFT {summary.paymentModeCounts.IBFT ?? 0}, Cash{" "}
+                  {summary.paymentModeCounts.Cash ?? 0}, Cheque {summary.paymentModeCounts.Cheque ?? 0}
+                  {" · "}
+                  {summary.employeeCount} employees · net{" "}
+                  <span className="font-data">
+                    {Number(summary.totalNetPayable).toLocaleString("en-PK", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
+                <pre className="salary-sheet__ai-body">{summary.summaryText}</pre>
+              </td>
+            </tr>
+          ) : null}
         </tbody>
       </table>
     </div>

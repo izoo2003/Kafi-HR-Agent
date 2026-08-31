@@ -23,6 +23,7 @@ import "./AppShell.css";
 
 const NAV: { to: string; label: string; module: string | null; icon: HrModuleIconKey }[] = [
   { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: "analyticsDashboard" },
+  { to: "/my-role", label: "My role", module: null, icon: "employeeHandbook" },
   { to: "/employees", label: "Employees Management", module: "employees", icon: "employeeDirectory" },
   { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: "recruitment" },
   { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: "documentManagement" },
@@ -77,6 +78,9 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems = NAV.filter((item) => {
+    if (item.to === "/my-role") {
+      return Boolean(user?.departmentId);
+    }
     if (item.module === null) return true;
     if (selfService && item.module !== "attendance" && item.module !== "kpi") {
       return false;

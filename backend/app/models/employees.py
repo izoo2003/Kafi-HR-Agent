@@ -30,6 +30,29 @@ class Department(Base, TimestampMixin):
         foreign_keys="Employee.department_id",
         lazy="selectin",
     )
+    documents: Mapped[list[DepartmentDocument]] = relationship(
+        "DepartmentDocument",
+        back_populates="department",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="DepartmentDocument.id",
+    )
+
+
+class DepartmentDocument(Base, TimestampMixin):
+    """Image or PDF attached to a department JD or SOP."""
+
+    __tablename__ = "department_documents"
+
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # job_description | sop
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    department: Mapped[Department] = relationship("Department", back_populates="documents")
 
 
 class Employee(Base, TimestampMixin):

@@ -20,11 +20,15 @@ export function useGenerateEmployeeResignation() {
   });
 }
 
+function invalidateResignations(qc: ReturnType<typeof useQueryClient>) {
+  return () => qc.invalidateQueries({ queryKey: ["employee-resignations"] });
+}
+
 export function useCreateEmployeeResignation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.createEmployeeResignation,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["employee-resignations"] }),
+    onSuccess: invalidateResignations(qc),
   });
 }
 
@@ -42,7 +46,7 @@ export function useUpdateEmployeeResignation() {
       effectiveDate?: string | null;
       status?: "cancelled";
     }) => api.updateEmployeeResignation(noticeId, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["employee-resignations"] }),
+    onSuccess: invalidateResignations(qc),
   });
 }
 
@@ -50,7 +54,23 @@ export function useDeleteEmployeeResignation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (noticeId: number) => api.deleteEmployeeResignation(noticeId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["employee-resignations"] }),
+    onSuccess: invalidateResignations(qc),
+  });
+}
+
+export function useSubmitEmployeeResignation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeId: number) => api.submitEmployeeResignation(noticeId),
+    onSuccess: invalidateResignations(qc),
+  });
+}
+
+export function useWithdrawEmployeeResignation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (noticeId: number) => api.withdrawEmployeeResignation(noticeId),
+    onSuccess: invalidateResignations(qc),
   });
 }
 
@@ -58,6 +78,15 @@ export function useAcceptEmployeeResignation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (noticeId: number) => api.acceptEmployeeResignation(noticeId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["employee-resignations"] }),
+    onSuccess: invalidateResignations(qc),
+  });
+}
+
+export function useRejectEmployeeResignation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ noticeId, reason }: { noticeId: number; reason?: string }) =>
+      api.rejectEmployeeResignation(noticeId, reason),
+    onSuccess: invalidateResignations(qc),
   });
 }

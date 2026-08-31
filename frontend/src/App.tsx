@@ -16,6 +16,7 @@ import { VerifyCnicPage } from "./pages/Employees/VerifyCnicPage";
 import { VerifyEducationPage } from "./pages/Employees/VerifyEducationPage";
 import { DepartmentManagePage } from "./pages/Employees/DepartmentManagePage";
 import { EmployeeLettersPage } from "./pages/Employees/EmployeeLettersPage";
+import { MyRolePage } from "./pages/Employees/MyRolePage";
 import { AttendanceOverviewPage } from "./pages/Attendance/AttendanceOverviewPage";
 import { AttendanceRecordsPage } from "./pages/Attendance/AttendanceRecordsPage";
 import { AttendancePeriodReportPage } from "./pages/Attendance/AttendancePeriodReportPage";
@@ -58,6 +59,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<HomeRedirect />} />
           <Route path="/hr-policies" element={<HrPoliciesPage />} />
+          <Route path="/my-role" element={<MyRolePage />} />
           <Route path="/onboarding" element={<Navigate to="/hr-policies" replace />} />
 
           <Route element={<RequirePermission module="employees" />}>

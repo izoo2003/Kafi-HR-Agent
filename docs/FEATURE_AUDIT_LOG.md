@@ -21,6 +21,10 @@ A non-exhaustive but representative list, drawn from every feature doc's callout
 | `user.role_assigned` / `user.role_removed` | `user` | |
 | `access_matrix.updated` | `agent_access_matrix` | before/after permission level |
 | `system_config.updated` | `system_config` | before/after value |
+| `payroll.ai_summary.generated` | `system_config` | saved onto that month's salary sheet / Excel |
+| `hr_policies.updated` | `system_config` | HR policies document |
+| `department.created` / `.updated` / `.deleted` | `department` | includes JD/SOP text |
+| `department.documents_uploaded` / `.document_deleted` | `department` / `department_document` | JD or SOP image/PDF attachments |
 | `job_description.created` / `.updated` / `.closed` | `job_description` | setting `open` also attempts LinkedIn feed posts |
 | `scoring_criteria.updated` | `scoring_criteria` | |
 | `candidate.score_override` | `candidate_score` | requires `reason`, before/after score |
@@ -37,6 +41,10 @@ A non-exhaustive but representative list, drawn from every feature doc's callout
 | `kpi_definition.updated` | `kpi_definition` | |
 | `kpi_entry.recorded` / `.corrected` | `kpi_entry` | |
 | `kpi.period_marked_reviewed` | — | department + period |
+| `employee_resignation.drafted` / `.sent` / `.submitted` / `.withdrawn` | `employee_resignation_notice` | employee-authored draft vs send to HR |
+| `employee_resignation.updated` / `.deleted` | `employee_resignation_notice` | |
+| `employee_resignation.accepted` | `employee_resignation_notice` | terminates employee + deactivates login |
+| `employee_resignation.rejected` | `employee_resignation_notice` | HR rejects employee-authored letter |
 
 **Rule of thumb for "should this be logged":** if reversing or explaining this action later would require asking "why did this change," it's logged. Simple reads are never logged (that would be a request log, not an audit log, and would bloat the table without adding value).
 

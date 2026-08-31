@@ -16,6 +16,7 @@ from app.models.payroll import PayrollSheetAdjustment, TaxSlab
 from app.models.system import SystemConfig
 from app.schemas.payroll import PayrollComputeResult, PayrollComputeRow, PayrollTaxSlabLite
 from app.services.attendance_service import _company_tz, _holiday_dates
+from app.services.payroll_ai_summary import load_saved_payroll_ai_summary
 from app.services.payroll_service import _normalize_payment_mode
 from app.services.tax_service import calculate_annual_tax, get_tax_year_read
 
@@ -337,4 +338,5 @@ def compute_payroll_for_month(
         lates_per_off=lates_per_off,
         tax_slabs=tax_slab_lites,
         employees=rows,
+        ai_summary=load_saved_payroll_ai_summary(db, period_year, period_month),
     )

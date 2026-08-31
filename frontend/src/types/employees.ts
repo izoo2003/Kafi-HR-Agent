@@ -6,14 +6,37 @@ export const EMPLOYEE_LOCATIONS: readonly EmployeeLocation[] = [
   "KMP House",
 ] as const;
 
+export type DepartmentDocumentKind = "job_description" | "sop";
+
+export interface DepartmentDocument {
+  id: number;
+  departmentId: number;
+  kind: DepartmentDocumentKind | string;
+  originalFilename: string;
+  mimeType: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Department {
   id: number;
   name: string;
   headEmployeeId: number | null;
   jobDescriptionText: string | null;
   sopsText: string | null;
+  documents: DepartmentDocument[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DepartmentAiDraftRequest {
+  name: string;
+  kind: DepartmentDocumentKind;
+}
+
+export interface DepartmentAiDraftResult {
+  kind: DepartmentDocumentKind;
+  text: string;
 }
 
 export interface DepartmentCreate {

@@ -103,7 +103,7 @@ Per `AUTH_AND_RBAC.md`:
 ## 8. Frontend Pages
 
 - `PayrollRunListPage` — employee name, base salary, and net salary for the selected month; **Edit Salary Sheets** opens the Excel-format calculator.
-- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month; **Download Excel** exports the same format.
+- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month. **Generate AI summary** writes the narrative onto the sheet itself; **Download Excel** exports the same format including that summary.
 - `PayrollRunDetailPage` — all payslips in the run (table, net pay in `--font-data`), Generate/Submit/Approve/Mark Paid actions gated by permission, bulk export.
 - `PayslipDetailPage` — full breakdown matching the PDF layout, edit capability while still in draft/pending, download PDF button.
 - `SalaryAdvancesPage` — request/approve advances, recovery progress bar (reuse the KPI-style progress visual from `UI_DESIGN_SYSTEM.md`).
@@ -125,3 +125,5 @@ net_payable = gross − (late_off_days × per_day) − loan − (half_days × pe
 - New employee mid-period (joined after `period_start`): `total_working_days` and `base_amount` should prorate from `date_joined`, not assume a full period — attendance summary for that employee naturally reflects fewer days, but the per-day-rate calculation must use the correct denominator (working days *from date_joined*, not the full period), otherwise the prorated deduction math is wrong.
 - Employee exited mid-period (`date_exited` set): final payroll run for their last partial period should still generate correctly using the same proration logic, then the employee is excluded from all subsequent runs.
 - Re-generating a draft run overwrites previously generated (but not yet approved) payslips for that run — this is intentional (drafts are meant to be regenerated as attendance corrections come in) but must not touch advance `amount_recovered` until approval (see §5) to avoid double-counting on repeated regeneration.
+
+Salary-sheet AI summary (`POST /payroll/compute/ai-summary`) is persisted per month on `system_config` and rendered on the editable salary sheet. Excel download (`GET /payroll/compute/export`) includes that same narrative on the Salary Sheet tab and on an **AI Summary** worksheet.

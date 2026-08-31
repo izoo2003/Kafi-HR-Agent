@@ -19,21 +19,19 @@ export function EmployeeDevelopmentSectionMenus({ open, canManage = true }: Prop
         Employee Performance
       </SidebarSubnavLink>
       {canManage ? (
-        <>
-          <SidebarSubnavLink
-            to="/employee-development/training"
-            icon={SIDEBAR_SUB_ICON.employeeTraining}
-          >
-            Employee Training
-          </SidebarSubnavLink>
-          <SidebarSubnavLink
-            to="/employee-development/resignation"
-            icon={SIDEBAR_SUB_ICON.employeeResignation}
-          >
-            Employee Resignation
-          </SidebarSubnavLink>
-        </>
+        <SidebarSubnavLink
+          to="/employee-development/training"
+          icon={SIDEBAR_SUB_ICON.employeeTraining}
+        >
+          Employee Training
+        </SidebarSubnavLink>
       ) : null}
+      <SidebarSubnavLink
+        to="/employee-development/resignation"
+        icon={SIDEBAR_SUB_ICON.employeeResignation}
+      >
+        Employee Resignation
+      </SidebarSubnavLink>
       <SidebarSubnavLink to="/employee-development/things-to-learn" icon={SIDEBAR_SUB_ICON.thingsToLearn}>
         Things To Learn
       </SidebarSubnavLink>

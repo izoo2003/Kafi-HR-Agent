@@ -4,6 +4,7 @@ import { getRegisterOptions } from "../api/auth";
 import { ApiError } from "../api/client";
 import type {
   DepartmentCreate,
+  DepartmentDocumentKind,
   DepartmentUpdate,
   EmployeeCreate,
   EmployeeDocumentCategory,
@@ -12,6 +13,13 @@ import type {
   EmployeeUpdate,
 } from "../types/employees";
 import type { PaginationParams } from "../types/common";
+
+export function useMyDepartment() {
+  return useQuery({
+    queryKey: ["departments", "me"],
+    queryFn: empApi.getMyDepartment,
+  });
+}
 
 export function useDepartments(enabled = true) {
   return useQuery({
@@ -30,6 +38,7 @@ export function useDepartments(enabled = true) {
           headEmployeeId: null,
           jobDescriptionText: null,
           sopsText: null,
+          documents: [],
           createdAt: "",
           updatedAt: "",
         }));
@@ -56,6 +65,35 @@ export function useUpdateDepartment() {
       qc.invalidateQueries({ queryKey: ["departments"] });
       qc.invalidateQueries({ queryKey: ["employees"] });
     },
+  });
+}
+
+export function useGenerateDepartmentAiDraft() {
+  return useMutation({
+    mutationFn: empApi.generateDepartmentAiDraft,
+  });
+}
+
+export function useUploadDepartmentDocuments(departmentId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ kind, files }: { kind: DepartmentDocumentKind; files: File[] }) =>
+      empApi.uploadDepartmentDocuments(departmentId, kind, files),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["departments"] }),
+  });
+}
+
+export function useDeleteDepartmentDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      departmentId,
+      documentId,
+    }: {
+      departmentId: number;
+      documentId: number;
+    }) => empApi.deleteDepartmentDocument(departmentId, documentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["departments"] }),
   });
 }
 

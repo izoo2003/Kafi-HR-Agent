@@ -1,0 +1,78 @@
+.my-role {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 800px;
+}
+
+.my-role__hero {
+  padding: var(--space-5);
+}
+
+.my-role__kicker {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.my-role__dept {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.my-role__lede {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.my-role__section h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.my-role__copy {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.my-role__placeholder {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.my-role__files {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.my-role__file {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-accent);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.my-role__file:hover {
+  color: var(--color-accent-hover);
+}

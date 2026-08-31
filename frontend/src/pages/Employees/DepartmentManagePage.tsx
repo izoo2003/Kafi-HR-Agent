@@ -7,15 +7,25 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { FormField } from "../../components/ui/FormField";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
+import { FilePreviewModal, type FilePreviewRequest } from "../../components/domain/FilePreviewModal";
 import { ApiError } from "../../api/client";
+import {
+  deleteDepartmentDocument,
+  downloadDepartmentDocument,
+  uploadDepartmentDocuments,
+} from "../../api/employees";
 import {
   useCreateDepartment,
   useDeleteDepartment,
   useDepartments,
+  useGenerateDepartmentAiDraft,
   useUpdateDepartment,
 } from "../../hooks/useEmployees";
 import { useAuth } from "../../hooks/useAuth";
-import type { Department } from "../../types/employees";
+import type { Department, DepartmentDocument, DepartmentDocumentKind } from "../../types/employees";
+
+const ATTACH_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf";
+const MAX_FILES_PER_KIND = 8;
 
 function emptyToNull(v: string): string | null {
   const t = v.trim();
@@ -40,6 +50,137 @@ function textCellStyle(): CSSProperties {
   };
 }
 
+function docsFor(dept: Department, kind: DepartmentDocumentKind): DepartmentDocument[] {
+  return (dept.documents ?? []).filter((d) => d.kind === kind);
+}
+
+function DepartmentCopyField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  onGenerateAi,
+  aiPending,
+  generateDisabled,
+  fileInputId,
+  savedDocs,
+  pendingFiles,
+  onPickFiles,
+  onRemovePending,
+  onRemoveSaved,
+  onPreviewSaved,
+  onPreviewPending,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+  ariaLabel?: string;
+  onGenerateAi: () => void;
+  aiPending: boolean;
+  generateDisabled: boolean;
+  fileInputId: string;
+  savedDocs: DepartmentDocument[];
+  pendingFiles: File[];
+  onPickFiles: (files: File[]) => void;
+  onRemovePending: (index: number) => void;
+  onRemoveSaved?: (doc: DepartmentDocument) => void;
+  onPreviewSaved?: (doc: DepartmentDocument) => void;
+  onPreviewPending: (file: File, index: number) => void;
+}) {
+  return (
+    <label className="form-field">
+      <span
+        className="form-field__label"
+        style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", alignItems: "center" }}
+      >
+        {label}
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={generateDisabled || aiPending}
+          onClick={onGenerateAi}
+        >
+          {aiPending ? "Generating…" : "Generate with AI"}
+        </Button>
+      </span>
+      <textarea
+        className="form-field__input"
+        rows={5}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel ?? label}
+      />
+      <span className="form-field__hint">
+        Optional attachment — PDF or image (PNG, JPG, WEBP, GIF), up to {MAX_FILES_PER_KIND} files.
+      </span>
+      <input
+        id={fileInputId}
+        className="form-field__input"
+        type="file"
+        accept={ATTACH_ACCEPT}
+        multiple
+        onChange={(e) => {
+          const picked = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          if (picked.length) onPickFiles(picked);
+        }}
+      />
+      {savedDocs.length > 0 || pendingFiles.length > 0 ? (
+        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "var(--text-sm)" }}>
+          {savedDocs.map((doc) => (
+            <li key={`saved-${doc.id}`} style={{ marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={() => onPreviewSaved?.(doc)}
+                style={{
+                  background: "none",
+                  border: 0,
+                  padding: 0,
+                  color: "var(--color-accent)",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                {doc.originalFilename}
+              </button>
+              {onRemoveSaved ? (
+                <Button type="button" variant="destructive" onClick={() => onRemoveSaved(doc)}>
+                  Remove
+                </Button>
+              ) : null}
+            </li>
+          ))}
+          {pendingFiles.map((file, index) => (
+            <li key={`pending-${file.name}-${index}`} style={{ marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={() => onPreviewPending(file, index)}
+                style={{
+                  background: "none",
+                  border: 0,
+                  padding: 0,
+                  color: "var(--color-accent)",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                {file.name}
+              </button>{" "}
+              <span style={{ color: "var(--color-text-muted)" }}>(new)</span>
+              <Button type="button" variant="destructive" onClick={() => onRemovePending(index)}>
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </label>
+  );
+}
+
 export function DepartmentManagePage() {
   const { hasPermission } = useAuth();
   const canWrite = hasPermission("employees", "write");
@@ -47,18 +188,23 @@ export function DepartmentManagePage() {
   const createDept = useCreateDepartment();
   const updateDept = useUpdateDepartment();
   const deleteDept = useDeleteDepartment();
+  const aiDraft = useGenerateDepartmentAiDraft();
 
   const [deptName, setDeptName] = useState("");
   const [deptJd, setDeptJd] = useState("");
   const [deptSops, setDeptSops] = useState("");
+  const [pendingJdFiles, setPendingJdFiles] = useState<File[]>([]);
+  const [pendingSopFiles, setPendingSopFiles] = useState<File[]>([]);
 
   const [editingDeptId, setEditingDeptId] = useState<number | null>(null);
   const [editingDeptName, setEditingDeptName] = useState("");
   const [editingDeptJd, setEditingDeptJd] = useState("");
   const [editingDeptSops, setEditingDeptSops] = useState("");
 
+  const [aiKind, setAiKind] = useState<DepartmentDocumentKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filePreview, setFilePreview] = useState<FilePreviewRequest | null>(null);
 
   function clearEdit() {
     setEditingDeptId(null);
@@ -76,19 +222,74 @@ export function DepartmentManagePage() {
     setMessage(null);
   }
 
+  function takeFiles(
+    current: File[],
+    incoming: File[],
+    alreadySaved: number,
+  ): File[] {
+    const room = Math.max(0, MAX_FILES_PER_KIND - alreadySaved - current.length);
+    return [...current, ...incoming.slice(0, room)];
+  }
+
+  async function generateCopy(
+    kind: DepartmentDocumentKind,
+    name: string,
+    currentText: string,
+    apply: (text: string) => void,
+  ) {
+    if (!name.trim()) {
+      setError("Enter a department name before generating with AI");
+      return;
+    }
+    if (currentText.trim()) {
+      const ok = window.confirm(
+        kind === "sop"
+          ? "Generate with AI will replace the SOP text. Continue?"
+          : "Generate with AI will replace the Job Description. Continue?",
+      );
+      if (!ok) return;
+    }
+    setError(null);
+    setMessage(null);
+    setAiKind(kind);
+    try {
+      const draft = await aiDraft.mutateAsync({ name: name.trim(), kind });
+      apply(draft.text);
+      setMessage(
+        kind === "sop"
+          ? "AI filled the SOP — review before saving."
+          : "AI filled the Job Description — review before saving.",
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Generate with AI failed");
+    } finally {
+      setAiKind(null);
+    }
+  }
+
+  async function uploadPending(departmentId: number, kind: DepartmentDocumentKind, files: File[]) {
+    if (!files.length) return;
+    await uploadDepartmentDocuments(departmentId, kind, files);
+  }
+
   async function onCreateDept(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setMessage(null);
     try {
-      await createDept.mutateAsync({
+      const created = await createDept.mutateAsync({
         name: deptName.trim(),
         jobDescriptionText: emptyToNull(deptJd),
         sopsText: emptyToNull(deptSops),
       });
+      await uploadPending(created.id, "job_description", pendingJdFiles);
+      await uploadPending(created.id, "sop", pendingSopFiles);
+      await departments.refetch();
       setDeptName("");
       setDeptJd("");
       setDeptSops("");
+      setPendingJdFiles([]);
+      setPendingSopFiles([]);
       setMessage("Department created — it will appear when creating or editing an employee.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create department");
@@ -135,6 +336,44 @@ export function DepartmentManagePage() {
     }
   }
 
+  async function onRemoveSaved(doc: DepartmentDocument) {
+    setError(null);
+    try {
+      await deleteDepartmentDocument(doc.departmentId, doc.id);
+      await departments.refetch();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not remove attachment");
+    }
+  }
+
+  async function onUploadSaved(departmentId: number, kind: DepartmentDocumentKind, files: File[]) {
+    setError(null);
+    try {
+      await uploadDepartmentDocuments(departmentId, kind, files);
+      await departments.refetch();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not upload attachment");
+    }
+  }
+
+  function previewSaved(doc: DepartmentDocument) {
+    setFilePreview({
+      key: `dept-doc-${doc.id}`,
+      title: doc.originalFilename,
+      filename: doc.originalFilename,
+      load: () => downloadDepartmentDocument(doc.departmentId, doc.id),
+    });
+  }
+
+  function previewPending(file: File, index: number) {
+    setFilePreview({
+      key: `pending-${file.name}-${index}`,
+      title: file.name,
+      filename: file.name,
+      load: async () => file,
+    });
+  }
+
   const tableHeaders = canWrite
     ? ["Department", "Job Description", "SOPs", "Actions"]
     : ["Department", "Job Description", "SOPs"];
@@ -145,7 +384,8 @@ export function DepartmentManagePage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           Create departments with their job description and SOPs. These are the roles you assign on
-          employee records.
+          employee records. You can generate the text with AI and attach a PDF or image to either
+          field.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
@@ -160,26 +400,44 @@ export function DepartmentManagePage() {
                 onChange={(e) => setDeptName(e.target.value)}
                 required
               />
-              <label className="form-field">
-                <span className="form-field__label">Job Description</span>
-                <textarea
-                  className="form-field__input"
-                  rows={5}
-                  value={deptJd}
-                  onChange={(e) => setDeptJd(e.target.value)}
-                  placeholder="Duties and responsibilities for this department role…"
-                />
-              </label>
-              <label className="form-field">
-                <span className="form-field__label">SOPs</span>
-                <textarea
-                  className="form-field__input"
-                  rows={5}
-                  value={deptSops}
-                  onChange={(e) => setDeptSops(e.target.value)}
-                  placeholder="Standard operating procedures for this department…"
-                />
-              </label>
+              <DepartmentCopyField
+                label="Job Description"
+                value={deptJd}
+                onChange={setDeptJd}
+                placeholder="Duties and responsibilities for this department role…"
+                onGenerateAi={() => void generateCopy("job_description", deptName, deptJd, setDeptJd)}
+                aiPending={aiDraft.isPending && aiKind === "job_description"}
+                generateDisabled={!deptName.trim() || aiDraft.isPending}
+                fileInputId="create-jd-files"
+                savedDocs={[]}
+                pendingFiles={pendingJdFiles}
+                onPickFiles={(files) =>
+                  setPendingJdFiles((current) => takeFiles(current, files, 0))
+                }
+                onRemovePending={(index) =>
+                  setPendingJdFiles((current) => current.filter((_, i) => i !== index))
+                }
+                onPreviewPending={previewPending}
+              />
+              <DepartmentCopyField
+                label="SOPs"
+                value={deptSops}
+                onChange={setDeptSops}
+                placeholder="Standard operating procedures for this department…"
+                onGenerateAi={() => void generateCopy("sop", deptName, deptSops, setDeptSops)}
+                aiPending={aiDraft.isPending && aiKind === "sop"}
+                generateDisabled={!deptName.trim() || aiDraft.isPending}
+                fileInputId="create-sop-files"
+                savedDocs={[]}
+                pendingFiles={pendingSopFiles}
+                onPickFiles={(files) =>
+                  setPendingSopFiles((current) => takeFiles(current, files, 0))
+                }
+                onRemovePending={(index) =>
+                  setPendingSopFiles((current) => current.filter((_, i) => i !== index))
+                }
+                onPreviewPending={previewPending}
+              />
               <div>
                 <Button type="submit" variant="primary" disabled={createDept.isPending}>
                   {createDept.isPending ? "Creating…" : "Create Department"}
@@ -199,6 +457,8 @@ export function DepartmentManagePage() {
           <Table headers={tableHeaders}>
             {(departments.data ?? []).map((d) => {
               const isEditing = editingDeptId === d.id;
+              const jdDocs = docsFor(d, "job_description");
+              const sopDocs = docsFor(d, "sop");
               return (
                 <tr key={d.id}>
                   <td style={{ verticalAlign: "top", minWidth: 160 }}>
@@ -215,28 +475,109 @@ export function DepartmentManagePage() {
                   </td>
                   <td style={textCellStyle()}>
                     {isEditing ? (
-                      <textarea
-                        className="form-field__input"
-                        rows={4}
+                      <DepartmentCopyField
+                        label="Job Description"
                         value={editingDeptJd}
-                        onChange={(e) => setEditingDeptJd(e.target.value)}
-                        aria-label={`Job description for ${d.name}`}
+                        onChange={setEditingDeptJd}
+                        placeholder="Duties and responsibilities…"
+                        ariaLabel={`Job description for ${d.name}`}
+                        onGenerateAi={() =>
+                          void generateCopy(
+                            "job_description",
+                            editingDeptName,
+                            editingDeptJd,
+                            setEditingDeptJd,
+                          )
+                        }
+                        aiPending={aiDraft.isPending && aiKind === "job_description"}
+                        generateDisabled={!editingDeptName.trim() || aiDraft.isPending}
+                        fileInputId={`edit-jd-files-${d.id}`}
+                        savedDocs={jdDocs}
+                        pendingFiles={[]}
+                        onPickFiles={(files) => void onUploadSaved(d.id, "job_description", files)}
+                        onRemovePending={() => undefined}
+                        onRemoveSaved={onRemoveSaved}
+                        onPreviewSaved={previewSaved}
+                        onPreviewPending={previewPending}
                       />
                     ) : (
-                      previewText(d.jobDescriptionText)
+                      <>
+                        <div>{previewText(d.jobDescriptionText)}</div>
+                        {jdDocs.length > 0 ? (
+                          <div style={{ marginTop: "var(--space-2)" }}>
+                            {jdDocs.map((doc) => (
+                              <div key={doc.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => previewSaved(doc)}
+                                  style={{
+                                    background: "none",
+                                    border: 0,
+                                    padding: 0,
+                                    color: "var(--color-accent)",
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    fontSize: "var(--text-sm)",
+                                  }}
+                                >
+                                  {doc.originalFilename}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </td>
                   <td style={textCellStyle()}>
                     {isEditing ? (
-                      <textarea
-                        className="form-field__input"
-                        rows={4}
+                      <DepartmentCopyField
+                        label="SOPs"
                         value={editingDeptSops}
-                        onChange={(e) => setEditingDeptSops(e.target.value)}
-                        aria-label={`SOPs for ${d.name}`}
+                        onChange={setEditingDeptSops}
+                        placeholder="Standard operating procedures…"
+                        ariaLabel={`SOPs for ${d.name}`}
+                        onGenerateAi={() =>
+                          void generateCopy("sop", editingDeptName, editingDeptSops, setEditingDeptSops)
+                        }
+                        aiPending={aiDraft.isPending && aiKind === "sop"}
+                        generateDisabled={!editingDeptName.trim() || aiDraft.isPending}
+                        fileInputId={`edit-sop-files-${d.id}`}
+                        savedDocs={sopDocs}
+                        pendingFiles={[]}
+                        onPickFiles={(files) => void onUploadSaved(d.id, "sop", files)}
+                        onRemovePending={() => undefined}
+                        onRemoveSaved={onRemoveSaved}
+                        onPreviewSaved={previewSaved}
+                        onPreviewPending={previewPending}
                       />
                     ) : (
-                      previewText(d.sopsText)
+                      <>
+                        <div>{previewText(d.sopsText)}</div>
+                        {sopDocs.length > 0 ? (
+                          <div style={{ marginTop: "var(--space-2)" }}>
+                            {sopDocs.map((doc) => (
+                              <div key={doc.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => previewSaved(doc)}
+                                  style={{
+                                    background: "none",
+                                    border: 0,
+                                    padding: 0,
+                                    color: "var(--color-accent)",
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    fontSize: "var(--text-sm)",
+                                  }}
+                                >
+                                  {doc.originalFilename}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </td>
                   {canWrite ? (
@@ -291,6 +632,9 @@ export function DepartmentManagePage() {
           </Link>
         </div>
       </div>
+      {filePreview ? (
+        <FilePreviewModal preview={filePreview} onClose={() => setFilePreview(null)} />
+      ) : null}
     </>
   );
 }

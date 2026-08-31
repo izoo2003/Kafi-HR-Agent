@@ -15,6 +15,7 @@ from app.api.routes import (
     employee_resignation,
     employee_training,
     employees,
+    hr_policies,
     integration,
     job_descriptions,
     kpi,
@@ -32,6 +33,7 @@ api_router.include_router(cnic.router)
 api_router.include_router(education_documents.router)
 api_router.include_router(employee_letters.router)
 api_router.include_router(employees.router)
+api_router.include_router(hr_policies.router)
 api_router.include_router(job_descriptions.router)
 api_router.include_router(cv_screening.router)
 api_router.include_router(attendance.router)

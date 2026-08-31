@@ -38,8 +38,23 @@ export const LEAVE_STATUS_LABELS = {
   rejected: "Rejected",
 } as const;
 
+export const LEAVE_TYPE_LABELS = {
+  annual: "Annual",
+  sick: "Sick",
+  unpaid: "Unpaid",
+  other: "Other",
+} as const;
+
 export const LINKEDIN_POST_STATUS_LABELS = {
   posted: "Posted",
-  failed: "Not posted",
+  failed: "Failed",
+} as const;
+
+export const RESIGNATION_STATUS_LABELS = {
+  draft: "Draft",
+  pending: "Pending",
+  accepted: "Accepted",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
 } as const;
 

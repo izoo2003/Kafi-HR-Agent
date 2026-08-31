@@ -16,6 +16,7 @@ from app.schemas.employee_resignation import (
     EmployeeResignationGenerateResponse,
     EmployeeResignationListResponse,
     EmployeeResignationRead,
+    EmployeeResignationRejectRequest,
     EmployeeResignationUpdateRequest,
 )
 from app.services import employee_resignation_service as svc
@@ -30,7 +31,7 @@ router = APIRouter(tags=["employee-resignation"])
 def generate_resignation(
     payload: EmployeeResignationGenerateRequest,
     db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
 ) -> EmployeeResignationGenerateResponse:
     return svc.generate_resignation_letter(
         db,
@@ -59,7 +60,7 @@ def list_resignations(
 def create_resignation(
     payload: EmployeeResignationCreateRequest,
     db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
 ) -> EmployeeResignationRead:
     return svc.create_resignation_notice(db, auth, payload)
 
@@ -84,7 +85,7 @@ def patch_resignation(
     notice_id: int,
     payload: EmployeeResignationUpdateRequest,
     db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
 ) -> EmployeeResignationRead:
     return svc.update_resignation_notice(db, auth, notice_id, payload)
 
@@ -96,10 +97,36 @@ def patch_resignation(
 def delete_resignation(
     notice_id: int,
     db: Annotated[Session, Depends(get_db)],
-    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
 ) -> MessageResponse:
     svc.delete_resignation_notice(db, auth, notice_id)
     return MessageResponse(message="Resignation notice deleted")
+
+
+@router.post(
+    "/employee-resignations/{notice_id}/submit",
+    response_model=EmployeeResignationRead,
+)
+def submit_resignation(
+    notice_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+) -> EmployeeResignationRead:
+    """Employee sends their draft/rejected letter to HR for accept/reject."""
+    return svc.submit_resignation_notice(db, auth, notice_id)
+
+
+@router.post(
+    "/employee-resignations/{notice_id}/withdraw",
+    response_model=EmployeeResignationRead,
+)
+def withdraw_resignation(
+    notice_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
+) -> EmployeeResignationRead:
+    """Employee pulls a pending letter back to draft so they can edit it."""
+    return svc.withdraw_resignation_notice(db, auth, notice_id)
 
 
 @router.post(
@@ -111,5 +138,19 @@ def accept_resignation(
     db: Annotated[Session, Depends(get_db)],
     auth: Annotated[AuthContext, Depends(require_permission("kpi", "read"))],
 ) -> EmployeeResignationRead:
-    """Self-service employees accept their own pending notice (ends employment + login)."""
+    """HR-issued: employee accepts. Employee-authored: HR accepts. Ends employment + login."""
     return svc.accept_resignation_notice(db, auth, notice_id)
+
+
+@router.post(
+    "/employee-resignations/{notice_id}/reject",
+    response_model=EmployeeResignationRead,
+)
+def reject_resignation(
+    notice_id: int,
+    payload: EmployeeResignationRejectRequest,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("kpi", "write"))],
+) -> EmployeeResignationRead:
+    """HR rejects an employee-submitted letter; the employee can edit and resend."""
+    return svc.reject_resignation_notice(db, auth, notice_id, payload)

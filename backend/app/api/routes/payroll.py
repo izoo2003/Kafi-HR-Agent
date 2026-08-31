@@ -24,7 +24,7 @@ from app.schemas.payroll import (
     TaxYearUpdate,
 )
 from app.services import payroll_service, tax_service
-from app.services.payroll_ai_summary import generate_payroll_ai_summary
+from app.services.payroll_ai_summary import generate_payroll_ai_summary, save_payroll_ai_summary
 from app.services.payroll_compute import compute_payroll_for_month
 
 router = APIRouter(tags=["payroll"])
@@ -95,12 +95,15 @@ def export_salary_sheet(
 @router.post("/payroll/compute/ai-summary", response_model=PayrollAiSummaryRead)
 def payroll_ai_summary(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(require_permission("payroll", "read"))],
+    auth: Annotated[AuthContext, Depends(require_permission("payroll", "read"))],
     period_month: int = Query(..., ge=1, le=12),
     period_year: int = Query(..., ge=2000, le=2100),
     tax_year_id: int = Query(...),
 ) -> PayrollAiSummaryRead:
-    """AI narrative salary-sheet summary including IBFT / Cash / Cheque counts."""
+    """AI narrative salary-sheet summary including IBFT / Cash / Cheque counts.
+
+    Saved on the month's salary sheet so Excel download includes it automatically.
+    """
     result = compute_payroll_for_month(
         db,
         period_month=period_month,
@@ -108,14 +111,7 @@ def payroll_ai_summary(
         tax_year_id=tax_year_id,
     )
     summary = generate_payroll_ai_summary(result, get_settings())
-    return PayrollAiSummaryRead(
-        period_month=summary.period_month,
-        period_year=summary.period_year,
-        employee_count=summary.employee_count,
-        total_net_payable=summary.total_net_payable,
-        payment_mode_counts=summary.payment_mode_counts,
-        summary_text=summary.summary_text,
-    )
+    return save_payroll_ai_summary(db, auth, summary)
 
 
 @router.put("/payroll/sheet-adjustments")

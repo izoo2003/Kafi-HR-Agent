@@ -64,8 +64,9 @@ export async function importAttendance(file: File): Promise<AttendanceImportResu
 export async function uploadAttendancePeriodReport(
   file: File,
   options: {
-    saturdayOffMode?: "second_saturday" | "date" | "auto";
+    saturdayOffMode?: "second_saturday" | "date";
     saturdayOffDate?: string | null;
+    extraHolidayDates?: string[];
   } = {},
 ): Promise<AttendancePeriodReport> {
   const form = new FormData();
@@ -73,6 +74,10 @@ export async function uploadAttendancePeriodReport(
   form.append("saturday_off_mode", options.saturdayOffMode ?? "second_saturday");
   if (options.saturdayOffDate) {
     form.append("saturday_off_date", options.saturdayOffDate);
+  }
+  const extras = (options.extraHolidayDates ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (extras.length > 0) {
+    form.append("extra_holiday_dates", extras.join(","));
   }
   return apiRequest<AttendancePeriodReport>("/attendance/period-report", {
     method: "POST",

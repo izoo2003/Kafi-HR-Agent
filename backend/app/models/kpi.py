@@ -106,7 +106,7 @@ class EmployeeTrainingAssignment(Base, TimestampMixin):
 
 
 class EmployeeResignationNotice(Base, TimestampMixin):
-    """HR-issued resignation letter awaiting employee acceptance."""
+    """Resignation letter: HR-issued (employee accepts) or employee-authored (HR accepts/rejects)."""
 
     __tablename__ = "employee_resignation_notices"
 
@@ -116,6 +116,10 @@ class EmployeeResignationNotice(Base, TimestampMixin):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(32), default="hr", nullable=False, index=True)
     issued_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

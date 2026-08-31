@@ -103,7 +103,16 @@ class RawPunchRecord(BaseModel):
   "days_half_day": 1,
   "days_absent": 1,
   "days_on_leave": 3,
-  "total_working_days": 27
+  "total_working_days": 27,
+  "overtime_hours": 0,
+  "base_salary": 75000,
+  "month_days": 30,
+  "lates_per_off": 3,
+  "late_absents": 0,
+  "per_day_rate": 2500,
+  "deduction_days": 1.5,
+  "attendance_deduction": 3750,
+  "estimated_net_salary": 71250
 }
 ```
 This exact shape is what `FEATURE_PAYROLL.md`'s payroll generation step consumes — any change to this response shape must be reflected in both docs in the same session.
@@ -113,13 +122,13 @@ This exact shape is what `FEATURE_PAYROLL.md`'s payroll generation step consumes
 ## 8. Frontend Pages
 
 - `AttendanceOverviewPage` — calendar/grid view, company or department-wide, day-by-day status color-coded via the status rail (`UI_DESIGN_SYSTEM.md` §4), quick filters.
-- `AttendanceRecordsPage` — tabular record list with manual add/edit, import button (with the error-row feedback from §5 surfaced inline), sync-biometric button (shows the "not yet connected" state honestly rather than pretending to sync).
-- `LeaveRequestsPage` — list + approve/reject actions, filtered by department for department heads (row-level filtering per `AUTH_AND_RBAC.md` §6 for the `department_head` role).
+- `AttendanceRecordsPage` — tabular record list with manual add/edit, import button (with the error-row feedback from §5 surfaced inline), sync-biometric button (shows the "not yet connected" state honestly rather than pretending to sync). Monthly summary counts late/half-day as **present**; Absents are no-shows only; every 3 lates = 1 **late absent** (separate column).
+- `LeaveRequestsPage` — list + approve/reject actions, filtered by department for department heads (row-level filtering per `AUTH_AND_RBAC.md` §6 for the `department_head` role). Admin list shows leave type **and** the employee's reason/notes (why they are taking leave), not type alone.
 
 ---
 
 ## 9. Edge Cases & Rules
 
-- Public holidays: needs a simple `holidays` reference (could be a `system_config` entry, a JSON list of dates, rather than a full table — keep it simple unless recurring/regional holiday rules are actually requested) so absence on a holiday doesn't count against an employee.
+- Public holidays: stored as `system_config` key `attendance.holidays` (JSON list of dates). HR can add more holiday dates when uploading the attendance Excel (`Add more holidays`); those dates are merged into this list and are not counted as absent.
 - Timezone: all `check_in`/`check_out` stored in UTC, converted to company-local time only at the presentation layer for shift-time comparisons — document the company's operating timezone in `system_config` so the comparison logic has a fixed reference rather than assuming server-local time.
 - An employee with `status = "terminated"` should not appear in default attendance views/imports going forward, but historical records remain for payroll/reporting of their final pay period.

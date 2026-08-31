@@ -14,7 +14,10 @@ from app.core.exceptions import ValidationFailed
 from app.schemas.cnic import CnicVerificationResult
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.employees import (
+    DepartmentAiDraftRequest,
+    DepartmentAiDraftResult,
     DepartmentCreate,
+    DepartmentDocumentRead,
     DepartmentRead,
     DepartmentUpdate,
     EmployeeCreate,
@@ -35,10 +38,28 @@ router = APIRouter(tags=["employees"])
 @router.get("/departments", response_model=list[DepartmentRead])
 def list_departments(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[AuthContext, Depends(get_current_user)],
+    auth: Annotated[AuthContext, Depends(get_current_user)],
 ) -> list[DepartmentRead]:
-    """Department names are needed for signup-adjacent screens (KPI/attendance self-service)."""
-    return [DepartmentRead.model_validate(d) for d in department_service.list_departments(db)]
+    """Department names are needed for KPI/attendance. JD/SOP copy is only included for HR, or for the caller's own department."""
+    return department_service.list_departments_for_auth(db, auth)
+
+
+@router.get("/departments/me", response_model=DepartmentRead)
+def get_my_department(
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(get_current_user)],
+) -> DepartmentRead:
+    """Job description and SOPs for the signed-in user's assigned department."""
+    return DepartmentRead.model_validate(department_service.get_my_department(db, auth))
+
+
+@router.post("/departments/ai-draft", response_model=DepartmentAiDraftResult)
+def ai_draft_department(
+    payload: DepartmentAiDraftRequest,
+    _: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> DepartmentAiDraftResult:
+    """Generate department Job Description or SOP text from the department name."""
+    return department_service.generate_ai_draft(payload)
 
 
 @router.post("/departments", response_model=DepartmentRead, status_code=201)
@@ -69,6 +90,81 @@ def delete_department(
     auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
 ) -> Response:
     department_service.delete_department(db, auth, department_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/departments/{department_id}/documents",
+    response_model=list[DepartmentDocumentRead],
+    status_code=201,
+)
+async def upload_department_documents(
+    department_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+    kind: Annotated[str, Form(...)],
+    files: Annotated[list[UploadFile], File(...)],
+) -> list[DepartmentDocumentRead]:
+    payloads: list[tuple[str, bytes]] = []
+    for f in files:
+        content = await f.read()
+        name = f.filename or "upload.bin"
+        if not Path(name).suffix and f.content_type:
+            ctype = f.content_type.split(";", 1)[0].strip().lower()
+            if ctype == "application/pdf":
+                name = "upload.pdf"
+            elif ctype.startswith("image/"):
+                subtype = ctype.split("/", 1)[-1]
+                ext = {
+                    "jpeg": ".jpg",
+                    "jpg": ".jpg",
+                    "png": ".png",
+                    "webp": ".webp",
+                    "gif": ".gif",
+                    "heic": ".heic",
+                }.get(subtype, ".jpg")
+                name = f"upload{ext}"
+        payloads.append((name, content))
+    if not payloads:
+        raise ValidationFailed("At least one file is required")
+    docs = department_service.add_department_documents(
+        db, auth, department_id, kind=kind, files=payloads
+    )
+    return [DepartmentDocumentRead.model_validate(d) for d in docs]
+
+
+@router.get("/departments/{department_id}/documents/{document_id}/file")
+def download_department_document(
+    department_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(get_current_user)],
+) -> Response:
+    department_service.assert_can_view_department_copy(auth, department_id)
+    doc = department_service.get_department_document(db, department_id, document_id)
+    data = department_service.read_document_bytes(doc.file_path)
+    filename = doc.original_filename or "attachment"
+    return Response(
+        content=data,
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+        },
+    )
+
+
+@router.delete(
+    "/departments/{department_id}/documents/{document_id}",
+    status_code=204,
+    response_class=Response,
+)
+def delete_department_document(
+    department_id: int,
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> Response:
+    department_service.delete_department_document(db, auth, department_id, document_id)
     return Response(status_code=204)
 
 
