@@ -11,7 +11,6 @@ import {
   useCriteria,
   useDeleteJobImage,
   useGenerateJobPostingAiDraft,
-  useGenerateJobPostingAiImage,
   useJobDescription,
   useLinkedInAccounts,
   useUpdateJobDescription,
@@ -28,6 +27,11 @@ import {
   saveJobDescriptionFormDraft,
   type JobDescriptionFormDraftPayload,
 } from "../../lib/jobDescriptionFormDraft";
+import {
+  GEMINI_APP_URL,
+  buildJobPostingImagePrompt,
+  copyTextToClipboard,
+} from "../../lib/jobPostingImagePrompt";
 
 function skillRow(name = "", rating = 5): ScoringCriteriaInput {
   const skill = name.trim();
@@ -63,7 +67,6 @@ export function JobDescriptionFormPage() {
   const createJob = useCreateJobDescription();
   const updateJob = useUpdateJobDescription(jobId);
   const aiDraft = useGenerateJobPostingAiDraft();
-  const aiImage = useGenerateJobPostingAiImage();
   const applicationForm = useApplicationFormUrl();
   const linkedinAccounts = useLinkedInAccounts();
   const criteriaQ = useCriteria(jobId);
@@ -115,8 +118,9 @@ export function JobDescriptionFormPage() {
   const [title, setTitle] = useState(draftBootstrap.title);
   const [departmentId, setDepartmentId] = useState(draftBootstrap.departmentId);
   const [descriptionText, setDescriptionText] = useState(draftBootstrap.descriptionText);
-  const [posterDescriptionText, setPosterDescriptionText] = useState("");
   const [requirementsText, setRequirementsText] = useState(draftBootstrap.requirementsText);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [promptCopied, setPromptCopied] = useState(false);
   const [status, setStatus] = useState<"draft" | "open" | "closed">(draftBootstrap.status);
   const [skills, setSkills] = useState<ScoringCriteriaInput[]>(draftBootstrap.skills);
   const [error, setError] = useState<string | null>(null);
@@ -173,57 +177,36 @@ export function JobDescriptionFormPage() {
     }
   }
 
-  async function onGenerateAiImage() {
+  function onGeneratePrompt() {
     setError(null);
     setAiMessage(null);
-    if (!title.trim() || !departmentId) {
-      setError("Enter a title and select a department before generating an image");
+    setPromptCopied(false);
+    if (!title.trim()) {
+      setError("Enter a job title before generating a prompt");
       return;
     }
-    const existingImageCount = existing.data?.imagePaths?.length ?? 0;
-    if (existingImageCount + pendingImages.length >= MAX_JOB_IMAGES) {
-      setError(`At most ${MAX_JOB_IMAGES} images per job posting — remove one before generating.`);
-      return;
-    }
-    try {
-      const skillPayload = skills
-        .map((s) => ({ name: s.criterionName.trim(), level: toRating(Number(s.weight)) }))
-        .filter((s) => s.name.length > 0);
-      const result = await aiImage.mutateAsync({
-        title: title.trim(),
-        departmentId: Number(departmentId),
-        // Optional override — otherwise backend AI-drafts poster description
-        posterDescriptionText: posterDescriptionText.trim() || null,
-        requirementsText: requirementsText.trim() || null,
-        skills: skillPayload.length ? skillPayload : undefined,
-      });
-      // LinkedIn-safe short text only (not the poster AI description)
-      setDescriptionText(result.descriptionText);
-      setPosterDescriptionText(result.posterDescriptionText);
-      if (result.requirementsText) {
-        setRequirementsText(result.requirementsText);
-      }
-      if (result.skills?.length) {
-        setSkills(result.skills.map((s) => skillRow(s.name, toRating(s.level))));
-      }
-      const binary = atob(result.imageBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      const file = new File([bytes], result.filename || "hiring-poster.png", {
-        type: result.mimeType || "image/png",
-      });
-      if (isEdit && jobId > 0) {
-        await uploadJobImages(jobId, [file]);
-        await existing.refetch();
-      } else {
-        setPendingImages((current) => [...current, file]);
-      }
-      setAiMessage(
-        "Hiring poster generated (red/black/yellow template). Poster description is not included in LinkedIn posts.",
-      );
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Image generation failed");
-    }
+    const departmentName =
+      (departments.data ?? []).find((d) => String(d.id) === departmentId)?.name ?? "";
+    const skillNames = skills.map((s) => s.criterionName.trim()).filter(Boolean);
+    const prompt = buildJobPostingImagePrompt({
+      title: title.trim(),
+      departmentName,
+      descriptionText,
+      requirementsText,
+      skillNames,
+      applicationFormUrl: formUrl,
+    });
+    setImagePrompt(prompt);
+    setAiMessage(
+      "Prompt ready. Open Gemini, paste it there to create the poster, then upload the image below.",
+    );
+  }
+
+  async function onCopyPrompt() {
+    if (!imagePrompt.trim()) return;
+    await copyTextToClipboard(imagePrompt);
+    setPromptCopied(true);
+    window.setTimeout(() => setPromptCopied(false), 2000);
   }
 
   useEffect(() => {
@@ -434,36 +417,91 @@ export function JobDescriptionFormPage() {
             }}
           >
             <div style={{ flex: "1 1 220px" }}>
-              <strong style={{ display: "block", marginBottom: 4 }}>Generate Image</strong>
+              <strong style={{ display: "block", marginBottom: 4 }}>Generate Prompt</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                From title + department, AI writes poster copy (not used on LinkedIn), then builds the
-                red/black/yellow hiring poster: job title header, DESCRIPTION and REQUIREMENTS
-                columns, footer hr@kafi-group.com. Edit fields below and regenerate to tweak copy.
+                Builds a Gemini image prompt from this job&apos;s title, description, responsibilities,
+                and CV form link. Open{" "}
+                <a
+                  href={GEMINI_APP_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "var(--color-accent)", fontWeight: 600 }}
+                >
+                  Gemini
+                </a>
+                , paste the prompt, then upload the poster below. This app does not generate images.
               </span>
             </div>
             <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <Button
                 type="button"
                 variant="primary"
-                disabled={
-                  aiDraft.isPending || aiImage.isPending || !title.trim() || !departmentId
-                }
-                onClick={onGenerateAiImage}
+                disabled={aiDraft.isPending || !title.trim()}
+                onClick={onGeneratePrompt}
               >
-                {aiImage.isPending ? "Generating image…" : "Generate Image"}
+                Generate Prompt
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                disabled={
-                  aiDraft.isPending || aiImage.isPending || !title.trim() || !departmentId
-                }
+                disabled={aiDraft.isPending || !title.trim() || !departmentId}
                 onClick={onGenerateAiDraft}
               >
                 {aiDraft.isPending ? "Generating…" : "Generate with AI"}
               </Button>
             </div>
           </div>
+          {imagePrompt ? (
+            <div
+              className="card"
+              style={{
+                padding: "var(--space-4)",
+                background: "var(--color-surface-alt)",
+                border: "1px solid var(--color-border)",
+                display: "grid",
+                gap: "var(--space-3)",
+              }}
+            >
+              <div>
+                <strong style={{ display: "block", marginBottom: 4 }}>Generated Gemini prompt</strong>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                  Copy this prompt, then open{" "}
+                  <a
+                    href={GEMINI_APP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "var(--color-accent)", fontWeight: 600 }}
+                  >
+                    gemini.google.com
+                  </a>{" "}
+                  and paste it to create the hiring poster.
+                </span>
+              </div>
+              <textarea
+                className="form-field__input"
+                rows={12}
+                value={imagePrompt}
+                onChange={(e) => {
+                  setImagePrompt(e.target.value);
+                  setPromptCopied(false);
+                }}
+                aria-label="Generated Gemini image prompt"
+                style={{ fontFamily: "var(--font-data)", fontSize: "var(--text-sm)" }}
+              />
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                <Button type="button" variant="primary" onClick={() => void onCopyPrompt()}>
+                  {promptCopied ? "Copied" : "Copy prompt"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => window.open(GEMINI_APP_URL, "_blank", "noopener,noreferrer")}
+                >
+                  Open Gemini
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {aiMessage ? (
             <p style={{ color: "var(--color-status-info)", margin: 0 }}>{aiMessage}</p>
           ) : null}
@@ -497,23 +535,6 @@ export function JobDescriptionFormPage() {
           </div>
 
           <label className="form-field">
-            <span className="form-field__label">
-              Poster description (AI — optional, not posted to LinkedIn)
-            </span>
-            <textarea
-              className="form-field__input"
-              rows={4}
-              value={posterDescriptionText}
-              onChange={(e) => setPosterDescriptionText(e.target.value)}
-              placeholder="Leave blank — Generate Image will AI-write this for the poster only."
-            />
-            <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              Used only on the generated image. LinkedIn posts use the job title + apply link, not
-              this text.
-            </span>
-          </label>
-
-          <label className="form-field">
             <span className="form-field__label">Description (LinkedIn / apply note)</span>
             <textarea
               className="form-field__input"
@@ -523,8 +544,8 @@ export function JobDescriptionFormPage() {
               required={pendingImages.length === 0 && (existing.data?.imagePaths?.length ?? 0) === 0}
             />
             <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              Short apply note saved on the job. When a poster image exists, LinkedIn captions stay
-              title + apply only (poster AI description is excluded).
+              Saved on the job posting and used in the Gemini prompt. LinkedIn captions stay title +
+              apply link when a poster image is attached.
             </span>
           </label>
           <label className="form-field">
@@ -546,7 +567,8 @@ export function JobDescriptionFormPage() {
               }}
             />
             <span className="form-field__hint" style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>
-              Optional. PNG, JPG, WEBP, or GIF — up to {MAX_JOB_IMAGES} images. New files upload when you save.
+              Optional. Create the poster in Gemini from the prompt above, then upload it here. PNG,
+              JPG, WEBP, or GIF — up to {MAX_JOB_IMAGES} images. New files upload when you save.
             </span>
           </label>
           {isEdit && (existing.data?.imagePaths?.length ?? 0) > 0 ? (
