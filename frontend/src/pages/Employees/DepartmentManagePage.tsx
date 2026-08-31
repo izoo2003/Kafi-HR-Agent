@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { Paperclip, Sparkles } from "lucide-react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -8,6 +9,7 @@ import { FormField } from "../../components/ui/FormField";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import { FilePreviewModal, type FilePreviewRequest } from "../../components/domain/FilePreviewModal";
+import "./DepartmentManagePage.css";
 import { ApiError } from "../../api/client";
 import {
   deleteDepartmentDocument,
@@ -55,11 +57,13 @@ function docsFor(dept: Department, kind: DepartmentDocumentKind): DepartmentDocu
 }
 
 function DepartmentCopyField({
-  label,
+  kicker,
+  title,
   value,
   onChange,
   placeholder,
   ariaLabel,
+  attachLabel,
   onGenerateAi,
   aiPending,
   generateDisabled,
@@ -71,12 +75,15 @@ function DepartmentCopyField({
   onRemoveSaved,
   onPreviewSaved,
   onPreviewPending,
+  compact = false,
 }: {
-  label: string;
+  kicker: string;
+  title: string;
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
   ariaLabel?: string;
+  attachLabel: string;
   onGenerateAi: () => void;
   aiPending: boolean;
   generateDisabled: boolean;
@@ -88,88 +95,83 @@ function DepartmentCopyField({
   onRemoveSaved?: (doc: DepartmentDocument) => void;
   onPreviewSaved?: (doc: DepartmentDocument) => void;
   onPreviewPending: (file: File, index: number) => void;
+  compact?: boolean;
 }) {
   return (
-    <label className="form-field">
-      <span
-        className="form-field__label"
-        style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", alignItems: "center" }}
-      >
-        {label}
+    <section className={compact ? "dept-copy dept-copy--compact" : "dept-copy"}>
+      <div>
+        <p className="dept-copy__kicker">{kicker}</p>
+        <h3 className="dept-copy__title">{title}</h3>
+        <p className="dept-copy__hint">
+          Type it here, generate with AI, or attach a PDF/image (up to {MAX_FILES_PER_KIND} files).
+        </p>
+      </div>
+      <div className="dept-copy__actions">
         <Button
           type="button"
           variant="secondary"
           disabled={generateDisabled || aiPending}
           onClick={onGenerateAi}
         >
+          <Sparkles size={16} aria-hidden />
           {aiPending ? "Generating…" : "Generate with AI"}
         </Button>
-      </span>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => document.getElementById(fileInputId)?.click()}
+        >
+          <Paperclip size={16} aria-hidden />
+          {attachLabel}
+        </Button>
+        <input
+          id={fileInputId}
+          className="dept-copy__file-input"
+          type="file"
+          accept={ATTACH_ACCEPT}
+          multiple
+          onChange={(e) => {
+            const picked = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (picked.length) onPickFiles(picked);
+          }}
+        />
+      </div>
       <textarea
-        className="form-field__input"
-        rows={5}
+        className="form-field__input dept-copy__textarea"
+        rows={compact ? 4 : 6}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        aria-label={ariaLabel ?? label}
-      />
-      <span className="form-field__hint">
-        Optional attachment — PDF or image (PNG, JPG, WEBP, GIF), up to {MAX_FILES_PER_KIND} files.
-      </span>
-      <input
-        id={fileInputId}
-        className="form-field__input"
-        type="file"
-        accept={ATTACH_ACCEPT}
-        multiple
-        onChange={(e) => {
-          const picked = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (picked.length) onPickFiles(picked);
-        }}
+        aria-label={ariaLabel ?? title}
       />
       {savedDocs.length > 0 || pendingFiles.length > 0 ? (
-        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "var(--text-sm)" }}>
+        <ul className="dept-copy__files">
           {savedDocs.map((doc) => (
-            <li key={`saved-${doc.id}`} style={{ marginBottom: 4 }}>
-              <button
-                type="button"
-                onClick={() => onPreviewSaved?.(doc)}
-                style={{
-                  background: "none",
-                  border: 0,
-                  padding: 0,
-                  color: "var(--color-accent)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
-              >
+            <li key={`saved-${doc.id}`}>
+              <button type="button" className="dept-copy__file-link" onClick={() => onPreviewSaved?.(doc)}>
                 {doc.originalFilename}
               </button>
               {onRemoveSaved ? (
-                <Button type="button" variant="destructive" onClick={() => onRemoveSaved(doc)}>
-                  Remove
-                </Button>
+                <>
+                  {" "}
+                  <Button type="button" variant="destructive" onClick={() => onRemoveSaved(doc)}>
+                    Remove
+                  </Button>
+                </>
               ) : null}
             </li>
           ))}
           {pendingFiles.map((file, index) => (
-            <li key={`pending-${file.name}-${index}`} style={{ marginBottom: 4 }}>
+            <li key={`pending-${file.name}-${index}`}>
               <button
                 type="button"
+                className="dept-copy__file-link"
                 onClick={() => onPreviewPending(file, index)}
-                style={{
-                  background: "none",
-                  border: 0,
-                  padding: 0,
-                  color: "var(--color-accent)",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
               >
                 {file.name}
               </button>{" "}
-              <span style={{ color: "var(--color-text-muted)" }}>(new)</span>
+              <span style={{ color: "var(--color-text-muted)" }}>(new)</span>{" "}
               <Button type="button" variant="destructive" onClick={() => onRemovePending(index)}>
                 Remove
               </Button>
@@ -177,7 +179,7 @@ function DepartmentCopyField({
           ))}
         </ul>
       ) : null}
-    </label>
+    </section>
   );
 }
 
@@ -400,44 +402,50 @@ export function DepartmentManagePage() {
                 onChange={(e) => setDeptName(e.target.value)}
                 required
               />
-              <DepartmentCopyField
-                label="Job Description"
-                value={deptJd}
-                onChange={setDeptJd}
-                placeholder="Duties and responsibilities for this department role…"
-                onGenerateAi={() => void generateCopy("job_description", deptName, deptJd, setDeptJd)}
-                aiPending={aiDraft.isPending && aiKind === "job_description"}
-                generateDisabled={!deptName.trim() || aiDraft.isPending}
-                fileInputId="create-jd-files"
-                savedDocs={[]}
-                pendingFiles={pendingJdFiles}
-                onPickFiles={(files) =>
-                  setPendingJdFiles((current) => takeFiles(current, files, 0))
-                }
-                onRemovePending={(index) =>
-                  setPendingJdFiles((current) => current.filter((_, i) => i !== index))
-                }
-                onPreviewPending={previewPending}
-              />
-              <DepartmentCopyField
-                label="SOPs"
-                value={deptSops}
-                onChange={setDeptSops}
-                placeholder="Standard operating procedures for this department…"
-                onGenerateAi={() => void generateCopy("sop", deptName, deptSops, setDeptSops)}
-                aiPending={aiDraft.isPending && aiKind === "sop"}
-                generateDisabled={!deptName.trim() || aiDraft.isPending}
-                fileInputId="create-sop-files"
-                savedDocs={[]}
-                pendingFiles={pendingSopFiles}
-                onPickFiles={(files) =>
-                  setPendingSopFiles((current) => takeFiles(current, files, 0))
-                }
-                onRemovePending={(index) =>
-                  setPendingSopFiles((current) => current.filter((_, i) => i !== index))
-                }
-                onPreviewPending={previewPending}
-              />
+              <div className="dept-copy-grid">
+                <DepartmentCopyField
+                  kicker="JD"
+                  title="Job Description"
+                  value={deptJd}
+                  onChange={setDeptJd}
+                  placeholder="Duties and responsibilities for this department role…"
+                  attachLabel="Attach JD file"
+                  onGenerateAi={() => void generateCopy("job_description", deptName, deptJd, setDeptJd)}
+                  aiPending={aiDraft.isPending && aiKind === "job_description"}
+                  generateDisabled={!deptName.trim() || aiDraft.isPending}
+                  fileInputId="create-jd-files"
+                  savedDocs={[]}
+                  pendingFiles={pendingJdFiles}
+                  onPickFiles={(files) =>
+                    setPendingJdFiles((current) => takeFiles(current, files, 0))
+                  }
+                  onRemovePending={(index) =>
+                    setPendingJdFiles((current) => current.filter((_, i) => i !== index))
+                  }
+                  onPreviewPending={previewPending}
+                />
+                <DepartmentCopyField
+                  kicker="SOPs"
+                  title="Standard Operating Procedures"
+                  value={deptSops}
+                  onChange={setDeptSops}
+                  placeholder="Standard operating procedures for this department…"
+                  attachLabel="Attach SOP file"
+                  onGenerateAi={() => void generateCopy("sop", deptName, deptSops, setDeptSops)}
+                  aiPending={aiDraft.isPending && aiKind === "sop"}
+                  generateDisabled={!deptName.trim() || aiDraft.isPending}
+                  fileInputId="create-sop-files"
+                  savedDocs={[]}
+                  pendingFiles={pendingSopFiles}
+                  onPickFiles={(files) =>
+                    setPendingSopFiles((current) => takeFiles(current, files, 0))
+                  }
+                  onRemovePending={(index) =>
+                    setPendingSopFiles((current) => current.filter((_, i) => i !== index))
+                  }
+                  onPreviewPending={previewPending}
+                />
+              </div>
               <div>
                 <Button type="submit" variant="primary" disabled={createDept.isPending}>
                   {createDept.isPending ? "Creating…" : "Create Department"}
@@ -476,11 +484,14 @@ export function DepartmentManagePage() {
                   <td style={textCellStyle()}>
                     {isEditing ? (
                       <DepartmentCopyField
-                        label="Job Description"
+                        kicker="JD"
+                        title="Job Description"
                         value={editingDeptJd}
                         onChange={setEditingDeptJd}
                         placeholder="Duties and responsibilities…"
                         ariaLabel={`Job description for ${d.name}`}
+                        attachLabel="Attach JD file"
+                        compact
                         onGenerateAi={() =>
                           void generateCopy(
                             "job_description",
@@ -532,11 +543,14 @@ export function DepartmentManagePage() {
                   <td style={textCellStyle()}>
                     {isEditing ? (
                       <DepartmentCopyField
-                        label="SOPs"
+                        kicker="SOPs"
+                        title="Standard Operating Procedures"
                         value={editingDeptSops}
                         onChange={setEditingDeptSops}
                         placeholder="Standard operating procedures…"
                         ariaLabel={`SOPs for ${d.name}`}
+                        attachLabel="Attach SOP file"
+                        compact
                         onGenerateAi={() =>
                           void generateCopy("sop", editingDeptName, editingDeptSops, setEditingDeptSops)
                         }
