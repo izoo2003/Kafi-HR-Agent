@@ -61,12 +61,15 @@ alembic revision --autogenerate -m "describe_change"
 alembic upgrade head
 ```
 
-## What’s scaffolded vs full features
+## Module status
 
 | Area | Status |
 |------|--------|
-| Auth JWT + RBAC matrix | Working |
-| All DB tables | Created |
-| Integration interface stubs | Working |
-| Module routes (JD/CV/attendance/payroll/KPI) | Placeholders until feature `.md` packs |
-| CV/Gmail Phase-1 pipeline | Moved to `_legacy_phase1/` |
+| Auth JWT + RBAC matrix | Working (email/username + PIN or password) |
+| Employees, departments, JD/SOP copy + attachments | Working |
+| Job postings, CV ingest/parse/score/rank | Working |
+| Attendance, leave, payroll, KPI | Working |
+| Employee development (performance, training, resignation) | Working |
+| HR policies, admin dashboard, users, audit log | Working |
+| Integration interface (`app/integration/interface.py`) | Working (standalone today) |
+| Legacy Gmail pipeline | Archived in `_legacy_phase1/` (reference only) |

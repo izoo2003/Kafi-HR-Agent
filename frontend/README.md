@@ -10,7 +10,7 @@ Talks to the backend only via `/api/v1` (`VITE_API_BASE_URL`). Never imports bac
 
 ```
 src/
-  pages/{Module}/     # JobDescriptions, CvScreening, Attendance, Payroll, Kpi, Employees, AdminPanel, HrPolicies, Auth
+  pages/{Module}/     # JobDescriptions, CvScreening, Attendance, Payroll, Kpi, Employees, EmployeeDevelopment, AdminPanel, HrPolicies, Auth
   components/ui/      # Button, Table, Badge, Card, …
   components/layout/  # AppShell, RequirePermission
   components/domain/  # SalarySheet, LinkedInPostResults, CvPreviewModal, …
@@ -21,7 +21,7 @@ src/
   styles/tokens.css   # design tokens
   constants/          # status label vocabulary
 
-Onboarding (`/onboarding`) is available to every signed-in user. Use **Copy all** in the page header to copy the full handbook text.
+HR Policies (`/hr-policies`, formerly `/onboarding`) is available to every signed-in user. Use **Copy all** in the page header to copy the full handbook text. Departments (`/employees/departments`) hold JD and SOP text plus optional file attachments.
 ```
 
 ## Setup
