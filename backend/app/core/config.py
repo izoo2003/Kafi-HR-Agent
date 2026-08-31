@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     gemini_job_posting_api_key_2: str = ""
     gemini_job_posting_model: str = "gemini-3.5-flash-lite"
     gemini_job_posting_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
+    # Department JD / SOP drafts — dedicated keys, each with its own model chain
+    gemini_department_api_key: str = ""
+    gemini_department_api_key_2: str = ""
+    gemini_department_model: str = "gemini-3.5-flash-lite"
+    gemini_department_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
+    gemini_department_model_2: str = "gemini-3.6-flash"
+    gemini_department_model_fallbacks_2: str = (
+        "gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.1-flash-lite"
+    )
     # Payroll salary-sheet AI summary (payment modes + narrative) — separate key
     gemini_payroll_api_key: str = ""
     gemini_payroll_api_key_2: str = ""
@@ -366,6 +375,51 @@ class Settings(BaseSettings):
             self.gemini_job_posting_model_fallbacks or self.gemini_model_fallbacks
         )
         return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_department_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_department_api_key, self.gemini_department_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        job_keys = self.resolved_gemini_job_posting_api_keys()
+        if job_keys:
+            return job_keys
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_department_key_chains(self) -> list[tuple[str, list[str]]]:
+        """Per-key (base + fallbacks) for department JD/SOP generation."""
+        key_1 = (self.gemini_department_api_key or "").strip()
+        key_2 = (self.gemini_department_api_key_2 or "").strip()
+        chain_1 = parse_model_chain(
+            (self.gemini_department_model or self.gemini_model or "gemini-3.5-flash-lite").strip(),
+            self.gemini_department_model_fallbacks or self.gemini_model_fallbacks,
+        )
+        chain_2 = parse_model_chain(
+            (
+                self.gemini_department_model_2
+                or self.gemini_department_model
+                or self.gemini_model
+                or "gemini-3.6-flash"
+            ).strip(),
+            self.gemini_department_model_fallbacks_2
+            or self.gemini_department_model_fallbacks
+            or self.gemini_model_fallbacks,
+        )
+        chains: list[tuple[str, list[str]]] = []
+        if key_1 and not key_1.startswith("your_"):
+            chains.append((key_1, chain_1))
+        if key_2 and not key_2.startswith("your_") and key_2 != key_1:
+            chains.append((key_2, chain_2))
+        if chains:
+            return chains
+        keys = self.resolved_gemini_department_api_keys()
+        models = (
+            self.resolved_gemini_job_posting_models()
+            if self.resolved_gemini_job_posting_api_keys()
+            else self.resolved_gemini_models()
+        )
+        return [(key, models) for key in keys]
 
     def resolved_gemini_payroll_api_keys(self) -> list[str]:
         dedicated = self._valid_keys(

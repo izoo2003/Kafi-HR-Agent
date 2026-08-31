@@ -10,12 +10,8 @@ from app.core.gemini_client import GeminiQuotaExhausted, generate_content_with_f
 logger = logging.getLogger(__name__)
 
 
-def _api_keys_and_models(settings: Settings) -> tuple[list[str], list[str]]:
-    job_keys = settings.resolved_gemini_job_posting_api_keys()
-    if job_keys:
-        return job_keys, settings.resolved_gemini_job_posting_models()
-    keys = settings.resolved_gemini_api_keys()
-    return keys, settings.resolved_gemini_models()
+def _api_key_chains(settings: Settings) -> list[tuple[str, list[str]]]:
+    return settings.resolved_gemini_department_key_chains()
 
 
 def generate_department_copy(*, name: str, kind: str, settings: Settings) -> str:
@@ -25,11 +21,12 @@ def generate_department_copy(*, name: str, kind: str, settings: Settings) -> str
     if kind not in {"job_description", "sop"}:
         raise BusinessRuleViolation("kind must be job_description or sop")
 
-    api_keys, models = _api_keys_and_models(settings)
-    if not api_keys:
+    key_chains = _api_key_chains(settings)
+    if not key_chains:
         raise BusinessRuleViolation(
-            "Gemini is not configured — add GEMINI_API_KEY or GEMINI_JOB_POSTING_API_KEY "
-            "in backend/.env to generate department JD and SOP text."
+            "Gemini is not configured — add GEMINI_DEPARTMENT_API_KEY "
+            "(and optionally GEMINI_DEPARTMENT_API_KEY_2) in backend/.env "
+            "to generate department JD and SOP text."
         )
 
     if kind == "job_description":
@@ -75,8 +72,7 @@ Keep it practical and specific to this department. Do not invent a different dep
 
     try:
         response = generate_content_with_fallback(
-            api_keys=api_keys,
-            models=models,
+            key_chains=key_chains,
             prompt=prompt,
             pool_id="department_copy",
         )

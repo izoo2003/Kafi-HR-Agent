@@ -229,7 +229,8 @@ def generate_content_with_fallback(
     *,
     api_key: str | list[str] | None = None,
     api_keys: list[str] | None = None,
-    models: list[str],
+    models: list[str] | None = None,
+    key_chains: list[tuple[str, list[str]]] | None = None,
     prompt: str | list[Any],
     pool_id: str = "default",
 ) -> Any:
@@ -239,11 +240,22 @@ def generate_content_with_fallback(
     A quota hit on one model only skips that model — the next fallback is tried
     on the same key. The whole key is marked exhausted only after every model
     in the chain hits quota. Then the next key is tried the same way.
+
+    Pass ``key_chains`` when each API key should use its own base + fallback list.
     """
-    keys = _normalize_keys(api_keys if api_keys is not None else api_key)
+    chain_map: dict[str, list[str]] = {}
+    if key_chains:
+        keys = _normalize_keys([k for k, _ in key_chains])
+        for raw_key, chain in key_chains:
+            key = (raw_key or "").strip()
+            if key and chain:
+                chain_map[key] = chain
+    else:
+        keys = _normalize_keys(api_keys if api_keys is not None else api_key)
     if not keys:
         raise RuntimeError("Gemini API key is not configured")
-    if not models:
+    default_models = list(models or [])
+    if not default_models and not chain_map:
         raise RuntimeError("No Gemini models configured")
 
     import google.generativeai as genai
@@ -254,6 +266,9 @@ def generate_content_with_fallback(
     keys_fully_exhausted = 0
 
     for key in ordered:
+        models_for_key = chain_map.get(key) or default_models
+        if not models_for_key:
+            continue
         if _is_exhausted(pool_id, key, now):
             keys_fully_exhausted += 1
             logger.info(
@@ -265,7 +280,7 @@ def generate_content_with_fallback(
 
         genai.configure(api_key=key)
         model_quota_hits = 0
-        for model_name in models:
+        for model_name in models_for_key:
             if _is_model_exhausted(pool_id, key, model_name, now):
                 model_quota_hits += 1
                 logger.info(
@@ -311,7 +326,7 @@ def generate_content_with_fallback(
                 )
 
         # All models on this key hit quota → mark key exhausted, prefer next key
-        if model_quota_hits >= len(models):
+        if model_quota_hits >= len(models_for_key):
             until = _soonest_reset(pool_id, [key], now)
             _mark_exhausted(pool_id, key, until)
             keys_fully_exhausted += 1
