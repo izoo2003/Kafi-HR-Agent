@@ -144,12 +144,12 @@ export function KpiDashboardPage() {
     monthBounds.to,
   );
   const summary = useDepartmentKpiSummary(selfService ? null : deptId, queryFrom, queryTo);
-  const globalSummary = useGlobalKpiSummary(queryFrom, queryTo, !selfService);
+  const globalSummary = useGlobalKpiSummary(queryFrom, queryTo, !selfService && scopeAll);
   const dailySummary = useKpiDailySummary(
     monthBounds.from,
     monthBounds.to,
     selfService ? null : deptId,
-    !selfService,
+    !selfService && grain === "month",
   );
   const workLogs = useKpiWorkLogs({
     periodStart: selfService ? monthBounds.from : queryFrom,

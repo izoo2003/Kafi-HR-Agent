@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.self_service import is_self_service, own_employee_id
@@ -945,7 +945,6 @@ def _department_employee_summary(
     *,
     employee_name: str | None = None,
 ) -> DepartmentEmployeeKpiSummary:
-    _ensure_work_log_definition(db, department_id)
     emp = db.query(Employee).filter(Employee.id == employee_id).one_or_none()
     name = employee_name or (emp.full_name if emp else f"Employee #{employee_id}")
     entries = _work_log_entries_in_range(
@@ -1059,6 +1058,9 @@ def create_work_submission(
                 "points_added": points,
             },
         )
+        from app.services.kpi_rollup import invalidate_kpi_rollup_cache
+
+        invalidate_kpi_rollup_cache()
         return existing
 
     new_actual = min(points, float(WORK_LOG_TARGET))
@@ -1090,6 +1092,9 @@ def create_work_submission(
             "points_added": points,
         },
     )
+    from app.services.kpi_rollup import invalidate_kpi_rollup_cache
+
+    invalidate_kpi_rollup_cache()
     return row
 
 
@@ -1194,6 +1199,9 @@ def create_entry(db: Session, auth: AuthContext, payload: KpiEntryCreate) -> Kpi
             "score": row.score,
         },
     )
+    from app.services.kpi_rollup import invalidate_kpi_rollup_cache
+
+    invalidate_kpi_rollup_cache()
     return row
 
 
@@ -1225,6 +1233,9 @@ def update_entry(
         before_state=before,
         after_state={"actual_value": str(row.actual_value), "score": row.score},
     )
+    from app.services.kpi_rollup import invalidate_kpi_rollup_cache
+
+    invalidate_kpi_rollup_cache()
     return row
 
 
@@ -1258,37 +1269,9 @@ def _eligible_department_employees(
 def _department_summary_internal(
     db: Session, department_id: int, period_start: date, period_end: date
 ) -> DepartmentKpiSummary:
-    if db.query(Department).filter(Department.id == department_id).one_or_none() is None:
-        raise EntityNotFound(f"Department {department_id} not found")
+    from app.services import kpi_rollup
 
-    eligible = _eligible_department_employees(db, department_id, period_start, period_end)
-    employee_summaries = [
-        _department_employee_summary(
-            db, e.id, department_id, period_start, period_end, employee_name=e.full_name
-        )
-        for e in eligible
-    ]
-    submitted = [s for s in employee_summaries if s.submission_count > 0]
-    entries_expected = len(eligible)
-    entries_recorded = len(submitted)
-    overall = (
-        round(sum(s.contribution_score for s in employee_summaries) / len(employee_summaries), 2)
-        if employee_summaries
-        else 0.0
-    )
-    completeness = (entries_recorded / entries_expected) if entries_expected else 1.0
-    band = "complete" if eligible and all(s.contribution_score >= 10.0 for s in employee_summaries) else work_log_band(overall)
-    return DepartmentKpiSummary(
-        department_id=department_id,
-        period_start=period_start,
-        period_end=period_end,
-        overall_score=overall,
-        band=band,
-        entries_recorded=entries_recorded,
-        entries_expected=entries_expected,
-        completeness=round(completeness, 4),
-        employees=employee_summaries,
-    )
+    return kpi_rollup.department_summary(db, department_id, period_start, period_end)
 
 
 def _score_for_day(
@@ -1331,46 +1314,20 @@ def daily_kpi_summary(
         raise PermissionDenied("Daily company rollups are for managers")
     dept_name: str | None = None
     if department_id is not None:
-        dept = db.query(Department).filter(Department.id == department_id).one_or_none()
-        if dept is None:
+        dept_name = db.execute(
+            select(Department.name).where(Department.id == department_id)
+        ).scalar_one_or_none()
+        if dept_name is None:
             raise EntityNotFound(f"Department {department_id} not found")
-        dept_name = dept.name
 
-    days: list[KpiDailyPoint] = []
-    scored: list[float] = []
-    for day in _workdays_in_range(period_start, period_end):
-        if department_id is not None:
-            score, recorded = _score_for_day(db, department_id=department_id, day=day)
-        else:
-            dept_scores: list[float] = []
-            recorded = 0
-            for dept in db.query(Department).all():
-                d_score, d_recorded = _score_for_day(db, department_id=dept.id, day=day)
-                recorded += d_recorded
-                eligible = _eligible_department_employees(db, dept.id, day, day)
-                if eligible:
-                    dept_scores.append(d_score)
-            score = round(sum(dept_scores) / len(dept_scores), 2) if dept_scores else 0.0
-        scored.append(score)
-        days.append(
-            KpiDailyPoint(
-                date=day,
-                score=score,
-                band=work_log_band(score),
-                entries_recorded=recorded,
-            )
-        )
+    from app.services import kpi_rollup
 
-    overall = round(sum(scored) / len(scored), 2) if scored else 0.0
-    return KpiDailySummary(
-        scope="department" if department_id is not None else "global",
+    return kpi_rollup.daily_summary(
+        db,
+        period_start,
+        period_end,
         department_id=department_id,
         department_name=dept_name,
-        period_start=period_start,
-        period_end=period_end,
-        overall_score=overall,
-        band=work_log_band(overall),
-        days=days,
     )
 
 
@@ -1432,50 +1389,9 @@ def global_kpi_summary(
     auth: AuthContext | None = None,
 ) -> GlobalKpiSummary:
     _ = auth
-    dept_ids = [
-        row.id
-        for row in db.query(Department).order_by(Department.name.asc(), Department.id.asc()).all()
-    ]
+    from app.services import kpi_rollup
 
-    departments: list[GlobalDepartmentKpiSummary] = []
-    total_expected = 0
-    total_recorded = 0
-    scores: list[float] = []
-
-    for department_id in dept_ids:
-        dept = db.query(Department).filter(Department.id == department_id).one()
-        summary = _department_summary_internal(db, department_id, period_start, period_end)
-        departments.append(
-            GlobalDepartmentKpiSummary(
-                department_id=dept.id,
-                department_name=dept.name,
-                overall_score=summary.overall_score,
-                band=summary.band,
-                entries_recorded=summary.entries_recorded,
-                entries_expected=summary.entries_expected,
-                completeness=summary.completeness,
-            )
-        )
-        total_expected += summary.entries_expected
-        total_recorded += summary.entries_recorded
-        if summary.entries_expected > 0:
-            scores.append(summary.overall_score)
-
-    departments.sort(key=lambda item: (-item.overall_score, item.department_name.lower()))
-    overall = round(sum(scores) / len(scores), 2) if scores else 0.0
-    completeness = (total_recorded / total_expected) if total_expected else 1.0
-    return GlobalKpiSummary(
-        period_start=period_start,
-        period_end=period_end,
-        overall_score=overall,
-        band="complete" if departments and all(d.band == "complete" for d in departments) else work_log_band(overall),
-        departments_complete=sum(1 for d in departments if d.band == "complete"),
-        departments_expected=len(departments),
-        entries_recorded=total_recorded,
-        entries_expected=total_expected,
-        completeness=round(completeness, 4),
-        departments=departments,
-    )
+    return kpi_rollup.global_summary(db, period_start, period_end)
 
 
 def employee_kpi_summary(
@@ -1488,28 +1404,21 @@ def employee_kpi_summary(
 ) -> EmployeeKpiSummary:
     if auth is not None and is_self_service(auth) and employee_id != auth.linked_employee_id:
         raise PermissionDenied("You can only view your own KPI summary")
-    emp = db.query(Employee).filter(Employee.id == employee_id).one_or_none()
+    emp = db.execute(
+        select(
+            Employee.id,
+            Employee.full_name,
+            Employee.department_id,
+            Employee.date_joined,
+            Employee.date_exited,
+        ).where(Employee.id == employee_id)
+    ).first()
     if emp is None:
         raise EntityNotFound(f"Employee {employee_id} not found")
 
-    contribution = _department_employee_summary(
-        db, employee_id, emp.department_id, period_start, period_end
-    )
-    department = _department_summary_internal(db, emp.department_id, period_start, period_end)
-    global_summary = global_kpi_summary(db, period_start, period_end, auth=auth)
-    return EmployeeKpiSummary(
-        employee_id=employee_id,
-        department_id=emp.department_id,
-        period_start=period_start,
-        period_end=period_end,
-        submission_count=contribution.submission_count,
-        contribution_score=contribution.contribution_score,
-        department_score=department.overall_score,
-        department_band=department.band,
-        global_score=global_summary.overall_score,
-        global_band=global_summary.band,
-        work_items=contribution.work_items,
-    )
+    from app.services import kpi_rollup
+
+    return kpi_rollup.employee_summary(db, emp, period_start, period_end)
 
 
 def department_kpi_summary(

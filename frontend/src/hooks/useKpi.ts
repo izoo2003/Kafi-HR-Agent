@@ -49,6 +49,7 @@ export function useDepartmentKpiSummary(
     queryKey: ["kpi-dept-summary", departmentId, periodStart, periodEnd],
     queryFn: () => api.getDepartmentKpiSummary(departmentId!, periodStart, periodEnd),
     enabled: departmentId != null && !!periodStart && !!periodEnd,
+    staleTime: 30_000,
   });
 }
 
@@ -61,6 +62,7 @@ export function useGlobalKpiSummary(
     queryKey: ["kpi-global-summary", periodStart, periodEnd],
     queryFn: () => api.getGlobalKpiSummary(periodStart, periodEnd),
     enabled: enabled && !!periodStart && !!periodEnd,
+    staleTime: 30_000,
   });
 }
 
@@ -79,6 +81,7 @@ export function useKpiDailySummary(
         departmentId: departmentId ?? undefined,
       }),
     enabled: enabled && !!periodStart && !!periodEnd,
+    staleTime: 30_000,
   });
 }
 
@@ -100,6 +103,7 @@ export function useKpiWorkLogs(params: {
         employeeId: employeeId ?? undefined,
       }),
     enabled: enabled && !!periodStart && !!periodEnd,
+    staleTime: 30_000,
   });
 }
 
@@ -112,6 +116,7 @@ export function useEmployeeKpiSummary(
     queryKey: ["kpi-emp-summary", employeeId, periodStart, periodEnd],
     queryFn: () => api.getEmployeeKpiSummary(employeeId!, periodStart, periodEnd),
     enabled: employeeId != null && !!periodStart && !!periodEnd,
+    staleTime: 30_000,
   });
 }
 
