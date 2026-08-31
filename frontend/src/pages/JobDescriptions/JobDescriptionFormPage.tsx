@@ -194,7 +194,6 @@ export function JobDescriptionFormPage() {
       descriptionText,
       requirementsText,
       skillNames,
-      applicationFormUrl: formUrl,
     });
     setImagePrompt(prompt);
     setAiMessage(
@@ -419,8 +418,9 @@ export function JobDescriptionFormPage() {
             <div style={{ flex: "1 1 220px" }}>
               <strong style={{ display: "block", marginBottom: 4 }}>Generate Prompt</strong>
               <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                Builds a Gemini image prompt from this job&apos;s title, description, responsibilities,
-                and CV form link. Open{" "}
+                Builds a Gemini image prompt from this job&apos;s title, description, and
+                responsibilities. The poster should tell candidates to email{" "}
+                <strong>hr@kafi-group.com</strong> — never a Google Form URL. Open{" "}
                 <a
                   href={GEMINI_APP_URL}
                   target="_blank"

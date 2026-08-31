@@ -1,28 +1,37 @@
 export const GEMINI_APP_URL = "https://gemini.google.com/";
 
+export const HIRING_APPLY_EMAIL = "hr@kafi-group.com";
+
 export type JobPostingImagePromptInput = {
   title: string;
   departmentName?: string | null;
   descriptionText?: string | null;
   requirementsText?: string | null;
   skillNames?: string[];
+  /** Ignored — posters use HIRING_APPLY_EMAIL, never a Google Form URL. */
   applicationFormUrl?: string | null;
 };
 
+function stripApplyUrls(value: string | null | undefined): string {
+  let text = (value ?? "").trim();
+  if (!text) return "";
+  text = text.replace(/\n*Apply Here\s*->\s*\S+/gi, "");
+  text = text.replace(/https?:\/\/(?:docs\.)?google\.com\/forms\/\S+/gi, "");
+  text = text.replace(/https?:\/\/forms\.gle\/\S+/gi, "");
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function section(label: string, value: string | null | undefined): string {
-  const text = (value ?? "").trim();
-  return text ? `${label}\n${text}` : `${label}\n(not provided — infer concise professional copy for this role)`;
+  const text = stripApplyUrls(value);
+  return text
+    ? `${label}\n${text}`
+    : `${label}\n(not provided — infer concise professional copy for this role)`;
 }
 
 export function buildJobPostingImagePrompt(input: JobPostingImagePromptInput): string {
   const title = input.title.trim();
   const department = (input.departmentName ?? "").trim();
-  const applyUrl = (input.applicationFormUrl ?? "").trim();
   const skills = (input.skillNames ?? []).map((s) => s.trim()).filter(Boolean);
-
-  const applyBlock = applyUrl
-    ? `Candidates must submit their details and CV through this Google Form (show this URL clearly on the poster):\n${applyUrl}`
-    : "Candidates should submit their details and CV to hr@kafi-group.com (show this email clearly on the poster).";
 
   const skillsBlock = skills.length
     ? `KEY SKILLS\n${skills.map((s) => `- ${s}`).join("\n")}`
@@ -35,14 +44,18 @@ export function buildJobPostingImagePrompt(input: JobPostingImagePromptInput): s
     section("DESCRIPTION", input.descriptionText),
     section("RESPONSIBILITIES / REQUIREMENTS", input.requirementsText),
     skillsBlock || null,
-    `WHERE TO SUBMIT THE CV\n${applyBlock}`,
+    [
+      "WHERE TO APPLY (footer of the poster)",
+      `Show this email clearly as the apply / send-CV address: ${HIRING_APPLY_EMAIL}`,
+      "Do NOT put any Google Form URL, docs.google.com link, forms.gle link, or any other website URL on the image.",
+    ].join("\n"),
     [
       "DESIGN DIRECTIONS",
       "- Vertical recruitment poster (about 1080×1350) suitable for LinkedIn",
       "- Company name: Kafi Group",
       "- Large, readable job title at the top",
       "- Two clear sections: Description and Responsibilities, using the copy above (do not invent extra duties)",
-      "- Footer must show how to apply: the CV submission link or email above",
+      `- Footer must say Apply here / Send your CV to ${HIRING_APPLY_EMAIL} — email only, no URLs`,
       "- High-contrast corporate look: deep black background, red and yellow accents, clean sans-serif type",
       "- No stock-photo clutter, no watermarks, no fake logos, no hashtags",
       "- All on-image text must be spelled correctly and match the provided copy",

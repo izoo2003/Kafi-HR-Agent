@@ -699,6 +699,7 @@ def generate_hiring_poster_png(
     settings: Settings,
 ) -> bytes:
     """Vertical hiring poster with abstract brand visuals (no chairs)."""
+    _ = form_url  # apply CTA on the image is email only, never a Google Form URL
     width, height = 1080, 1350
     img = _vertical_gradient((width, height), _SOFT, (226, 234, 246))
 
@@ -928,20 +929,11 @@ def generate_hiring_poster_png(
     email = (apply_email or "hr@kafi-group.com").strip()
     draw.text(
         (width / 2, btn_y + btn_h + 22),
-        f"Submit the Google Form or email {email}",
+        f"Email your CV to {email}",
         fill=(190, 205, 225),
         font=font_small,
         anchor="ma",
     )
-    if form_url:
-        short = form_url if len(form_url) <= 72 else form_url[:69] + "…"
-        draw.text(
-            (width / 2, btn_y + btn_h + 44),
-            short,
-            fill=(150, 175, 205),
-            font=font_small,
-            anchor="ma",
-        )
 
     # Vignette
     vignette = Image.new("RGBA", (width, height), (0, 0, 0, 0))
