@@ -61,7 +61,7 @@ async def verify_employee_letter_signature(
     auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
     file: UploadFile = File(...),
 ) -> LetterSignatureVerifyResult:
-    """Upload a photo of the signed letter; AI checks for a client signature."""
+    """Upload a photo of the signed letter; AI checks document type and signature."""
     content = await file.read()
     name = file.filename or "signed_letter.jpg"
     mime = file.content_type

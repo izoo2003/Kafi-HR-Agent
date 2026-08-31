@@ -177,7 +177,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     try {
       const res = await verifyEmployeeLetterSignature(verifyFor.id, kind, verifyFile);
       if (res.verified) {
-        setMessage(`Verified — signature found on ${verifyFor.fullName}'s letter.`);
+        setMessage(`Verified — ${kind === "appointment" ? "appointment letter" : "employment contract"} identified and signature found for ${verifyFor.fullName}.`);
         closeVerify();
         await employees.refetch();
       } else {
@@ -203,8 +203,9 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           Select an employee to create or view their{" "}
           {kind === "appointment" ? "appointment letter" : "contract letter"}. After create, use{" "}
-          <strong>Verify</strong> to upload a photo of the signed document — AI checks for a
-          signature, then the status becomes <strong>Verified</strong>.
+          <strong>Verify</strong> to upload a photo of the signed document — AI checks that it is
+          the correct letter <em>and</em> that a handwritten signature is present. Both must pass
+          for the status to become <strong>Verified</strong>; otherwise verification is rejected.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-info)" }}>{message}</p> : null}
@@ -339,8 +340,9 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                 </Button>
               </div>
               <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                Upload a clear photo of the printed letter with the client&apos;s signature. AI only
-                checks that a signature is present on the document.
+                Upload a clear photo of the printed {kind === "appointment" ? "appointment letter" : "employment contract"}{" "}
+                with a handwritten signature. AI rejects the upload if this is the wrong document
+                type, or if no signature is visible.
               </p>
               <label className="form-field">
                 <span className="form-field__label">Signed letter image</span>

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from io import BytesIO
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -116,6 +117,156 @@ def view_stored_letter(db: Session, employee_id: int, kind: str) -> tuple[bytes,
     return read_stored_file(doc.file_path), doc.original_filename or f"{kind}.docx"
 
 
+_APPOINTMENT_KINDS = frozenset(
+    {
+        "appointment",
+        "appointment_letter",
+        "appointment letter",
+        "offer_letter",
+        "offer letter",
+        "letter of appointment",
+    }
+)
+_CONTRACT_KINDS = frozenset(
+    {
+        "contract",
+        "employment_contract",
+        "employment contract",
+        "contract_letter",
+        "contract letter",
+        "contract of employment",
+        "service contract",
+    }
+)
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "1", "y"}:
+        return True
+    if text in {"false", "no", "0", "n", "null", "none", ""}:
+        return False
+    return default
+
+
+def _normalize_detected_kind(raw: Any) -> str | None:
+    text = str(raw or "").strip().lower().replace("-", "_")
+    text = re.sub(r"\s+", " ", text)
+    compact = text.replace(" ", "_")
+    if text in _APPOINTMENT_KINDS or compact in _APPOINTMENT_KINDS:
+        return "appointment"
+    if text in _CONTRACT_KINDS or compact in _CONTRACT_KINDS:
+        return "contract"
+    if not text or text in {"other", "unknown", "none", "n/a", "na"}:
+        return None
+    return "other"
+
+
+def _letter_label(kind: str) -> str:
+    return "appointment letter" if kind == "appointment" else "employment contract"
+
+
+def _docx_text_excerpt(content: bytes, max_chars: int = 2800) -> str:
+    try:
+        from docx import Document
+    except ImportError:
+        return ""
+    try:
+        doc = Document(BytesIO(content))
+        parts: list[str] = []
+        for para in doc.paragraphs:
+            text = (para.text or "").strip()
+            if text:
+                parts.append(text)
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if (c.text or "").strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts)[:max_chars]
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not extract text from stored letter for verification")
+        return ""
+
+
+def _issued_letter_excerpt(db: Session, employee_id: int, kind: str) -> str:
+    doc = _latest_letter(db, employee_id, kind)
+    if doc is None:
+        return ""
+    try:
+        content = read_stored_file(doc.file_path)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not read stored letter for verification context")
+        return ""
+    return _docx_text_excerpt(content)
+
+
+def decide_letter_verification(kind: str, vision: dict[str, Any]) -> tuple[bool, str, str]:
+    """Map vision JSON to (verified, status, message). Pure — used by tests."""
+    expected = _letter_label(kind)
+    other = _letter_label("contract" if kind == "appointment" else "appointment")
+    notes = str(vision.get("notes") or "").strip() or None
+    readable = _as_bool(
+        vision.get("image_readable", vision.get("readable")),
+        default=False,
+    )
+    looks_like = _as_bool(
+        vision.get(
+            "looks_like_expected_letter",
+            vision.get("looks_like_letter_document"),
+        ),
+        default=False,
+    )
+    has_sig = _as_bool(
+        vision.get(
+            "has_handwritten_signature",
+            vision.get("has_client_signature"),
+        ),
+        default=False,
+    )
+    detected = _normalize_detected_kind(
+        vision.get("detected_document_kind", vision.get("document_kind"))
+    )
+    wrong_type = detected in {"appointment", "contract"} and detected != kind
+    correct_type = (not wrong_type) and (looks_like or detected == kind)
+
+    if not readable:
+        return (
+            False,
+            "unreadable",
+            notes
+            or "The image is too unclear to identify the letter. Retake a sharper photo of the signed page.",
+        )
+    if wrong_type:
+        return (
+            False,
+            "wrong_type",
+            notes
+            or f"This looks like {other}, not the {expected}. Upload the correct signed document.",
+        )
+    if not correct_type:
+        return (
+            False,
+            "not_letter",
+            notes
+            or f"This image does not look like the {expected}. Upload a clear photo of the signed {expected}.",
+        )
+    if not has_sig:
+        return (
+            False,
+            "no_signature",
+            notes
+            or f"This is the {expected}, but no handwritten signature was found. Ask them to sign, then upload again.",
+        )
+    return True, "verified", notes or "Signature found — letter marked Verified."
+
+
 def _parse_vision_json(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if raw.startswith("```"):
@@ -138,36 +289,75 @@ def _parse_vision_json(text: str) -> dict[str, Any]:
     raise ValidationFailed("Could not parse signature verification response from AI")
 
 
-def _ai_check_signature(*, image_bytes: bytes, mime_type: str, kind: str) -> dict[str, Any]:
+def _ai_check_signature(
+    *,
+    image_bytes: bytes,
+    mime_type: str,
+    kind: str,
+    employee_name: str,
+    employee_code: str = "",
+    employee_cnic: str = "",
+    role_title: str = "",
+    issued_letter_excerpt: str = "",
+) -> dict[str, Any]:
     settings = get_settings()
-    api_keys = settings.resolved_gemini_api_keys()
+    api_keys = settings.resolved_gemini_letter_api_keys()
     if not api_keys:
         raise ValidationFailed(
-            "Letter signature verification requires GEMINI_API_KEY on the backend."
+            "Letter signature verification requires GEMINI_LETTER_API_KEY or GEMINI_API_KEY "
+            "on the backend."
         )
-    letter_label = "appointment letter" if kind == "appointment" else "employment contract"
-    prompt = f"""You are verifying a signed HR {letter_label} image for an HR system.
+    expected = _letter_label(kind)
+    other = _letter_label("contract" if kind == "appointment" else "appointment")
+    excerpt_block = (
+        f"\nIssued {expected} text excerpt (for matching, not as proof of signature):\n"
+        f"---\n{issued_letter_excerpt.strip()}\n---\n"
+        if issued_letter_excerpt.strip()
+        else ""
+    )
+    prompt = f"""You are verifying a signed HR document image for Kafi Group.
 
-Look only for whether a handwritten / ink / wet signature (or clear signed mark from a person)
-appears on the document — typically near a signature line, acknowledgement, or acceptance area.
+Task: decide whether this photo is the employee's {expected} AND whether a handwritten signature is on it.
 
+Employee on file:
+- full_name: {employee_name or "unknown"}
+- employee_code: {employee_code or "unknown"}
+- cnic: {employee_cnic or "unknown"}
+- role_title: {role_title or "unknown"}
+- expected_document: {expected}
+{excerpt_block}
 Return ONLY valid JSON (no markdown) with this exact shape:
 {{
-  "looks_like_letter_document": true,
   "image_readable": true,
-  "has_client_signature": true,
-  "notes": "short note or null"
+  "detected_document_kind": "appointment",
+  "looks_like_expected_letter": true,
+  "has_handwritten_signature": true,
+  "employee_name_visible": true,
+  "visible_title": "string or null",
+  "notes": "one short sentence explaining the decision"
 }}
 
-Rules:
-- has_client_signature=true only if you can clearly see a human signature or signed mark on the page.
-- Printed names, typed text, stamps alone, or blank signature lines do NOT count as a signature.
-- If the image is too blurry or cropped to judge, set image_readable=false and has_client_signature=false.
-- If this does not look like a letter/contract page at all, set looks_like_letter_document=false.
+detected_document_kind must be one of: "appointment", "contract", "other".
+
+What counts as the {expected}:
+- A printed or photographed Kafi Group {expected} (letterhead, title, appointment/contract wording, employee name, role, CNIC, salary/terms, signature block).
+- A last/signature page of that same letter is valid if it is clearly the acknowledgement/acceptance/signature page of the {expected} (not a random scrap).
+- Match the employee name/CNIC/role when they are readable.
+
+What does NOT count:
+- CNIC cards, education documents, selfies, invoices, unrelated letters, blank paper, screenshots of chat.
+- The other HR letter type ({other}) — set detected_document_kind to that type and looks_like_expected_letter=false.
+
+Signature rules:
+- has_handwritten_signature=true ONLY if you can see a human handwritten / ink / wet signature, initials, or signed mark in a signature area.
+- Printed names, typed "/sd", stamps alone, or a blank signature line do NOT count.
+- If the page is the right letter but unsigned, looks_like_expected_letter=true and has_handwritten_signature=false.
+
+If the image is too blurry, dark, or cropped to judge, set image_readable=false and has_handwritten_signature=false.
 """
     response = generate_content_with_fallback(
         api_keys=api_keys,
-        models=settings.resolved_gemini_models(),
+        models=settings.resolved_gemini_letter_models(),
         prompt=[
             prompt,
             {"mime_type": mime_type or "image/jpeg", "data": image_bytes},
@@ -204,11 +394,17 @@ def verify_letter_signature(
     if not content:
         raise ValidationFailed("Uploaded image is empty")
 
+    excerpt = _issued_letter_excerpt(db, employee_id, kind)
     try:
         vision = _ai_check_signature(
             image_bytes=content,
             mime_type=mime if mime.startswith("image/") else "image/jpeg",
             kind=kind,
+            employee_name=(employee.full_name or "").strip(),
+            employee_code=(employee.employee_code or "").strip(),
+            employee_cnic=(employee.cnic or "").strip(),
+            role_title=(employee.role_title or "").strip(),
+            issued_letter_excerpt=excerpt,
         )
     except ValidationFailed:
         raise
@@ -216,35 +412,12 @@ def verify_letter_signature(
         logger.exception("Letter signature AI failed")
         raise ValidationFailed(f"AI signature check failed: {exc}") from exc
 
-    looks_like = bool(vision.get("looks_like_letter_document", True))
-    readable = bool(vision.get("image_readable", True))
-    has_sig = bool(vision.get("has_client_signature", False))
-    notes = str(vision.get("notes") or "").strip() or None
-
-    if not looks_like:
+    verified, status, message = decide_letter_verification(kind, vision)
+    if not verified:
         return LetterSignatureVerifyResult(
             verified=False,
-            status="not_letter",
-            message=notes
-            or "This image does not look like the appointment/contract letter. Upload a clear photo of the signed document.",
-            kind=kind,
-            employee_id=employee.id,
-        )
-    if not readable:
-        return LetterSignatureVerifyResult(
-            verified=False,
-            status="unreadable",
-            message=notes
-            or "The image is too unclear to verify a signature. Retake a sharper photo of the signed page.",
-            kind=kind,
-            employee_id=employee.id,
-        )
-    if not has_sig:
-        return LetterSignatureVerifyResult(
-            verified=False,
-            status="no_signature",
-            message=notes
-            or "No client signature was found on this document. Ask them to sign, then upload again.",
+            status=status,
+            message=message,
             kind=kind,
             employee_id=employee.id,
         )
@@ -272,6 +445,7 @@ def verify_letter_signature(
     )
     db.add(row)
     db.flush()
+    notes = str(vision.get("notes") or "").strip() or None
     audit_service.log_from_auth(
         db,
         auth,
@@ -283,12 +457,13 @@ def verify_letter_signature(
             "document_id": row.id,
             "filename": row.original_filename,
             "ai_notes": notes,
+            "detected_document_kind": vision.get("detected_document_kind"),
         },
     )
     return LetterSignatureVerifyResult(
         verified=True,
         status="verified",
-        message="Signature found — letter marked Verified.",
+        message=message,
         kind=kind,
         employee_id=employee.id,
         document_id=row.id,

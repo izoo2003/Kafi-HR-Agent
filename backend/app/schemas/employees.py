@@ -295,7 +295,7 @@ class EmployeeDetailRead(EmployeeRead):
 
 class LetterSignatureVerifyResult(BaseModel):
     verified: bool
-    status: str  # verified | no_signature | not_letter | unreadable
+    status: str  # verified | no_signature | not_letter | wrong_type | unreadable
     message: str
     kind: str
     employee_id: int

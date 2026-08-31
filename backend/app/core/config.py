@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     gemini_education_api_key_2: str = ""
     gemini_education_model: str = "gemini-3.5-flash-lite"
     gemini_education_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
+    # Appointment / contract letter image verification (falls back to gemini_api_key pool)
+    gemini_letter_api_key: str = ""
+    gemini_letter_api_key_2: str = ""
+    gemini_letter_model: str = "gemini-3.5-flash-lite"
+    gemini_letter_model_fallbacks: str = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite"
     # Job posting AI Analyzer only (description + requirements draft) — separate key
     gemini_job_posting_api_key: str = ""
     gemini_job_posting_api_key_2: str = ""
@@ -356,6 +361,21 @@ class Settings(BaseSettings):
         fallbacks = (
             self.gemini_education_model_fallbacks or self.gemini_model_fallbacks
         )
+        return parse_model_chain(primary, fallbacks)
+
+    def resolved_gemini_letter_api_keys(self) -> list[str]:
+        dedicated = self._valid_keys(
+            self.gemini_letter_api_key, self.gemini_letter_api_key_2
+        )
+        if dedicated:
+            return dedicated
+        return self.resolved_gemini_api_keys()
+
+    def resolved_gemini_letter_models(self) -> list[str]:
+        primary = (
+            self.gemini_letter_model or self.gemini_model or "gemini-3.5-flash-lite"
+        ).strip()
+        fallbacks = self.gemini_letter_model_fallbacks or self.gemini_model_fallbacks
         return parse_model_chain(primary, fallbacks)
 
     def resolved_gemini_job_posting_api_key(self) -> str:
