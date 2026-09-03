@@ -11,7 +11,7 @@ from app.core.db import get_db
 from app.core.deps import require_permission
 from app.core.exceptions import ValidationFailed
 from app.schemas.common import AuthContext
-from app.schemas.employees import LetterSignatureVerifyResult
+from app.schemas.employees import LetterSignatureVerifyResult, LetterContentRead, LetterContentUpdate
 from app.services import employee_letter_service
 
 router = APIRouter(tags=["employee-letters"])
@@ -39,6 +39,27 @@ def view_employee_letter(
     return _letter_response(content, filename)
 
 
+@router.get("/employees/{employee_id}/letters/{kind}/content", response_model=LetterContentRead)
+def get_employee_letter_content(
+    employee_id: int,
+    kind: LetterKind,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[AuthContext, Depends(require_permission("employees", "read"))],
+) -> LetterContentRead:
+    return employee_letter_service.get_letter_content(db, employee_id, kind)
+
+
+@router.put("/employees/{employee_id}/letters/{kind}/content", response_model=LetterContentRead)
+def save_employee_letter_content(
+    employee_id: int,
+    kind: LetterKind,
+    payload: LetterContentUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    auth: Annotated[AuthContext, Depends(require_permission("employees", "write"))],
+) -> LetterContentRead:
+    return employee_letter_service.save_letter_content(db, auth, employee_id, kind, payload)
+
+
 @router.post("/employees/{employee_id}/letters/{kind}")
 def create_employee_letter(
     employee_id: int,
@@ -48,7 +69,6 @@ def create_employee_letter(
 ) -> Response:
     content, filename = employee_letter_service.generate_letter(db, auth, employee_id, kind)
     return _letter_response(content, filename)
-
 
 @router.post(
     "/employees/{employee_id}/letters/{kind}/verify",

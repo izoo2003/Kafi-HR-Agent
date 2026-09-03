@@ -300,3 +300,14 @@ class LetterSignatureVerifyResult(BaseModel):
     kind: str
     employee_id: int
     document_id: int | None = None
+
+
+class LetterContentRead(BaseModel):
+    employee_id: int
+    kind: str
+    filename: str
+    paragraphs: list[str]
+
+
+class LetterContentUpdate(BaseModel):
+    paragraphs: list[str] = Field(min_length=1)

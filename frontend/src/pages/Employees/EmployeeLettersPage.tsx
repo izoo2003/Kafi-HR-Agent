@@ -12,6 +12,8 @@ import { useDepartments, useEmployees } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
 import {
   createEmployeeLetter,
+  getEmployeeLetterContent,
+  saveEmployeeLetterContent,
   verifyEmployeeLetterSignature,
   viewEmployeeLetter,
 } from "../../api/employees";
@@ -94,6 +96,11 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
   const [verifyPreview, setVerifyPreview] = useState<string | null>(null);
   const [verifyFile, setVerifyFile] = useState<File | null>(null);
   const verifyInputRef = useRef<HTMLInputElement>(null);
+  const [editFor, setEditFor] = useState<Employee | null>(null);
+  const [editParagraphs, setEditParagraphs] = useState<string[]>([]);
+  const [editFilename, setEditFilename] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const copy = COPY[kind];
 
   const deptNameById = useMemo(() => {
@@ -113,7 +120,45 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     setError(null);
     setMessage(null);
     closeVerify();
+    closeEdit();
     setVerifyFor(emp);
+  }
+
+  function closeEdit() {
+    setEditFor(null);
+    setEditParagraphs([]);
+    setEditFilename("");
+    setEditLoading(false);
+    setEditSaving(false);
+  }
+
+  async function openEdit(emp: Employee) {
+    if (!hasLetter(emp, kind)) {
+      setError("It is not created yet. Create them first.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    closeVerify();
+    setEditFor(emp);
+    setEditLoading(true);
+    setEditParagraphs([]);
+    try {
+      const content = await getEmployeeLetterContent(emp.id, kind);
+      setEditParagraphs(content.paragraphs.length ? content.paragraphs : [""]);
+      setEditFilename(content.filename);
+    } catch (err) {
+      closeEdit();
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Could not open the letter for editing.",
+      );
+    } finally {
+      setEditLoading(false);
+    }
   }
 
   function onPickVerifyFile(file: File | null) {
@@ -154,7 +199,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     }
   }
 
-  async function onView(emp: Employee) {
+  async function onDownload(emp: Employee) {
     if (!hasLetter(emp, kind)) {
       setError("It is not created yet. Create them first.");
       return;
@@ -173,6 +218,37 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     }
   }
 
+  async function onSaveEdit() {
+    if (!editFor) return;
+    const cleaned = editParagraphs.map((p) => p.replace(/\r/g, ""));
+    if (!cleaned.some((p) => p.trim())) {
+      setError("Letter content cannot be empty.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setEditSaving(true);
+    try {
+      const saved = await saveEmployeeLetterContent(editFor.id, kind, cleaned);
+      setEditParagraphs(saved.paragraphs.length ? saved.paragraphs : [""]);
+      setEditFilename(saved.filename);
+      setMessage(`Letter saved for ${editFor.fullName}.`);
+      await employees.refetch();
+      const blob = await viewEmployeeLetter(editFor.id, kind);
+      downloadBlob(blob, fileName(kind, editFor));
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Could not save letter edits.",
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   async function onSubmitVerify() {
     if (!verifyFor || !verifyFile) {
       setError("Choose a PDF or image of the signed letter first.");
@@ -184,7 +260,9 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     try {
       const res = await verifyEmployeeLetterSignature(verifyFor.id, kind, verifyFile);
       if (res.verified) {
-        setMessage(`Verified — ${kind === "appointment" ? "appointment letter" : "employment contract"} identified and signature found for ${verifyFor.fullName}.`);
+        setMessage(
+          `Verified — ${kind === "appointment" ? "appointment letter" : "employment contract"} identified and signature found for ${verifyFor.fullName}.`,
+        );
         closeVerify();
         await employees.refetch();
       } else {
@@ -208,12 +286,13 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
       <PageHeader title={copy.title} breadcrumb={copy.breadcrumb} />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-          Select an employee to create or view their{" "}
+          Select an employee to create or edit their{" "}
           {kind === "appointment" ? "appointment letter" : "contract letter"}. After the letter is
-          created, use <strong>View letter</strong>, <strong>Upload &amp; Verify</strong> (PDF or
-          PNG/JPG of the signed copy), or <strong>Create letter</strong> again. AI checks that the
-          upload is the correct letter <em>and</em> that a handwritten signature is present. Both
-          must pass for the status to become <strong>Verified</strong>.
+          created, use <strong>Edit letter</strong> to change the wording in-app,{" "}
+          <strong>Upload &amp; Verify</strong> (PDF or PNG/JPG of the signed copy), or{" "}
+          <strong>Create letter</strong> again. AI checks that the upload is the correct letter{" "}
+          <em>and</em> that a handwritten signature is present. Both must pass for the status to
+          become <strong>Verified</strong>.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-info)" }}>{message}</p> : null}
@@ -270,10 +349,10 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                             <Button
                               type="button"
                               variant="secondary"
-                              disabled={busy}
-                              onClick={() => void onView(emp)}
+                              disabled={busy || editLoading}
+                              onClick={() => void openEdit(emp)}
                             >
-                              View letter
+                              Edit letter
                             </Button>
                             {canWrite ? (
                               <Button
@@ -308,7 +387,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                           </Button>
                         ) : (
                           <Button type="button" variant="secondary" disabled>
-                            View letter
+                            Edit letter
                           </Button>
                         )}
                       </div>
@@ -324,6 +403,135 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
               onPageChange={setPage}
             />
           </>
+        ) : null}
+
+        {editFor ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="letter-edit-title"
+            onClick={closeEdit}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(16, 24, 40, 0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "var(--space-5)",
+              zIndex: 50,
+            }}
+          >
+            <div
+              className="card"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(800px, 100%)",
+                maxHeight: "min(920px, 92vh)",
+                display: "grid",
+                gap: "var(--space-3)",
+                gridTemplateRows: "auto auto 1fr auto",
+                boxShadow: "0 8px 24px rgba(16,24,40,0.12)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "var(--space-3)",
+                  alignItems: "center",
+                }}
+              >
+                <h2 id="letter-edit-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
+                  Edit letter — {editFor.fullName}
+                </h2>
+                <Button type="button" variant="secondary" onClick={closeEdit}>
+                  Close
+                </Button>
+              </div>
+              <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                Edit the letter wording below
+                {editFilename ? (
+                  <>
+                    {" "}
+                    (<span className="font-data">{editFilename}</span>)
+                  </>
+                ) : null}
+                . Saving updates the stored Word letter
+                {canWrite ? " and downloads the revised file" : ""}.
+              </p>
+              {editLoading ? (
+                <Spinner label="Loading letter" />
+              ) : (
+                <div
+                  style={{
+                    overflowY: "auto",
+                    display: "grid",
+                    gap: "var(--space-2)",
+                    minHeight: 0,
+                    paddingRight: 2,
+                  }}
+                >
+                  {editParagraphs.map((para, index) => (
+                    <label key={`p-${index}`} className="form-field" style={{ margin: 0 }}>
+                      <span className="form-field__label">Paragraph {index + 1}</span>
+                      <textarea
+                        className="form-field__input"
+                        rows={Math.min(8, Math.max(2, para.split("\n").length + 1))}
+                        value={para}
+                        readOnly={!canWrite || editFor.status === "terminated"}
+                        onChange={(e) => {
+                          const next = [...editParagraphs];
+                          next[index] = e.target.value;
+                          setEditParagraphs(next);
+                        }}
+                        aria-label={`Letter paragraph ${index + 1}`}
+                      />
+                    </label>
+                  ))}
+                  {canWrite && editFor.status !== "terminated" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setEditParagraphs((prev) => [...prev, ""])}
+                    >
+                      Add paragraph
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-2)",
+                  justifyContent: "flex-end",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button type="button" variant="secondary" onClick={closeEdit}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={editLoading || editSaving || busyId === editFor.id}
+                  onClick={() => void onDownload(editFor)}
+                >
+                  Download Word
+                </Button>
+                {canWrite && editFor.status !== "terminated" ? (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    disabled={editLoading || editSaving}
+                    onClick={() => void onSaveEdit()}
+                  >
+                    {editSaving ? "Saving…" : "Save letter"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
         ) : null}
 
         {verifyFor ? (

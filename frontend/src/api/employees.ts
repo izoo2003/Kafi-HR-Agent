@@ -149,6 +149,31 @@ export async function viewEmployeeLetter(
   return fetchBlob(`/employees/${employeeId}/letters/${kind}`);
 }
 
+export interface LetterContent {
+  employeeId: number;
+  kind: string;
+  filename: string;
+  paragraphs: string[];
+}
+
+export async function getEmployeeLetterContent(
+  employeeId: number,
+  kind: "appointment" | "contract",
+): Promise<LetterContent> {
+  return apiRequest<LetterContent>(`/employees/${employeeId}/letters/${kind}/content`);
+}
+
+export async function saveEmployeeLetterContent(
+  employeeId: number,
+  kind: "appointment" | "contract",
+  paragraphs: string[],
+): Promise<LetterContent> {
+  return apiRequest<LetterContent>(`/employees/${employeeId}/letters/${kind}/content`, {
+    method: "PUT",
+    body: { paragraphs },
+  });
+}
+
 export interface LetterSignatureVerifyResult {
   verified: boolean;
   status: string;

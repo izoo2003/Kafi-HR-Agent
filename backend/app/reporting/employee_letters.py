@@ -338,3 +338,37 @@ def render_docx_bytes(kind: str, employee: Employee) -> tuple[bytes, str]:
     title_slug = "Appointment_Letter" if kind == "appointment" else "Employment_Contract"
     filename = f"{title_slug}_{_slug(employee.full_name)}.docx"
     return buf.getvalue(), filename
+
+
+def extract_letter_paragraphs(content: bytes) -> list[str]:
+    """Return non-empty paragraph texts from a stored letter (body + tables + headers)."""
+    doc = Document(BytesIO(content))
+    out: list[str] = []
+    for paragraph in _iter_paragraphs(doc):
+        text = paragraph.text
+        if text.strip():
+            out.append(text)
+    return out
+
+
+def apply_letter_paragraphs(content: bytes, paragraphs: list[str]) -> bytes:
+    """Replace non-empty paragraph texts in document order; preserves runs/formatting."""
+    doc = Document(BytesIO(content))
+    texts = [p if p is not None else "" for p in paragraphs]
+    idx = 0
+    for paragraph in _iter_paragraphs(doc):
+        if not paragraph.text.strip():
+            continue
+        if idx >= len(texts):
+            break
+        _set_paragraph_text(paragraph, texts[idx])
+        idx += 1
+    # Extra paragraphs the user added — append at end of body
+    while idx < len(texts):
+        text = (texts[idx] or "").strip()
+        if text:
+            doc.add_paragraph(text)
+        idx += 1
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()

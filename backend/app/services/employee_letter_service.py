@@ -14,10 +14,20 @@ from app.core.exceptions import BusinessRuleViolation, EntityNotFound, Validatio
 from app.core.gemini_client import generate_content_with_fallback
 from app.ingestion.employee_docs import delete_stored_file, read_stored_file, store_employee_file, store_letter_file
 from app.models.employees import EmployeeDocument
-from app.reporting.employee_letters import letter_kinds, render_docx_bytes
+from app.reporting.employee_letters import (
+    apply_letter_paragraphs,
+    extract_letter_paragraphs,
+    letter_kinds,
+    render_docx_bytes,
+)
 from app.schemas.common import AuthContext
-from app.schemas.employees import LETTER_CATEGORIES, LETTER_SIGNED_CATEGORIES, LetterSignatureVerifyResult
-from app.services import audit_service, employee_service
+from app.schemas.employees import (
+    LETTER_CATEGORIES,
+    LETTER_SIGNED_CATEGORIES,
+    LetterContentRead,
+    LetterContentUpdate,
+    LetterSignatureVerifyResult,
+)from app.services import audit_service, employee_service
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +152,94 @@ def view_stored_letter(db: Session, employee_id: int, kind: str) -> tuple[bytes,
     if doc is None:
         raise EntityNotFound(_MISSING)
     return read_stored_file(doc.file_path), doc.original_filename or f"{kind}.docx"
+
+
+def get_letter_content(db: Session, employee_id: int, kind: str) -> LetterContentRead:
+    employee = employee_service.get_employee(db, employee_id)
+    if kind not in letter_kinds():
+        raise ValidationFailed(f"Unknown letter type '{kind}'")
+    doc = _latest_letter(db, employee_id, kind)
+    if doc is None:
+        raise EntityNotFound(_MISSING)
+    content = read_stored_file(doc.file_path)
+    try:
+        paragraphs = extract_letter_paragraphs(content)
+    except Exception as exc:
+        logger.exception("Could not read letter content for employee %s", employee_id)
+        raise ValidationFailed(f"Could not open letter for editing: {exc}") from exc
+    return LetterContentRead(
+        employee_id=employee.id,
+        kind=kind,
+        filename=doc.original_filename or f"{kind}.docx",
+        paragraphs=paragraphs,
+    )
+
+
+def save_letter_content(
+    db: Session,
+    auth: AuthContext,
+    employee_id: int,
+    kind: str,
+    payload: LetterContentUpdate,
+) -> LetterContentRead:
+    employee = employee_service.get_employee(db, employee_id)
+    if kind not in letter_kinds():
+        raise ValidationFailed(f"Unknown letter type '{kind}'")
+    if employee.status == "terminated":
+        raise BusinessRuleViolation("Cannot edit letters for a terminated employee")
+    doc = _latest_letter(db, employee_id, kind)
+    if doc is None:
+        raise EntityNotFound(_MISSING)
+    paragraphs = [p.strip("\r") for p in payload.paragraphs]
+    if not any(p.strip() for p in paragraphs):
+        raise ValidationFailed("Letter content cannot be empty")
+    original = read_stored_file(doc.file_path)
+    try:
+        updated = apply_letter_paragraphs(original, paragraphs)
+    except Exception as exc:
+        logger.exception("Could not save letter content for employee %s", employee_id)
+        raise ValidationFailed(f"Could not save letter edits: {exc}") from exc
+
+    filename = doc.original_filename or (
+        f"{'Appointment_Letter' if kind == 'appointment' else 'Employment_Contract'}.docx"
+    )
+    cat = _category(kind)
+    # Keep verification status: only replace the generated letter file, not the signed scan
+    _delete_category_docs(db, employee.id, cat)
+    stored_path, mime = store_letter_file(
+        employee_id=employee.id,
+        filename=filename,
+        content=updated,
+    )
+    row = EmployeeDocument(
+        employee_id=employee.id,
+        category=cat,
+        title="Appointment letter" if kind == "appointment" else "Employment contract",
+        file_path=stored_path,
+        original_filename=filename,
+        mime_type=mime or DOCX_TYPE,
+    )
+    db.add(row)
+    db.flush()
+    audit_service.log_from_auth(
+        db,
+        auth,
+        action=f"employee.letter_{kind}_edited",
+        entity_type="employee",
+        entity_id=employee.id,
+        after_state={
+            "filename": filename,
+            "kind": kind,
+            "document_id": row.id,
+            "paragraph_count": len(paragraphs),
+        },
+    )
+    return LetterContentRead(
+        employee_id=employee.id,
+        kind=kind,
+        filename=filename,
+        paragraphs=extract_letter_paragraphs(updated),
+    )
 
 
 _APPOINTMENT_KINDS = frozenset(
