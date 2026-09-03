@@ -70,6 +70,7 @@ export function usePayrollCompute(params: {
     queryFn: () => payrollApi.computePayroll(params!),
     enabled: Boolean(params?.taxYearId && params.periodMonth && params.periodYear),
     refetchOnWindowFocus: false,
+    staleTime: 5 * 60_000,
   });
 }
 

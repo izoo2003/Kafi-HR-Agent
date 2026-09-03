@@ -1,16 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Spinner } from "../../components/ui/Spinner";
 import { SalarySheet, draftFromResult, type SheetDraft } from "../../components/domain/SalarySheet";
-import { normalizePaymentMode } from "../../lib/salarySheet";
+import { draftFromEmployee, normalizePaymentMode } from "../../lib/salarySheet";
+import {
+  clearSalarySheetDraft,
+  loadSalarySheetDraft,
+  saveSalarySheetDraft,
+} from "../../lib/salarySheetDraft";
 import { usePayrollCompute, usePayrollAiSummary, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
 import { useAuth } from "../../hooks/useAuth";
 import { downloadSalarySheetExcel } from "../../api/payroll";
 import { ApiError } from "../../api/client";
 import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
+
+function periodKey(month: number, year: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
 
 export function SalaryComputePage() {
   const { hasPermission } = useAuth();
@@ -32,6 +41,11 @@ export function SalaryComputePage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [aiSummary, setAiSummary] = useState<PayrollAiSummary | null>(null);
+  /** Period key currently hydrated into drafts — avoids wiping edits on background refetch. */
+  const [hydratedPeriod, setHydratedPeriod] = useState<string | null>(null);
+  const [hasUnsavedLocal, setHasUnsavedLocal] = useState(false);
+  const skipPersistRef = useRef(false);
+  const dirtyRef = useRef(false);
   const saveSheet = useSavePayrollSheet();
   const aiSummaryMutation = usePayrollAiSummary();
 
@@ -52,16 +66,90 @@ export function SalaryComputePage() {
       : { periodMonth: month, periodYear: year, taxYearId: Number(activeTaxId) },
   );
 
-  useEffect(() => {
-    if (compute.data) {
-      setDrafts(draftFromResult(compute.data));
-      setRemovedIds([]);
-    }
-  }, [compute.data]);
+  const currentPeriod = periodKey(month, year);
 
   useEffect(() => {
+    if (!compute.data) return;
+    const dataPeriod = periodKey(compute.data.periodMonth, compute.data.periodYear);
+    if (dataPeriod !== currentPeriod) return;
+
+    // Same period already loaded: only fill in new employees, never wipe edits.
+    if (hydratedPeriod === currentPeriod) {
+      setDrafts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const e of compute.data.employees) {
+          if (!next[e.employeeId]) {
+            next[e.employeeId] = draftFromEmployee(e);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      return;
+    }
+
+    skipPersistRef.current = true;
+    const base = draftFromResult(compute.data);
+    const stored = canEdit ? loadSalarySheetDraft(month, year) : null;
+    if (stored) {
+      const merged = { ...base };
+      for (const [id, draft] of Object.entries(stored.drafts)) {
+        const empId = Number(id);
+        if (merged[empId]) merged[empId] = { ...merged[empId], ...draft };
+      }
+      const validRemoved = stored.removedIds.filter((id) =>
+        compute.data.employees.some((e) => e.employeeId === id),
+      );
+      setDrafts(merged);
+      setRemovedIds(validRemoved);
+      dirtyRef.current = true;
+      setHasUnsavedLocal(true);
+      const when = new Date(stored.savedAt);
+      setMessage(
+        `Restored unsaved salary sheet edits from ${when.toLocaleString()} — Save to keep them permanently.`,
+      );
+    } else {
+      setDrafts(base);
+      setRemovedIds([]);
+      dirtyRef.current = false;
+      setHasUnsavedLocal(false);
+    }
+    setHydratedPeriod(currentPeriod);
+    queueMicrotask(() => {
+      skipPersistRef.current = false;
+    });
+  }, [compute.data, currentPeriod, hydratedPeriod, month, year, canEdit]);
+
+  // Reset hydration marker when switching month/year so the next compute result reloads.
+  useEffect(() => {
+    setHydratedPeriod(null);
     setAiSummary(null);
+    setHasUnsavedLocal(false);
+    dirtyRef.current = false;
   }, [month, year]);
+
+  // Persist drafts to localStorage while editing (survives refresh / idle / tab close).
+  useEffect(() => {
+    if (!canEdit || hydratedPeriod !== currentPeriod || skipPersistRef.current) return;
+    if (!dirtyRef.current) return;
+    const timer = window.setTimeout(() => {
+      saveSalarySheetDraft(month, year, { drafts, removedIds });
+      setHasUnsavedLocal(true);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [drafts, removedIds, month, year, canEdit, hydratedPeriod, currentPeriod]);
+
+  // Warn before leaving the page with unsaved local edits.
+  useEffect(() => {
+    if (!canEdit || !hasUnsavedLocal) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [canEdit, hasUnsavedLocal]);
 
   const displayResult: PayrollComputeResult | null = useMemo(() => {
     if (!compute.data) return null;
@@ -74,6 +162,7 @@ export function SalaryComputePage() {
   }, [compute.data, removedIds]);
 
   function patchDraft(employeeId: number, patch: Partial<SheetDraft>) {
+    dirtyRef.current = true;
     setDrafts((prev) => ({
       ...prev,
       [employeeId]: { ...prev[employeeId], ...patch } as SheetDraft,
@@ -86,6 +175,7 @@ export function SalaryComputePage() {
       `Remove ${fullName} from this month's salary sheet?\n\nSave the sheet to keep them removed. A professional attendance import for this month can bring them back.`,
     );
     if (!ok) return;
+    dirtyRef.current = true;
     setRemovedIds((prev) => (prev.includes(employeeId) ? prev : [...prev, employeeId]));
     setDrafts((prev) => {
       const next = { ...prev };
@@ -94,6 +184,26 @@ export function SalaryComputePage() {
     });
     setMessage(`${fullName} removed from this sheet — save to keep the change.`);
     setError(null);
+  }
+
+  function discardLocalEdits() {
+    const ok = window.confirm(
+      "Discard unsaved salary sheet edits for this month and reload from the last saved version?",
+    );
+    if (!ok) return;
+    clearSalarySheetDraft(month, year);
+    skipPersistRef.current = true;
+    dirtyRef.current = false;
+    setHasUnsavedLocal(false);
+    if (compute.data) {
+      setDrafts(draftFromResult(compute.data));
+      setRemovedIds([]);
+    }
+    setHydratedPeriod(currentPeriod);
+    setMessage("Unsaved local edits discarded.");
+    queueMicrotask(() => {
+      skipPersistRef.current = false;
+    });
   }
 
   async function save() {
@@ -145,12 +255,17 @@ export function SalaryComputePage() {
         periodYear: year,
         items: [...keptItems, ...removedItems],
       });
+      clearSalarySheetDraft(month, year);
+      dirtyRef.current = false;
+      setHasUnsavedLocal(false);
+      setRemovedIds([]);
+      // Next compute refetch should become the new baseline (no local draft).
+      setHydratedPeriod(null);
       setMessage(
         removedItems.length
           ? `Salary sheet saved (${removedItems.length} row${removedItems.length === 1 ? "" : "s"} removed)`
           : "Salary sheet saved",
       );
-      setRemovedIds([]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Save failed");
     }
@@ -203,6 +318,11 @@ export function SalaryComputePage() {
                 {saveSheet.isPending ? "Saving…" : "Save salary sheet"}
               </Button>
             ) : null}
+            {canEdit && hasUnsavedLocal ? (
+              <Button variant="secondary" onClick={discardLocalEdits}>
+                Discard local edits
+              </Button>
+            ) : null}
             <Button variant="secondary" disabled={!compute.data} onClick={downloadExcel}>
               Download Excel
             </Button>
@@ -230,9 +350,23 @@ export function SalaryComputePage() {
             half-day deduction, tax, and net payable. Tax slabs apply to net (gross minus late,
             half-day, loan, and advance) — not gross. Absent (A) is no-shows only — late absents
             are a separate column and never add into A. Leave forgives pay only — +1 Leave raises
-            Present / net but does not change Absent. Use the trash icon to remove a row, then
-            Save. Full screen expands the editor. Present and absent stay on a 30-day month.
+            Present / net but does not change Absent. Unsaved edits are remembered in this browser
+            if you leave or the page refreshes — Save to store them on the server. Use the trash
+            icon to remove a row, then Save. Full screen expands the editor.
           </p>
+          {hasUnsavedLocal ? (
+            <p
+              style={{
+                margin: 0,
+                color: "var(--color-status-warning)",
+                fontSize: "var(--text-sm)",
+                fontWeight: 500,
+              }}
+            >
+              Unsaved edits are stored locally for this month. Save salary sheet to keep them
+              permanently.
+            </p>
+          ) : null}
           <div
             style={{
               display: "grid",
