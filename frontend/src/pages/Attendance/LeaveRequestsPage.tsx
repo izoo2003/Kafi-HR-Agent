@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -11,14 +11,40 @@ import { Pagination } from "../../components/ui/Pagination";
 import { useCreateLeave, useLeaveRequests, useUpdateLeave } from "../../hooks/useAttendance";
 import { useEmployees } from "../../hooks/useEmployees";
 import { usePagination } from "../../hooks/usePagination";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { LEAVE_STATUS_LABELS, LEAVE_TYPE_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import {
+  clearLocalDraft,
+  formatDraftRestoredMessage,
+  loadLocalDraft,
+} from "../../lib/localDraft";
 import { isSelfService } from "../../lib/selfService";
 import "./LeaveRequestsPage.css";
 
+type LeaveForm = {
+  employeeId: string;
+  leaveType: "annual" | "sick" | "unpaid" | "other";
+  startDate: string;
+  endDate: string;
+  reason: string;
+};
+
+const EMPTY_LEAVE_FORM: LeaveForm = {
+  employeeId: "",
+  leaveType: "annual",
+  startDate: "",
+  endDate: "",
+  reason: "",
+};
+
+function leaveFormIsMeaningful(data: LeaveForm): boolean {
+  return Boolean(data.startDate || data.endDate || data.reason.trim());
+}
+
 export function LeaveRequestsPage() {
-  const { hasPermission, user } = useAuth();
+  const { hasPermission, user, loading: authLoading } = useAuth();
   const selfService = isSelfService(user);
   const canApprove = hasPermission("attendance", "approve");
   const canWrite = hasPermission("attendance", "write");
@@ -34,14 +60,39 @@ export function LeaveRequestsPage() {
   const create = useCreateLeave();
   const update = useUpdateLeave();
 
-  const [form, setForm] = useState({
-    employeeId: "",
-    leaveType: "annual" as const,
-    startDate: "",
-    endDate: "",
-    reason: "",
-  });
+  const draftScope =
+    user?.userId != null ? `leave_request_form:${user.userId}` : "leave_request_form";
+  const draftRestoredRef = useRef(false);
+
+  const [form, setForm] = useState<LeaveForm>(EMPTY_LEAVE_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+
+  const formDirty = leaveFormIsMeaningful(form);
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty: formDirty,
+    data: form,
+    enabled: canSubmit,
+    isEmpty: (d) => !leaveFormIsMeaningful(d),
+  });
+
+  useEffect(() => {
+    if (authLoading || draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+    const draft = loadLocalDraft<LeaveForm>(draftScope);
+    if (!draft?.data) return;
+    setForm({
+      ...EMPTY_LEAVE_FORM,
+      ...draft.data,
+      leaveType: draft.data.leaveType ?? "annual",
+      employeeId:
+        selfService && user?.linkedEmployeeId
+          ? String(user.linkedEmployeeId)
+          : (draft.data.employeeId ?? ""),
+    });
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "leave request draft"));
+  }, [authLoading, draftScope, selfService, user?.linkedEmployeeId]);
 
   useEffect(() => {
     if (selfService && user?.linkedEmployeeId) {
@@ -52,6 +103,7 @@ export function LeaveRequestsPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setDraftMessage(null);
     const employeeId = selfService
       ? Number(user?.linkedEmployeeId)
       : Number(form.employeeId);
@@ -71,11 +123,12 @@ export function LeaveRequestsPage() {
         endDate: form.endDate,
         reason: form.reason.trim() || undefined,
       });
-      setForm((prev) => ({
-        ...prev,
-        reason: "",
-        employeeId: selfService && user?.linkedEmployeeId ? String(user.linkedEmployeeId) : "",
-      }));
+      clearLocalDraft(draftScope);
+      setForm({
+        ...EMPTY_LEAVE_FORM,
+        employeeId:
+          selfService && user?.linkedEmployeeId ? String(user.linkedEmployeeId) : "",
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not submit leave request");
     }
@@ -94,6 +147,7 @@ export function LeaveRequestsPage() {
       />
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         {canSubmit ? (
           <section className="card">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -12,8 +12,10 @@ import {
   useTaxYears,
   useUpdateTaxYear,
 } from "../../hooks/usePayroll";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { useAuth } from "../../hooks/useAuth";
 import { ApiError } from "../../api/client";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type { TaxSlabInput } from "../../types/payroll";
 
 function emptySlab(order: number): TaxSlabInput {
@@ -48,6 +50,9 @@ export function TaxSlabsPage() {
   const [newLabel, setNewLabel] = useState("");
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const restoredRef = useRef(false);
+  const keepRestoredSlabsRef = useRef(false);
 
   const selected = useMemo(
     () => (years.data ?? []).find((y) => y.id === selectedId) ?? null,
@@ -63,6 +68,10 @@ export function TaxSlabsPage() {
   }, [years.data, selectedId]);
 
   useEffect(() => {
+    if (keepRestoredSlabsRef.current) {
+      keepRestoredSlabsRef.current = false;
+      return;
+    }
     if (!selected) {
       setSlabs([]);
       return;
@@ -79,6 +88,44 @@ export function TaxSlabsPage() {
     );
   }, [selected]);
 
+  const draftScope = "tax_slabs_page";
+  const draftDirty =
+    selectedId !== "" ||
+    slabs.length > 0 ||
+    Boolean(newLabel.trim() || newStart || newEnd);
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty: draftDirty,
+    enabled: canWrite,
+    data: { selectedId, slabs, newLabel, newStart, newEnd },
+    isEmpty: (d) =>
+      d.selectedId === "" &&
+      d.slabs.length === 0 &&
+      !d.newLabel.trim() &&
+      !d.newStart &&
+      !d.newEnd,
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      selectedId: number | "";
+      slabs: TaxSlabInput[];
+      newLabel: string;
+      newStart: string;
+      newEnd: string;
+    }>(draftScope);
+    if (!draft?.data) return;
+    keepRestoredSlabsRef.current = true;
+    setSelectedId(draft.data.selectedId ?? "");
+    setSlabs(draft.data.slabs ?? []);
+    setNewLabel(draft.data.newLabel ?? "");
+    setNewStart(draft.data.newStart ?? "");
+    setNewEnd(draft.data.newEnd ?? "");
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "tax slab draft"));
+  }, []);
+
   function updateSlab(idx: number, patch: Partial<TaxSlabInput>) {
     setSlabs((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   }
@@ -87,11 +134,13 @@ export function TaxSlabsPage() {
     if (!selected) return;
     setError(null);
     setMessage(null);
+    setDraftMessage(null);
     try {
       await replaceSlabs.mutateAsync({
         id: selected.id,
         slabs: slabs.map((s, i) => ({ ...s, sortOrder: i + 1 })),
       });
+      clearLocalDraft(draftScope);
       setMessage("Tax slabs saved");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save slabs");
@@ -102,6 +151,7 @@ export function TaxSlabsPage() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    setDraftMessage(null);
     try {
       const created = await createYear.mutateAsync({
         label: newLabel.trim(),
@@ -119,6 +169,7 @@ export function TaxSlabsPage() {
       setNewLabel("");
       setNewStart("");
       setNewEnd("");
+      clearLocalDraft(draftScope);
       setMessage(`Tax year ${created.label} created`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create tax year");
@@ -152,6 +203,7 @@ export function TaxSlabsPage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)", margin: 0 }}>{message}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)", margin: 0 }}>{draftMessage}</p> : null}
 
         <Card>
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Tax year</h2>

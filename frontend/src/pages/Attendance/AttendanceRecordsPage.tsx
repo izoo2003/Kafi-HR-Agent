@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -22,6 +22,8 @@ import { syncBiometric, attendanceImportTemplateCsv } from "../../api/attendance
 import { ATTENDANCE_STATUS_LABELS } from "../../constants/statusLabels";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import { isSelfService } from "../../lib/selfService";
 
 function currentMonthValue(): string {
@@ -60,15 +62,55 @@ export function AttendanceRecordsPage() {
   const [bioMsg, setBioMsg] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "monthly">("list");
   const [monthValue, setMonthValue] = useState(currentMonthValue());
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const restoredRef = useRef(false);
   const monthlyYear = Number(monthValue.slice(0, 4));
   const monthlyMonth = Number(monthValue.slice(5, 7));
   const monthlyGrid = useMonthlyAttendanceGrid(
     viewMode === "monthly" ? { year: monthlyYear, month: monthlyMonth } : null,
   );
 
+  const draftScope = selfService
+    ? `attendance_records:${user?.linkedEmployeeId ?? "self"}`
+    : `attendance_records:${user?.userId ?? "staff"}`;
+  const formDirty =
+    Boolean(form.employeeId || form.date || form.markAbsent || form.checkIn !== "09:00" || form.checkOut !== "18:00") ||
+    viewMode !== "list" ||
+    monthValue !== currentMonthValue();
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty: formDirty,
+    enabled: canWrite,
+    data: { form, viewMode, monthValue },
+    isEmpty: (d) =>
+      !d.form.employeeId &&
+      d.form.date === new Date().toISOString().slice(0, 10) &&
+      d.form.checkIn === "09:00" &&
+      d.form.checkOut === "18:00" &&
+      !d.form.markAbsent &&
+      d.viewMode === "list" &&
+      d.monthValue === currentMonthValue(),
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      form: typeof form;
+      viewMode: "list" | "monthly";
+      monthValue: string;
+    }>(draftScope);
+    if (!draft?.data) return;
+    setForm((prev) => ({ ...prev, ...draft.data.form }));
+    setViewMode(draft.data.viewMode ?? "list");
+    setMonthValue(draft.data.monthValue ?? currentMonthValue());
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "attendance draft"));
+  }, [draftScope]);
+
   async function onCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setDraftMessage(null);
     try {
       const date = form.date;
       await create.mutateAsync({
@@ -77,7 +119,14 @@ export function AttendanceRecordsPage() {
         checkIn: form.markAbsent ? null : `${date}T${form.checkIn}:00+05:00`,
         checkOut: form.markAbsent ? null : `${date}T${form.checkOut}:00+05:00`,
       });
-      setForm((prev) => ({ ...prev, markAbsent: false }));
+      clearLocalDraft(draftScope);
+      setForm({
+        employeeId: "",
+        date: new Date().toISOString().slice(0, 10),
+        checkIn: "09:00",
+        checkOut: "18:00",
+        markAbsent: false,
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create record");
     }
@@ -111,6 +160,7 @@ export function AttendanceRecordsPage() {
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {importResult ? <p style={{ color: "var(--color-text-secondary)" }}>{importResult}</p> : null}
         {bioMsg ? <p style={{ color: "var(--color-status-warning)" }}>{bioMsg}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         <section className="card">
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Shift rules</h2>

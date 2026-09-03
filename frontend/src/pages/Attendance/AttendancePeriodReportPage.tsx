@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -14,8 +14,10 @@ import {
   useAttendancePeriodReport,
   useCreateEmployeesFromAttendanceExcel,
 } from "../../hooks/useAttendance";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { attendanceImportTemplateCsv } from "../../api/attendance";
 import { ApiError } from "../../api/client";
+import { formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type {
   AttendanceImportMode,
   AttendancePeriodReport,
@@ -174,8 +176,10 @@ export function AttendancePeriodReportPage() {
   const [saturdayOffMode, setSaturdayOffMode] = useState<SaturdayOffMode>("second_saturday");
   const [saturdayOffDate, setSaturdayOffDate] = useState("");
   const [extraHolidays, setExtraHolidays] = useState<string[]>([]);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const unmatched = report?.unmatchedPeople ?? [];
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const restoredRef = useRef(false);
 
   const selectedPeople = useMemo(
     () => unmatched.filter((p) => selected[`${p.fullName}|${p.excelEmployeeId ?? ""}`] !== false),
@@ -190,6 +194,38 @@ export function AttendancePeriodReportPage() {
       ...aggregateAttendanceTotals(emp.dailyEntries ?? [], report.latesPerOff),
     }));
   }, [report]);
+
+  useLocalDraftPersist({
+    scope: "attendance_period_report",
+    dirty:
+      saturdayOffMode !== "second_saturday" ||
+      Boolean(saturdayOffDate) ||
+      extraHolidays.some(Boolean) ||
+      reportView !== "summary",
+    data: { saturdayOffMode, saturdayOffDate, extraHolidays, reportView },
+    isEmpty: (d) =>
+      d.saturdayOffMode === "second_saturday" &&
+      !d.saturdayOffDate &&
+      d.extraHolidays.every((v: string) => !v) &&
+      d.reportView === "summary",
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      saturdayOffMode: SaturdayOffMode;
+      saturdayOffDate: string;
+      extraHolidays: string[];
+      reportView: "summary" | "monthly";
+    }>("attendance_period_report");
+    if (!draft?.data) return;
+    setSaturdayOffMode(draft.data.saturdayOffMode ?? "second_saturday");
+    setSaturdayOffDate(draft.data.saturdayOffDate ?? "");
+    setExtraHolidays(draft.data.extraHolidays ?? []);
+    setReportView(draft.data.reportView ?? "summary");
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "attendance import options"));
+  }, []);
 
   async function runAnalyze(file: File, importMode: AttendanceImportMode) {
     if (saturdayOffMode === "date") {
@@ -529,6 +565,7 @@ export function AttendancePeriodReportPage() {
         </Card>
 
         {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)", margin: 0 }}>{draftMessage}</p> : null}
         {info ? (
           <p
             style={{

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
@@ -18,6 +18,8 @@ import {
   viewEmployeeLetter,
 } from "../../api/employees";
 import { ApiError } from "../../api/client";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type { Employee } from "../../types/employees";
 
 type LetterKind = "appointment" | "contract";
@@ -101,12 +103,26 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
   const [editFilename, setEditFilename] = useState("");
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const copy = COPY[kind];
 
   const deptNameById = useMemo(() => {
     const map = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
     return (id: number) => map.get(id) ?? `#${id}`;
   }, [departments.data]);
+
+  const editDraftScope = editFor ? `employee_letter:${kind}:${editFor.id}` : "";
+  useLocalDraftPersist({
+    scope: editDraftScope,
+    dirty: Boolean(editFor && editParagraphs.some((p) => p.trim()) ),
+    enabled: Boolean(editFor),
+    data: { paragraphs: editParagraphs, filename: editFilename },
+    isEmpty: (d) => !(d.paragraphs ?? []).some((p: string) => p.trim()),
+  });
+
+  useEffect(() => {
+    if (!editFor) setDraftMessage(null);
+  }, [editFor]);
 
   function closeVerify() {
     if (verifyPreview) URL.revokeObjectURL(verifyPreview);
@@ -125,6 +141,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
   }
 
   function closeEdit() {
+    setDraftMessage(null);
     setEditFor(null);
     setEditParagraphs([]);
     setEditFilename("");
@@ -145,7 +162,19 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     setEditParagraphs([]);
     try {
       const content = await getEmployeeLetterContent(emp.id, kind);
-      setEditParagraphs(content.paragraphs.length ? content.paragraphs : [""]);
+      const restored = loadLocalDraft<{ paragraphs: string[]; filename: string }>(
+        `employee_letter:${kind}:${emp.id}`,
+      );
+      setEditParagraphs(
+        restored?.data?.paragraphs?.length
+          ? restored.data.paragraphs
+          : content.paragraphs.length
+            ? content.paragraphs
+            : [""],
+      );
+      if (restored?.data) {
+        setDraftMessage(formatDraftRestoredMessage(restored.savedAt, "letter draft"));
+      }
       setEditFilename(content.filename);
     } catch (err) {
       closeEdit();
@@ -230,9 +259,11 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     setEditSaving(true);
     try {
       const saved = await saveEmployeeLetterContent(editFor.id, kind, cleaned);
+      clearLocalDraft(`employee_letter:${kind}:${editFor.id}`);
       setEditParagraphs(saved.paragraphs.length ? saved.paragraphs : [""]);
       setEditFilename(saved.filename);
       setMessage(`Letter saved for ${editFor.fullName}.`);
+      setDraftMessage(null);
       await employees.refetch();
       const blob = await viewEmployeeLetter(editFor.id, kind);
       downloadBlob(blob, fileName(kind, editFor));
@@ -296,6 +327,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-info)" }}>{message}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         <label className="form-field" style={{ maxWidth: 220 }}>
           <span className="form-field__label">Show</span>

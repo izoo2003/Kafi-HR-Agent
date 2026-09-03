@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -9,7 +9,9 @@ import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { KPI_STATUS_LABELS } from "../../constants/statusLabels";
 import { useAuth } from "../../hooks/useAuth";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { useDepartments, useEmployees } from "../../hooks/useEmployees";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import { isSelfService } from "../../lib/selfService";
 import {
   useAiSuggestKpiEntry,
@@ -200,6 +202,8 @@ export function KpiDashboardPage() {
   const [aiReasoning, setAiReasoning] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const restoredRef = useRef(false);
 
   const workDays = dailySummary.data?.days ?? [];
 
@@ -212,6 +216,74 @@ export function KpiDashboardPage() {
     }
     return [...groups.values()];
   }, [workLogs.data]);
+
+  const draftScope = selfService
+    ? `kpi_dashboard:self:${user?.linkedEmployeeId ?? "self"}`
+    : `kpi_dashboard:manager:${user?.userId ?? "staff"}`;
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty:
+      month !== `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}` ||
+      Boolean(selectedDay) ||
+      departmentId !== (selfService && user?.departmentId ? user.departmentId : "") ||
+      employeeId !== "" ||
+      workDone.trim().length > 0 ||
+      Boolean(formattedWork) ||
+      pointsToAdd != null ||
+      effortLevel != null ||
+      effortScore != null ||
+      Boolean(aiReasoning),
+    data: {
+      month,
+      selectedDay,
+      departmentId,
+      employeeId,
+      workDone,
+      formattedWork,
+      pointsToAdd,
+      effortLevel,
+      effortScore,
+      aiReasoning,
+    },
+    isEmpty: (d) =>
+      !d.selectedDay &&
+      d.employeeId === "" &&
+      !d.workDone.trim() &&
+      !d.formattedWork &&
+      d.pointsToAdd == null &&
+      d.effortLevel == null &&
+      d.effortScore == null &&
+      !d.aiReasoning,
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      month: string;
+      selectedDay: string;
+      departmentId: number | "";
+      employeeId: number | "";
+      workDone: string;
+      formattedWork: string | null;
+      pointsToAdd: number | null;
+      effortLevel: "trivial" | "light" | "moderate" | "substantial" | "exceptional" | null;
+      effortScore: number | null;
+      aiReasoning: string | null;
+    }>(draftScope);
+    if (!draft?.data) return;
+    setMonth(draft.data.month ?? month);
+    setSelectedDay(draft.data.selectedDay ?? "");
+    setDepartmentId(draft.data.departmentId ?? (selfService && user?.departmentId ? user.departmentId : ""));
+    setEmployeeId(draft.data.employeeId ?? "");
+    setWorkDone(draft.data.workDone ?? "");
+    setFormattedWork(draft.data.formattedWork ?? null);
+    setPointsToAdd(draft.data.pointsToAdd ?? null);
+    setEffortLevel(draft.data.effortLevel ?? null);
+    setEffortScore(draft.data.effortScore ?? null);
+    setAiReasoning(draft.data.aiReasoning ?? null);
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "KPI draft"));
+  }, [draftScope, selfService, user?.departmentId, month]);
 
   function onMonthChange(value: string) {
     setMonth(value);
@@ -260,6 +332,7 @@ export function KpiDashboardPage() {
         pointsToAdd: pointsToAdd ?? undefined,
         effortLevel,
       });
+      clearLocalDraft(draftScope);
       setWorkDone("");
       setFormattedWork(null);
       setPointsToAdd(null);
@@ -446,6 +519,7 @@ export function KpiDashboardPage() {
 
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         {selfService ? (
           empSummary.isLoading ? (

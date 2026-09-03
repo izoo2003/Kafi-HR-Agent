@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -8,6 +8,7 @@ import { StatusBadge } from "../../components/ui/Badge";
 import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { useDepartments } from "../../hooks/useEmployees";
 import {
   useEmployeeDevelopmentEmployees,
@@ -18,6 +19,7 @@ import {
   useEmployeeTrainingList,
   useRecommendEmployeeTraining,
 } from "../../hooks/useEmployeeTraining";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type { TrainingCourseRecommendation } from "../../types/employeeTraining";
 
 const selectStyle: CSSProperties = {
@@ -56,6 +58,8 @@ export function EmployeeTrainingPage() {
   const [lastTopic, setLastTopic] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const restoredRef = useRef(false);
 
   const departments = useDepartments();
   const assigned = useEmployeeTrainingList(
@@ -75,6 +79,55 @@ export function EmployeeTrainingPage() {
       (departments.data ?? []).find((d) => d.id === selectedEmployee.departmentId)?.name ?? null
     );
   }, [departments.data, selectedEmployee]);
+
+  const draftScope = "employee_training";
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty:
+      employeeId !== "" ||
+      topic.trim().length > 0 ||
+      promptOpen ||
+      recommendations.length > 0 ||
+      selected.size > 0 ||
+      lastTopic.trim().length > 0,
+    enabled: canWrite,
+    data: {
+      employeeId,
+      topic,
+      promptOpen,
+      recommendations,
+      selected: [...selected],
+      lastTopic,
+    },
+    isEmpty: (d) =>
+      d.employeeId === "" &&
+      !d.topic.trim() &&
+      !d.promptOpen &&
+      d.recommendations.length === 0 &&
+      d.selected.length === 0 &&
+      !d.lastTopic.trim(),
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      employeeId: number | "";
+      topic: string;
+      promptOpen: boolean;
+      recommendations: TrainingCourseRecommendation[];
+      selected: string[];
+      lastTopic: string;
+    }>(draftScope);
+    if (!draft?.data) return;
+    setEmployeeIdBase(draft.data.employeeId ?? "");
+    setTopic(draft.data.topic ?? "");
+    setPromptOpen(Boolean(draft.data.promptOpen));
+    setRecommendations(draft.data.recommendations ?? []);
+    setSelected(new Set(draft.data.selected ?? []));
+    setLastTopic(draft.data.lastTopic ?? "");
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "training draft"));
+  }, [setEmployeeIdBase]);
 
   function onEmployeeChange(id: number | "") {
     setEmployeeIdBase(id);
@@ -116,9 +169,13 @@ export function EmployeeTrainingPage() {
         topic: lastTopic,
         courses,
       });
+      clearLocalDraft(draftScope);
       setSuccess(`Assigned ${res.items.length} course(s). They appear under Things To Learn.`);
       setRecommendations([]);
       setSelected(new Set());
+      setTopic("");
+      setLastTopic("");
+      setPromptOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not assign courses");
     }
@@ -207,6 +264,9 @@ export function EmployeeTrainingPage() {
           ) : null}
           {error ? (
             <p style={{ color: "var(--color-status-critical)", marginBottom: 0 }}>{error}</p>
+          ) : null}
+          {draftMessage ? (
+            <p style={{ color: "var(--color-status-warning)", marginBottom: 0 }}>{draftMessage}</p>
           ) : null}
           {success ? (
             <p style={{ color: "var(--color-status-positive)", marginBottom: 0 }}>{success}</p>

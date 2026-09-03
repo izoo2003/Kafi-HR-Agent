@@ -19,6 +19,12 @@ import { Spinner } from "../../components/ui/Spinner";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
 import { useHrPolicies, useSaveHrPolicies } from "../../hooks/useHrPolicies";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
+import {
+  clearLocalDraft,
+  formatDraftRestoredMessage,
+  loadLocalDraft,
+} from "../../lib/localDraft";
 import type {
   HrPoliciesDocument,
   HrPolicyIcon,
@@ -26,6 +32,8 @@ import type {
   HrPolicySection,
 } from "../../types/hrPolicies";
 import "./HrPoliciesPage.css";
+
+const HR_POLICIES_DRAFT_SCOPE = "hr_policies_doc";
 
 const ICONS: Record<HrPolicyIcon, ReactNode> = {
   documents: <FileText size={18} strokeWidth={1.75} aria-hidden />,
@@ -99,12 +107,32 @@ export function HrPoliciesPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<HrPoliciesDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const restoredRef = useRef(false);
+
+  useLocalDraftPersist({
+    scope: HR_POLICIES_DRAFT_SCOPE,
+    dirty: editing && draft != null,
+    enabled: canEdit && editing && draft != null,
+    data: draft,
+    isEmpty: () => false,
+  });
 
   useEffect(() => {
     if (!editing && query.data) {
       setDraft(cloneDoc(query.data));
     }
   }, [query.data, editing]);
+
+  useEffect(() => {
+    if (restoredRef.current || !query.data) return;
+    restoredRef.current = true;
+    const stored = loadLocalDraft<HrPoliciesDocument>(HR_POLICIES_DRAFT_SCOPE);
+    if (!stored?.data) return;
+    setDraft(cloneDoc(stored.data));
+    setEditing(true);
+    setDraftMessage(formatDraftRestoredMessage(stored.savedAt, "HR policies draft"));
+  }, [query.data]);
 
   async function copyAll() {
     const text = bodyRef.current?.innerText.replace(/\n{3,}/g, "\n\n").trim() ?? "";
@@ -167,6 +195,8 @@ export function HrPoliciesPage() {
     }
     try {
       await saveMut.mutateAsync(payload);
+      clearLocalDraft(HR_POLICIES_DRAFT_SCOPE);
+      setDraftMessage(null);
       setEditing(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save HR policies");
@@ -264,6 +294,7 @@ export function HrPoliciesPage() {
           <p style={{ color: "var(--color-status-critical)" }}>Could not load HR policies.</p>
         ) : null}
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
         {doc ? (
           <article ref={bodyRef} className="hr-policies">
             <Card className="hr-policies__welcome" status="info">

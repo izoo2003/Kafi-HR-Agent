@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Paperclip, Sparkles } from "lucide-react";
 import { PageHeader } from "../../components/layout/AppShell";
@@ -23,7 +23,9 @@ import {
   useGenerateDepartmentAiDraft,
   useUpdateDepartment,
 } from "../../hooks/useEmployees";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import { useAuth } from "../../hooks/useAuth";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type { Department, DepartmentDocument, DepartmentDocumentKind } from "../../types/employees";
 
 const ATTACH_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf";
@@ -206,7 +208,65 @@ export function DepartmentManagePage() {
   const [aiKind, setAiKind] = useState<DepartmentDocumentKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [filePreview, setFilePreview] = useState<FilePreviewRequest | null>(null);
+  const restoredRef = useRef(false);
+
+  const draftScope = "department_manage";
+  const draftDirty = Boolean(
+    deptName.trim() ||
+      deptJd.trim() ||
+      deptSops.trim() ||
+      editingDeptId != null ||
+      editingDeptName.trim() ||
+      editingDeptJd.trim() ||
+      editingDeptSops.trim(),
+  );
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty: draftDirty,
+    enabled: canWrite,
+    data: {
+      deptName,
+      deptJd,
+      deptSops,
+      editingDeptId,
+      editingDeptName,
+      editingDeptJd,
+      editingDeptSops,
+    },
+    isEmpty: (d) =>
+      !d.deptName.trim() &&
+      !d.deptJd.trim() &&
+      !d.deptSops.trim() &&
+      d.editingDeptId == null &&
+      !d.editingDeptName.trim() &&
+      !d.editingDeptJd.trim() &&
+      !d.editingDeptSops.trim(),
+  });
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadLocalDraft<{
+      deptName: string;
+      deptJd: string;
+      deptSops: string;
+      editingDeptId: number | null;
+      editingDeptName: string;
+      editingDeptJd: string;
+      editingDeptSops: string;
+    }>(draftScope);
+    if (!draft?.data) return;
+    setDeptName(draft.data.deptName ?? "");
+    setDeptJd(draft.data.deptJd ?? "");
+    setDeptSops(draft.data.deptSops ?? "");
+    setEditingDeptId(draft.data.editingDeptId ?? null);
+    setEditingDeptName(draft.data.editingDeptName ?? "");
+    setEditingDeptJd(draft.data.editingDeptJd ?? "");
+    setEditingDeptSops(draft.data.editingDeptSops ?? "");
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "department draft"));
+  }, []);
 
   function clearEdit() {
     setEditingDeptId(null);
@@ -278,6 +338,7 @@ export function DepartmentManagePage() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    setDraftMessage(null);
     try {
       const created = await createDept.mutateAsync({
         name: deptName.trim(),
@@ -292,6 +353,7 @@ export function DepartmentManagePage() {
       setDeptSops("");
       setPendingJdFiles([]);
       setPendingSopFiles([]);
+      clearLocalDraft(draftScope);
       setMessage("Department created — it will appear when creating or editing an employee.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create department");
@@ -306,6 +368,7 @@ export function DepartmentManagePage() {
     }
     setError(null);
     setMessage(null);
+    setDraftMessage(null);
     try {
       await updateDept.mutateAsync({
         id,
@@ -316,6 +379,7 @@ export function DepartmentManagePage() {
         },
       });
       clearEdit();
+      clearLocalDraft(draftScope);
       setMessage("Department updated.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update department");
@@ -391,6 +455,7 @@ export function DepartmentManagePage() {
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         {canWrite ? (
           <Card>

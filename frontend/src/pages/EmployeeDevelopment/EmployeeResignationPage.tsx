@@ -11,6 +11,7 @@ import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { RESIGNATION_STATUS_LABELS } from "../../constants/statusLabels";
 import { useAuth } from "../../hooks/useAuth";
+import { useLocalDraftPersist } from "../../hooks/useLocalDraftPersist";
 import {
   useEmployeeDevelopmentEmployees,
 } from "../../hooks/useEmployeeDevelopmentEmployees";
@@ -25,6 +26,7 @@ import {
   useUpdateEmployeeResignation,
   useWithdrawEmployeeResignation,
 } from "../../hooks/useEmployeeResignation";
+import { clearLocalDraft, formatDraftRestoredMessage, loadLocalDraft } from "../../lib/localDraft";
 import type { EmployeeResignation, ResignationStatus } from "../../types/employeeResignation";
 
 function statusBadge(status: string): string {
@@ -62,6 +64,7 @@ export function EmployeeResignationPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
   const listEmployeeId = selfService
     ? user?.linkedEmployeeId ?? null
@@ -78,6 +81,39 @@ export function EmployeeResignationPage() {
   const accept = useAcceptEmployeeResignation();
   const reject = useRejectEmployeeResignation();
 
+  const draftScope = selfService
+    ? `employee_resignation:self:${user?.linkedEmployeeId ?? "self"}`
+    : `employee_resignation:hr:${user?.userId ?? "staff"}`;
+  useLocalDraftPersist({
+    scope: draftScope,
+    dirty:
+      employeeId !== "" ||
+      reason.trim().length > 0 ||
+      subject.trim().length > 0 ||
+      letterBody.trim().length > 0 ||
+      rejectReason.trim().length > 0 ||
+      editing != null,
+    data: {
+      employeeId,
+      reason,
+      effectiveDate,
+      subject,
+      letterBody,
+      rejectReason,
+      draftId,
+      editing,
+    },
+    enabled: selfService || canWrite,
+    isEmpty: (d) =>
+      d.employeeId === "" &&
+      !d.reason.trim() &&
+      !d.subject.trim() &&
+      !d.letterBody.trim() &&
+      !d.rejectReason.trim() &&
+      d.draftId == null &&
+      d.editing == null,
+  });
+
   const myOpen = useMemo(() => {
     if (!selfService) return null;
     return (list.data?.items ?? []).find(
@@ -90,6 +126,29 @@ export function EmployeeResignationPage() {
   const composingId =
     draftId ??
     (myOpen && (myOpen.status === "draft" || myOpen.status === "rejected") ? myOpen.id : null);
+
+  useEffect(() => {
+    const draft = loadLocalDraft<{
+      employeeId: number | "";
+      reason: string;
+      effectiveDate: string;
+      subject: string;
+      letterBody: string;
+      rejectReason: string;
+      draftId: number | null;
+      editing: EmployeeResignation | null;
+    }>(draftScope);
+    if (!draft?.data) return;
+    setEmployeeId(draft.data.employeeId ?? "");
+    setReason(draft.data.reason ?? "");
+    setEffectiveDate(draft.data.effectiveDate ?? new Date().toISOString().slice(0, 10));
+    setSubject(draft.data.subject ?? "");
+    setLetterBody(draft.data.letterBody ?? "");
+    setRejectReason(draft.data.rejectReason ?? "");
+    setDraftId(draft.data.draftId ?? null);
+    setEditing(draft.data.editing ?? null);
+    setDraftMessage(formatDraftRestoredMessage(draft.savedAt, "resignation draft"));
+  }, [draftScope]);
 
   useEffect(() => {
     if (!selfService || draftId != null || !myOpen) return;
@@ -115,6 +174,7 @@ export function EmployeeResignationPage() {
     setLetterBody("");
     setReason("");
     setEffectiveDate(new Date().toISOString().slice(0, 10));
+    clearLocalDraft(draftScope);
   }
 
   async function onGenerate() {
@@ -153,6 +213,8 @@ export function EmployeeResignationPage() {
           effectiveDate: effectiveDate || null,
         });
         setDraftId(composingId);
+        clearLocalDraft(draftScope);
+        setDraftMessage(null);
         setMessage("Draft saved. Send it to HR when you are ready.");
       } else {
         const row = await create.mutateAsync({
@@ -163,6 +225,8 @@ export function EmployeeResignationPage() {
           submit: false,
         });
         setDraftId(row.id);
+        clearLocalDraft(draftScope);
+        setDraftMessage(null);
         setMessage("Draft saved. Send it to HR when you are ready.");
       }
     } catch (err) {
@@ -214,6 +278,7 @@ export function EmployeeResignationPage() {
         reason: reason.trim() || undefined,
         effectiveDate: effectiveDate || undefined,
       });
+      clearLocalDraft(draftScope);
       setSubject("");
       setLetterBody("");
       setReason("");
@@ -305,6 +370,8 @@ export function EmployeeResignationPage() {
         reason: editing.reason,
         effectiveDate: editing.effectiveDate,
       });
+      clearLocalDraft(draftScope);
+      setDraftMessage(null);
       setEditing(null);
       setMessage("Resignation notice updated.");
     } catch (err) {
@@ -325,6 +392,7 @@ export function EmployeeResignationPage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-positive)" }}>{message}</p> : null}
+        {draftMessage ? <p style={{ color: "var(--color-status-warning)" }}>{draftMessage}</p> : null}
 
         {selfService ? (
           employeeWaiting ? (

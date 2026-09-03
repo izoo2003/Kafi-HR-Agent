@@ -176,7 +176,7 @@ export function applyAttendancePatch(
   current: SheetDraft,
   patch: Partial<SheetDraft>,
   monthDays: number,
-  latesPerOff = 3,
+  _latesPerOff = 3,
 ): Partial<SheetDraft> {
   const next = { ...patch };
   const days = monthDays || 30;
