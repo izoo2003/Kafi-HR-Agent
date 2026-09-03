@@ -206,7 +206,7 @@ export function SalarySheet({
               <th className="salary-sheet__sub">Salary</th>
               <th className="salary-sheet__sub">P</th>
               <th className="salary-sheet__sub">A</th>
-              <th className="salary-sheet__sub" title="Paid leave days — each leave reduces absent by 1">
+              <th className="salary-sheet__sub" title="Paid leave days forgiven for salary — does not change Absent">
                 Leave
               </th>
               <th className="salary-sheet__sub">Days</th>

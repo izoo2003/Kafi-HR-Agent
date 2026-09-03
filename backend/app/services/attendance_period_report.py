@@ -509,7 +509,7 @@ def _persist_payroll_for_import(
             employee_id=row.employee_id,
             base_salary=row.base_salary,
             days_present=row.days_present,
-            days_absent=row.absents_after_leave,
+            days_absent=row.days_absent,
             days_late=row.days_late,
             days_half_day=row.days_half_day,
             leave_used=row.leave_used,

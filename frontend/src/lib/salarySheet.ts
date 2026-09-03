@@ -90,7 +90,8 @@ export function computeLiveRow(
   const monthDays = opts.monthDays || 30;
   const latesPerOff = opts.latesPerOff || 3;
   const base = d ? n(d.baseSalary) : n(emp.baseSalary);
-  const daysAbsent = d ? n(d.daysAbsent) : n(emp.absentsAfterLeave);
+  // Absent = recorded days (unchanged by Leave). Leave only affects pay via Present.
+  const daysAbsent = d ? n(d.daysAbsent) : n(emp.daysAbsent);
   const daysPresent = d ? n(d.daysPresent) : n(emp.daysPresent);
   const leaveUsed = d ? n(d.leaveUsed) : n(emp.leaveUsed);
   const daysLate = d ? n(d.daysLate) : n(emp.daysLate);
@@ -141,7 +142,7 @@ export function draftFromEmployee(e: PayrollComputeRow): SheetDraft {
   return {
     baseSalary: String(e.baseSalary ?? ""),
     daysPresent: String(e.daysPresent ?? 0),
-    daysAbsent: String(e.absentsAfterLeave ?? 0),
+    daysAbsent: String(e.daysAbsent ?? 0),
     leaveUsed: String(e.leaveUsed ?? 0),
     daysLate: String(e.daysLate ?? 0),
     daysHalfDay: String(e.daysHalfDay ?? 0),
@@ -173,19 +174,16 @@ export function applyAttendancePatch(
   const next = { ...patch };
   const days = monthDays || 30;
 
-  // Leave converts chargeable absents: +1 leave → −1 absent → +1 present (and vice versa).
+  // Leave forgives pay only: +1 leave → +1 present, Absent stays as recorded.
   if (patch.leaveUsed != null && patch.daysAbsent == null) {
     const prevLeave = n(current.leaveUsed);
+    const absent = n(current.daysAbsent);
     const requested = Math.max(0, n(patch.leaveUsed));
-    const delta = requested - prevLeave;
-    const currentAbsent = n(current.daysAbsent);
-    if (delta > 0) {
-      const applied = Math.min(delta, currentAbsent);
-      next.leaveUsed = String(prevLeave + applied);
-      next.daysAbsent = String(Math.max(0, currentAbsent - applied));
-    } else {
-      next.leaveUsed = String(requested);
-      next.daysAbsent = String(Math.max(0, currentAbsent - delta));
+    const leave = Math.min(requested, absent);
+    next.leaveUsed = String(leave);
+    if (patch.daysPresent == null) {
+      const delta = leave - prevLeave;
+      next.daysPresent = String(Math.max(0, n(current.daysPresent) + delta));
     }
   }
 
@@ -196,13 +194,22 @@ export function applyAttendancePatch(
     next.daysAbsent = String(Math.max(0, baseAbsent + nextLateOff));
   }
 
-  const absentForPresent = next.daysAbsent != null ? n(next.daysAbsent) : null;
-  if (absentForPresent != null && patch.daysPresent == null) {
-    next.daysPresent = String(Math.max(0, days - absentForPresent));
+  // Absent edits: keep Leave as forgiveness; Present = month − chargeable (Absent − Leave).
+  if (patch.daysAbsent != null && patch.daysPresent == null && next.daysPresent == null) {
+    const absent = Math.max(0, n(patch.daysAbsent));
+    const leave = Math.min(n(next.leaveUsed ?? current.leaveUsed), absent);
+    next.leaveUsed = String(leave);
+    next.daysPresent = String(Math.max(0, days - Math.max(0, absent - leave)));
+  } else if (next.daysAbsent != null && patch.daysPresent == null && next.daysPresent == null) {
+    // Late-driven absent change — same present rule.
+    const absent = Math.max(0, n(next.daysAbsent));
+    const leave = Math.min(n(next.leaveUsed ?? current.leaveUsed), absent);
+    next.leaveUsed = String(leave);
+    next.daysPresent = String(Math.max(0, days - Math.max(0, absent - leave)));
   }
-  if (patch.daysPresent != null && patch.daysAbsent == null && next.daysAbsent == null) {
-    next.daysAbsent = String(Math.max(0, days - n(patch.daysPresent)));
-  }
+
+  // Manual Present edits stand alone — do not rewrite recorded Absent or Leave.
+
   const calcInputs = [
     "baseSalary",
     "daysPresent",
