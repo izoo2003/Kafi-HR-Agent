@@ -15,7 +15,7 @@ from app.ingestion.employee_docs import delete_stored_file, read_stored_file, st
 from app.models.attendance import AttendanceRule
 from app.models.cv_screening import JobDescription
 from app.models.employees import Department, DepartmentDocument, Employee
-from app.models.kpi import KpiDefinition
+from app.models.kpi import KpiDefinition, KpiEntry
 from app.schemas.common import PERMISSION_RANK, AuthContext
 from app.schemas.employees import (
     DEPARTMENT_DOCUMENT_KINDS,
@@ -156,7 +156,6 @@ def delete_department(db: Session, auth: AuthContext, department_id: int) -> Non
     dept = get_department(db, department_id)
     employee_count = db.query(Employee).filter(Employee.department_id == department_id).count()
     jd_count = db.query(JobDescription).filter(JobDescription.department_id == department_id).count()
-    kpi_count = db.query(KpiDefinition).filter(KpiDefinition.department_id == department_id).count()
     rule_count = (
         db.query(AttendanceRule)
         .filter(AttendanceRule.applies_to_department_id == department_id)
@@ -167,8 +166,6 @@ def delete_department(db: Session, auth: AuthContext, department_id: int) -> Non
         blockers.append(f"{employee_count} employee(s)")
     if jd_count:
         blockers.append(f"{jd_count} job description(s)")
-    if kpi_count:
-        blockers.append(f"{kpi_count} KPI definition(s)")
     if rule_count:
         blockers.append(f"{rule_count} attendance rule(s)")
     if blockers:
@@ -177,6 +174,22 @@ def delete_department(db: Session, auth: AuthContext, department_id: int) -> Non
             + ", ".join(blockers)
             + ". Reassign or remove those records first."
         )
+
+    # KPIs are department-scoped. A leftover / seeded definition must not block deleting
+    # a unused department — remove entries then definitions for this department.
+    kpi_ids = [
+        row.id
+        for row in db.query(KpiDefinition.id).filter(KpiDefinition.department_id == department_id).all()
+    ]
+    kpi_removed = len(kpi_ids)
+    if kpi_ids:
+        db.query(KpiEntry).filter(KpiEntry.kpi_definition_id.in_(kpi_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(KpiDefinition).filter(KpiDefinition.id.in_(kpi_ids)).delete(
+            synchronize_session=False
+        )
+
     name = dept.name
     for doc in list(dept.documents or []):
         delete_stored_file(doc.file_path)
@@ -188,7 +201,7 @@ def delete_department(db: Session, auth: AuthContext, department_id: int) -> Non
         action="department.deleted",
         entity_type="department",
         entity_id=department_id,
-        before_state={"name": name},
+        before_state={"name": name, "kpi_definitions_removed": kpi_removed},
     )
 
 

@@ -39,6 +39,7 @@ export function buildJobPostingImagePrompt(input: JobPostingImagePromptInput): s
 
   const parts = [
     "Generate a professional LinkedIn hiring poster image for Kafi Group. Do not write a text-only reply — create the image.",
+    "OUTPUT FORMAT: Produce the poster as a PNG or JPG image file (raster image). Do not return SVG, PDF, or text-only output.",
     section("JOB TITLE", title),
     department ? `DEPARTMENT\n${department}` : null,
     section("DESCRIPTION", input.descriptionText),
@@ -52,6 +53,7 @@ export function buildJobPostingImagePrompt(input: JobPostingImagePromptInput): s
     [
       "DESIGN DIRECTIONS",
       "- Vertical recruitment poster (about 1080×1350) suitable for LinkedIn",
+      "- Deliver the final poster as PNG or JPG only",
       "- Company name: Kafi Group",
       "- Large, readable job title at the top",
       "- Two clear sections: Description and Responsibilities, using the copy above (do not invent extra duties)",

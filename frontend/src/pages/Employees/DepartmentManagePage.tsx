@@ -324,7 +324,7 @@ export function DepartmentManagePage() {
 
   async function onDeleteDept(id: number, name: string) {
     const ok = window.confirm(
-      `Remove department "${name}"?\n\nThis is only allowed if no employees, job descriptions, KPI definitions, or attendance rules still use it.`,
+      `Remove department "${name}"?\n\nThis is only allowed if no employees, job descriptions, or attendance rules still use it. Any KPI definitions for this department will be removed with it.`,
     );
     if (!ok) return;
     setError(null);

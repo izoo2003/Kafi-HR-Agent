@@ -14,12 +14,13 @@
 }
 
 .sidebar__link:hover .hr-module-icon,
+.sidebar__sublink:hover .hr-module-icon,
 .dashboard-action-link:hover .hr-module-icon {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
 
 .sidebar__link--active .hr-module-icon {
-  filter: saturate(1.15);
+  filter: saturate(1.12);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -28,6 +29,7 @@
   }
 
   .sidebar__link:hover .hr-module-icon,
+  .sidebar__sublink:hover .hr-module-icon,
   .dashboard-action-link:hover .hr-module-icon {
     transform: none;
   }

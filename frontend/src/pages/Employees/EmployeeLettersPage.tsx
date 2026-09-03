@@ -20,8 +20,8 @@ import type { Employee } from "../../types/employees";
 
 type LetterKind = "appointment" | "contract";
 
-const IMAGE_ACCEPT =
-  "image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif";
+const VERIFY_ACCEPT =
+  "application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg";
 
 const COPY: Record<
   LetterKind,
@@ -32,14 +32,14 @@ const COPY: Record<
     breadcrumb: "Organization / Employees Management / Appointment letter",
     file: "Appointment_Letter",
     empty: "No employees yet. Add an employee first, then create their appointment letter here.",
-    createLabel: "Create appointment letter",
+    createLabel: "Create letter",
   },
   contract: {
     title: "Contract letters",
     breadcrumb: "Organization / Employees Management / Contract letter",
     file: "Employment_Contract",
     empty: "No employees yet. Add an employee first, then create their contract letter here.",
-    createLabel: "Create contract letter",
+    createLabel: "Create letter",
   },
 };
 
@@ -67,9 +67,14 @@ function fileName(kind: LetterKind, emp: Employee) {
   return `${COPY[kind].file}_${safe}.docx`;
 }
 
-function isImageFile(file: File): boolean {
-  if (file.type.startsWith("image/")) return true;
-  return /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(file.name);
+function isVerifyFile(file: File): boolean {
+  const type = (file.type || "").toLowerCase();
+  if (type === "application/pdf" || type.startsWith("image/")) return true;
+  return /\.(pdf|png|jpe?g)$/i.test(file.name);
+}
+
+function isPdfFile(file: File): boolean {
+  return (file.type || "").toLowerCase() === "application/pdf" || /\.pdf$/i.test(file.name);
 }
 
 export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
@@ -117,12 +122,14 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
     setVerifyFile(null);
     setError(null);
     if (!file) return;
-    if (!isImageFile(file)) {
-      setError("Upload an image of the signed letter (PNG, JPG, WEBP, GIF, HEIC) — not a PDF.");
+    if (!isVerifyFile(file)) {
+      setError("Upload a PDF or image of the signed letter (PDF, PNG, or JPG).");
       return;
     }
     setVerifyFile(file);
-    setVerifyPreview(URL.createObjectURL(file));
+    if (!isPdfFile(file)) {
+      setVerifyPreview(URL.createObjectURL(file));
+    }
   }
 
   async function onCreate(emp: Employee) {
@@ -168,7 +175,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
 
   async function onSubmitVerify() {
     if (!verifyFor || !verifyFile) {
-      setError("Choose an image of the signed letter first.");
+      setError("Choose a PDF or image of the signed letter first.");
       return;
     }
     setError(null);
@@ -202,10 +209,11 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           Select an employee to create or view their{" "}
-          {kind === "appointment" ? "appointment letter" : "contract letter"}. After create, use{" "}
-          <strong>Verify</strong> to upload a photo of the signed document — AI checks that it is
-          the correct letter <em>and</em> that a handwritten signature is present. Both must pass
-          for the status to become <strong>Verified</strong>; otherwise verification is rejected.
+          {kind === "appointment" ? "appointment letter" : "contract letter"}. After the letter is
+          created, use <strong>View letter</strong>, <strong>Upload &amp; Verify</strong> (PDF or
+          PNG/JPG of the signed copy), or <strong>Create letter</strong> again. AI checks that the
+          upload is the correct letter <em>and</em> that a handwritten signature is present. Both
+          must pass for the status to become <strong>Verified</strong>.
         </p>
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
         {message ? <p style={{ color: "var(--color-status-info)" }}>{message}</p> : null}
@@ -249,39 +257,60 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                       <StatusBadge status={badgeStatus}>{badgeLabel}</StatusBadge>
                     </td>
                     <td className="col-actions">
-                      <div className="table-actions" style={{ justifyContent: "flex-end" }}>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={busy || !created}
-                          onClick={() => void onView(emp)}
-                        >
-                          View letter
-                        </Button>
-                        {canWrite && created ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            disabled={busy || emp.status === "terminated"}
-                            onClick={() => openVerify(emp)}
-                          >
-                            {verified ? "Re-verify" : "Verify"}
-                          </Button>
-                        ) : null}
-                        {canWrite ? (
+                      <div
+                        className="table-actions"
+                        style={{
+                          justifyContent: "flex-end",
+                          flexWrap: "wrap",
+                          maxWidth: 320,
+                        }}
+                      >
+                        {created ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() => void onView(emp)}
+                            >
+                              View letter
+                            </Button>
+                            {canWrite ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                disabled={busy || emp.status === "terminated"}
+                                onClick={() => openVerify(emp)}
+                              >
+                                Upload &amp; Verify
+                              </Button>
+                            ) : null}
+                            {canWrite ? (
+                              <Button
+                                type="button"
+                                variant="primary"
+                                disabled={busy || emp.status === "terminated"}
+                                onClick={() => void onCreate(emp)}
+                                style={{ flexBasis: "100%" }}
+                              >
+                                {busy && verifyFor?.id !== emp.id ? "Working…" : "Create letter"}
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : canWrite ? (
                           <Button
                             type="button"
                             variant="primary"
                             disabled={busy || emp.status === "terminated"}
                             onClick={() => void onCreate(emp)}
                           >
-                            {busy && verifyFor?.id !== emp.id
-                              ? "Working…"
-                              : created
-                                ? "Recreate letter"
-                                : copy.createLabel}
+                            {busy ? "Working…" : copy.createLabel}
                           </Button>
-                        ) : null}
+                        ) : (
+                          <Button type="button" variant="secondary" disabled>
+                            View letter
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -333,27 +362,33 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                 }}
               >
                 <h2 id="letter-verify-title" style={{ margin: 0, fontSize: "var(--text-lg)" }}>
-                  Verify signed letter — {verifyFor.fullName}
+                  Upload &amp; Verify — {verifyFor.fullName}
                 </h2>
                 <Button type="button" variant="secondary" onClick={closeVerify}>
                   Close
                 </Button>
               </div>
               <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-                Upload a clear photo of the printed {kind === "appointment" ? "appointment letter" : "employment contract"}{" "}
-                with a handwritten signature. AI rejects the upload if this is the wrong document
-                type, or if no signature is visible.
+                Upload a PDF or clear photo (PNG / JPG) of the printed{" "}
+                {kind === "appointment" ? "appointment letter" : "employment contract"} with a
+                handwritten signature. AI rejects the upload if this is the wrong document type, or
+                if no signature is visible.
               </p>
               <label className="form-field">
-                <span className="form-field__label">Signed letter image</span>
+                <span className="form-field__label">Signed letter (PDF, PNG, or JPG)</span>
                 <input
                   ref={verifyInputRef}
                   className="form-field__input"
                   type="file"
-                  accept={IMAGE_ACCEPT}
+                  accept={VERIFY_ACCEPT}
                   onChange={(e) => onPickVerifyFile(e.target.files?.[0] ?? null)}
                 />
               </label>
+              {verifyFile && isPdfFile(verifyFile) ? (
+                <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                  Selected PDF: <strong>{verifyFile.name}</strong>
+                </p>
+              ) : null}
               {verifyPreview ? (
                 <img
                   src={verifyPreview}
@@ -378,7 +413,7 @@ export function EmployeeLettersPage({ kind }: { kind: LetterKind }) {
                   disabled={!verifyFile || busyId === verifyFor.id}
                   onClick={() => void onSubmitVerify()}
                 >
-                  {busyId === verifyFor.id ? "Verifying…" : "Verify signature"}
+                  {busyId === verifyFor.id ? "Verifying…" : "Upload & Verify"}
                 </Button>
               </div>
             </div>

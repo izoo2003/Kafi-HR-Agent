@@ -158,7 +158,7 @@ export interface LetterSignatureVerifyResult {
   documentId: number | null;
 }
 
-/** Upload a photo of the signed letter; AI checks document type and signature. */
+/** Upload a PDF or photo of the signed letter; AI checks document type and signature. */
 export async function verifyEmployeeLetterSignature(
   employeeId: number,
   kind: "appointment" | "contract",

@@ -9,7 +9,7 @@ import { Table } from "../../components/ui/Table";
 import { ApiError } from "../../api/client";
 import { KPI_STATUS_LABELS } from "../../constants/statusLabels";
 import { useAuth } from "../../hooks/useAuth";
-import { useDepartments } from "../../hooks/useEmployees";
+import { useDepartments, useEmployees } from "../../hooks/useEmployees";
 import { isSelfService } from "../../lib/selfService";
 import {
   useAiSuggestKpiEntry,
@@ -122,6 +122,7 @@ export function KpiDashboardPage() {
   const [departmentId, setDepartmentId] = useState<number | "">(
     selfService && user?.departmentId ? user.departmentId : "",
   );
+  const [employeeId, setEmployeeId] = useState<number | "">("");
   const monthBounds = useMemo(() => monthRange(month), [month]);
   const today = todayIso();
   const sundayToday = isSunday(today);
@@ -130,16 +131,41 @@ export function KpiDashboardPage() {
   const queryFrom = grain === "day" ? selectedDay : monthBounds.from;
   const queryTo = grain === "day" ? selectedDay : monthBounds.to;
   const deptId = departmentId === "" ? null : departmentId;
-  const scopeAll = !selfService && deptId == null;
+  const selectedEmployeeId = employeeId === "" ? null : employeeId;
+  const scopeAll = !selfService && deptId == null && selectedEmployeeId == null;
+
+  const employees = useEmployees({
+    page: 1,
+    pageSize: 200,
+    status: "active",
+    enabled: !selfService,
+  });
+
+  const employeeOptions = useMemo(() => {
+    let items = employees.data?.items ?? [];
+    if (deptId != null) {
+      items = items.filter((e) => e.departmentId === deptId);
+    }
+    return [...items].sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [deptId, employees.data]);
+
+  const selectedEmployeeName = useMemo(() => {
+    if (selectedEmployeeId == null) return null;
+    const all = employees.data?.items ?? [];
+    return (
+      all.find((e) => e.id === selectedEmployeeId)?.fullName ??
+      `Employee #${selectedEmployeeId}`
+    );
+  }, [employees.data, selectedEmployeeId]);
 
   const departmentName = useMemo(() => {
     const id = selfService ? user?.departmentId : deptId;
-    if (!id) return "All departments";
+    if (!id) return selectedEmployeeId != null ? "Selected employee" : "All departments";
     return (departments.data ?? []).find((d) => d.id === id)?.name ?? `Department #${id}`;
-  }, [departments.data, deptId, selfService, user?.departmentId]);
+  }, [departments.data, deptId, selectedEmployeeId, selfService, user?.departmentId]);
 
   const empSummary = useEmployeeKpiSummary(
-    selfService ? (user?.linkedEmployeeId ?? null) : null,
+    selfService ? (user?.linkedEmployeeId ?? null) : selectedEmployeeId,
     monthBounds.from,
     monthBounds.to,
   );
@@ -149,14 +175,16 @@ export function KpiDashboardPage() {
     monthBounds.from,
     monthBounds.to,
     selfService ? null : deptId,
-    !selfService && grain === "month",
+    !selfService && grain === "month" && selectedEmployeeId == null,
   );
   const workLogs = useKpiWorkLogs({
     periodStart: selfService ? monthBounds.from : queryFrom,
     periodEnd: selfService ? monthBounds.to : queryTo,
     departmentId: selfService ? user?.departmentId ?? null : deptId,
-    employeeId: selfService ? user?.linkedEmployeeId ?? null : null,
-    enabled: selfService || grain === "day" || deptId != null,
+    employeeId: selfService
+      ? user?.linkedEmployeeId ?? null
+      : selectedEmployeeId,
+    enabled: selfService || selectedEmployeeId != null || grain === "day" || deptId != null,
   });
   const createWorkSubmission = useCreateKpiWorkSubmission();
   const markReviewed = useMarkKpiPeriodReviewed();
@@ -190,6 +218,20 @@ export function KpiDashboardPage() {
     const bounds = monthRange(value);
     if (selectedDay && (selectedDay < bounds.from || selectedDay > bounds.to)) {
       setSelectedDay("");
+    }
+  }
+
+  function onDepartmentChange(value: string) {
+    setDepartmentId(value ? Number(value) : "");
+    setEmployeeId("");
+  }
+
+  function onSelectEmployee(id: number) {
+    setEmployeeId(id);
+    setError(null);
+    const emp = (employees.data?.items ?? []).find((e) => e.id === id);
+    if (emp?.departmentId) {
+      setDepartmentId(emp.departmentId);
     }
   }
 
@@ -273,13 +315,15 @@ export function KpiDashboardPage() {
   }
 
   const heading =
-    grain === "day"
-      ? scopeAll
-        ? `Company ratings for ${formatDay(selectedDay)}`
-        : `${departmentName} — ${formatDay(selectedDay)}`
-      : scopeAll
-        ? "Company daily ratings"
-        : `${departmentName} — daily ratings`;
+    selectedEmployeeId != null
+      ? `${selectedEmployeeName} — individual KPI`
+      : grain === "day"
+        ? scopeAll
+          ? `Company ratings for ${formatDay(selectedDay)}`
+          : `${departmentName} — ${formatDay(selectedDay)}`
+        : scopeAll
+          ? "Company daily ratings"
+          : `${departmentName} — daily ratings`;
 
   return (
     <>
@@ -340,7 +384,7 @@ export function KpiDashboardPage() {
                 <select
                   className="form-field__input"
                   value={departmentId}
-                  onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : "")}
+                  onChange={(e) => onDepartmentChange(e.target.value)}
                 >
                   <option value="">All departments</option>
                   {(departments.data ?? []).map((d) => (
@@ -350,9 +394,37 @@ export function KpiDashboardPage() {
                   ))}
                 </select>
               </label>
+              <label className="form-field">
+                <span className="form-field__label">Employee</span>
+                <select
+                  className="form-field__input"
+                  value={employeeId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) {
+                      setEmployeeId("");
+                      return;
+                    }
+                    onSelectEmployee(Number(value));
+                  }}
+                >
+                  <option value="">All employees</option>
+                  {employeeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.fullName}
+                      {emp.employeeCode ? ` (${emp.employeeCode})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {selectedDay ? (
                 <Button type="button" variant="secondary" onClick={() => setSelectedDay("")}>
                   Clear day
+                </Button>
+              ) : null}
+              {selectedEmployeeId != null ? (
+                <Button type="button" variant="secondary" onClick={() => setEmployeeId("")}>
+                  Clear employee
                 </Button>
               ) : null}
             </>
@@ -361,13 +433,15 @@ export function KpiDashboardPage() {
         <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
           {selfService
             ? "You can only log work for today (Monday–Saturday). Missed workdays count as 0; Sundays are excluded."
-            : grain === "day" && scopeAll
-              ? "Day + all departments: each department’s score for this day, plus every employee log. Employees who did not log count as 0."
-              : grain === "day"
-                ? "Day + department: every employee log in this department for this day. Missing logs count as 0."
-                : scopeAll
-                  ? "Month + all departments: each workday’s company score (Mon–Sat). Empty workdays are 0; Sundays are hidden. Pick a day or a department to see logs."
-                  : "Month + department: each workday’s department score (empty = 0), plus every employee’s logs. People who did not log count as 0."}
+            : selectedEmployeeId != null
+              ? "Employee view: contribution score for this month, department and company context, plus that person’s work logs."
+              : grain === "day" && scopeAll
+                ? "Day + all departments: each department’s score for this day, plus every employee log. Employees who did not log count as 0."
+                : grain === "day"
+                  ? "Day + department: every employee log in this department for this day. Missing logs count as 0."
+                  : scopeAll
+                    ? "Month + all departments: each workday’s company score (Mon–Sat). Empty workdays are 0; Sundays are hidden. Pick a day, department, or employee to drill in."
+                    : "Month + department: each workday’s department score (empty = 0), plus every employee’s logs. Pick an employee to see individual KPI details."}
         </p>
 
         {error ? <p style={{ color: "var(--color-status-critical)" }}>{error}</p> : null}
@@ -419,6 +493,67 @@ export function KpiDashboardPage() {
           ) : (
             <EmptyState title="Ready to log work" description="Pick a date and describe what you did." />
           )
+        ) : selectedEmployeeId != null ? (
+          <>
+            <h2 style={{ margin: 0, fontSize: "var(--text-lg)" }}>{heading}</h2>
+            {empSummary.isLoading ? <Spinner label="Loading employee KPIs" /> : null}
+            {empSummary.isError ? (
+              <p style={{ color: "var(--color-status-critical)" }}>
+                {empSummary.error instanceof ApiError
+                  ? empSummary.error.message
+                  : "Could not load this employee’s KPI summary."}
+              </p>
+            ) : null}
+            {empSummary.data ? (
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "var(--space-3)",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  }}
+                >
+                  <ScoreTile
+                    label="Contribution"
+                    score={empSummary.data.contributionScore}
+                    hint="Workdays this month, including 0s for days they skipped"
+                  />
+                  <ScoreTile
+                    label="Department"
+                    score={empSummary.data.departmentScore}
+                    band={empSummary.data.departmentBand}
+                  />
+                  <ScoreTile
+                    label="Company"
+                    score={empSummary.data.globalScore}
+                    band={empSummary.data.globalBand}
+                  />
+                  <Card>
+                    <div className="font-data" style={{ fontSize: "var(--text-2xl)" }}>
+                      {empSummary.data.submissionCount}
+                    </div>
+                    <div>Entries this month</div>
+                  </Card>
+                </div>
+                <section className="card">
+                  <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>
+                    Work log — {selectedEmployeeName}
+                    {grain === "day" ? ` · ${formatDay(selectedDay)}` : ""}
+                  </h2>
+                  {workLogs.isLoading ? (
+                    <Spinner label="Loading logs" />
+                  ) : (
+                    <WorkLogList logs={workLogs.data ?? []} showDepartment />
+                  )}
+                </section>
+              </>
+            ) : !empSummary.isLoading ? (
+              <EmptyState
+                title="No KPI data for this employee"
+                description="They may not have logged work in this month yet."
+              />
+            ) : null}
+          </>
         ) : (
           <>
             {dailySummary.isLoading || globalSummary.isLoading || (deptId != null && summary.isLoading) ? (
@@ -536,6 +671,9 @@ export function KpiDashboardPage() {
             {deptId != null && summary.data ? (
               <section>
                 <h3 style={{ fontSize: "var(--text-base)" }}>Employee scores</h3>
+                <p style={{ margin: "0 0 var(--space-3)", color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+                  Click a row or use the Employee dropdown to open individual KPI details.
+                </p>
                 {summary.data.employees.length === 0 ? (
                   <EmptyState
                     title="No employees in this department"
@@ -544,7 +682,12 @@ export function KpiDashboardPage() {
                 ) : (
                   <Table headers={["Employee", "Score", "Band", "Entries"]}>
                     {summary.data.employees.map((emp) => (
-                      <tr key={emp.employeeId} data-status={emp.band}>
+                      <tr
+                        key={emp.employeeId}
+                        data-status={emp.band}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => onSelectEmployee(emp.employeeId)}
+                      >
                         <td>{emp.employeeName}</td>
                         <td className="font-data">{emp.contributionScore.toFixed(1)} / 10</td>
                         <td>

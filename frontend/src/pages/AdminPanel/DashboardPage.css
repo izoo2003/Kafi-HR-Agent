@@ -1,6 +1,11 @@
 .dashboard-page {
   display: grid;
   gap: var(--space-6);
+  background:
+    radial-gradient(1100px 380px at 6% -8%, color-mix(in srgb, var(--color-accent-subtle) 90%, transparent), transparent 60%),
+    radial-gradient(820px 320px at 96% 0%, color-mix(in srgb, var(--color-status-info-bg) 75%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 55%, var(--color-bg)) 0%, var(--color-bg) 42%);
+  border-radius: var(--radius-md);
 }
 
 @keyframes dashboard-enter {
@@ -76,20 +81,34 @@
   display: grid;
   gap: var(--space-2);
   padding: var(--space-6);
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border));
   border-radius: var(--radius-md);
-  background: var(--color-accent-hover);
-  color: var(--color-text-inverse);
-  box-shadow: 0 16px 36px color-mix(in srgb, var(--color-accent-hover) 45%, transparent);
+  background:
+    linear-gradient(135deg, var(--color-surface) 0%, color-mix(in srgb, var(--color-accent-subtle) 75%, var(--color-surface)) 55%, var(--color-status-info-bg) 100%);
+  color: var(--color-text-primary);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--color-surface) 80%, transparent),
+    0 14px 32px color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.dashboard-hero::before {
+  content: "";
+  position: absolute;
+  inset: auto -10% -40% auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 68%);
 }
 
 .dashboard-hero::after {
   content: "";
   position: absolute;
   inset: 0;
-  width: 45%;
+  width: 42%;
   pointer-events: none;
-  background: color-mix(in srgb, var(--color-text-inverse) 14%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
   transform: translateX(-120%) skewX(-18deg);
   animation: dashboard-shine 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
 }
@@ -105,7 +124,7 @@
 .dashboard-hero__date {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-inverse);
+  color: var(--color-text-secondary);
 }
 
 .dashboard-hero__health {
@@ -114,31 +133,38 @@
   gap: var(--space-2);
   margin: 0;
   padding: var(--space-1) var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--color-text-inverse);
+  color: var(--color-text-primary);
+  border: 1px solid transparent;
 }
 
 .dashboard-hero__health--positive {
-  background: var(--color-status-positive);
+  background: var(--color-status-positive-bg);
+  color: var(--color-status-positive);
+  border-color: color-mix(in srgb, var(--color-status-positive) 22%, transparent);
 }
 
 .dashboard-hero__health--warning {
-  background: var(--color-status-warning);
+  background: var(--color-status-warning-bg);
+  color: var(--color-status-warning);
+  border-color: color-mix(in srgb, var(--color-status-warning) 22%, transparent);
 }
 
 .dashboard-hero__health--critical {
-  background: var(--color-status-critical);
+  background: var(--color-status-critical-bg);
+  color: var(--color-status-critical);
+  border-color: color-mix(in srgb, var(--color-status-critical) 22%, transparent);
 }
 
 .dashboard-hero__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-text-inverse);
+  background: currentColor;
 }
 
 .dashboard-hero__health--positive .dashboard-hero__dot {
@@ -151,7 +177,7 @@
   font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-inverse);
+  color: var(--color-text-muted);
 }
 
 .dashboard-hero__number {
@@ -159,7 +185,7 @@
   font-size: var(--text-2xl);
   line-height: 1.05;
   letter-spacing: -0.03em;
-  color: var(--color-text-inverse);
+  color: var(--color-text-primary);
   animation: dashboard-count-glow 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -172,7 +198,7 @@
 
 .dashboard-hero__number-link:hover .dashboard-hero__number,
 .dashboard-hero__number-link:focus-visible .dashboard-hero__number {
-  color: var(--color-text-inverse);
+  color: var(--color-accent);
   text-decoration: underline;
   text-underline-offset: 6px;
 }
@@ -184,25 +210,26 @@
   gap: var(--space-2);
   margin: var(--space-1) 0 0;
   font-size: var(--text-sm);
-  color: var(--color-text-inverse);
+  color: var(--color-text-secondary);
 }
 
 .dashboard-hero__meta a {
   position: relative;
   z-index: 1;
-  color: var(--color-text-inverse);
+  color: var(--color-accent);
   text-decoration: none;
-  border-bottom: 1px solid var(--color-text-inverse);
-  transition: border-color 180ms ease;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  transition: border-color 180ms ease, color 180ms ease;
 }
 
 .dashboard-hero__meta a:hover,
 .dashboard-hero__meta a:focus-visible {
   border-bottom-width: 2px;
+  color: var(--color-accent-hover);
 }
 
 .dashboard-hero__sep {
-  color: var(--color-text-inverse);
+  color: var(--color-text-muted);
 }
 
 .dashboard-section {
@@ -308,48 +335,57 @@
 }
 
 .dashboard-action[data-status="positive"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-positive) 72%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-positive) 72%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-positive-bg);
+  border-color: color-mix(in srgb, var(--color-status-positive) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-action[data-status="warning"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-warning) 74%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-warning) 74%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-warning-bg);
+  border-color: color-mix(in srgb, var(--color-status-warning) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-action[data-status="critical"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-critical) 74%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-critical) 74%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-critical-bg);
+  border-color: color-mix(in srgb, var(--color-status-critical) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-action[data-status="info"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-info) 70%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-info) 70%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-info-bg);
+  border-color: color-mix(in srgb, var(--color-status-info) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
-.dashboard-action[data-active="true"] .dashboard-action__label,
-.dashboard-action[data-active="true"] .dashboard-action__value,
+.dashboard-action[data-active="true"] .dashboard-action__label {
+  color: var(--color-text-secondary);
+}
+
+.dashboard-action[data-active="true"] .dashboard-action__value {
+  color: var(--color-text-primary);
+}
+
 .dashboard-action[data-active="true"] .dashboard-action__hint,
 .dashboard-action[data-active="true"] .dashboard-action__arrow {
-  color: var(--color-text-inverse);
+  color: var(--color-text-muted);
 }
 
 .dashboard-action__icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  padding: var(--space-1);
+  width: 40px;
+  height: 40px;
+  padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
+  overflow: hidden;
 }
 
 .dashboard-action[data-active="true"] .dashboard-action__icon {
-  border-color: var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
   background: var(--color-surface);
 }
 
@@ -509,32 +545,35 @@
 }
 
 .dashboard-att__stat[data-status="positive"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-positive) 72%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-positive) 72%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-positive-bg);
+  border-color: color-mix(in srgb, var(--color-status-positive) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-att__stat[data-status="warning"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-warning) 74%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-warning) 74%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-warning-bg);
+  border-color: color-mix(in srgb, var(--color-status-warning) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-att__stat[data-status="critical"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-critical) 74%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-critical) 74%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-critical-bg);
+  border-color: color-mix(in srgb, var(--color-status-critical) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .dashboard-att__stat[data-status="info"][data-active="true"] {
-  background: color-mix(in srgb, var(--color-status-info) 70%, var(--color-text-primary));
-  border-color: color-mix(in srgb, var(--color-status-info) 70%, var(--color-text-primary));
-  color: var(--color-text-inverse);
+  background: var(--color-status-info-bg);
+  border-color: color-mix(in srgb, var(--color-status-info) 28%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
-.dashboard-att__stat[data-active="true"] .dashboard-att__stat-label,
+.dashboard-att__stat[data-active="true"] .dashboard-att__stat-label {
+  color: var(--color-text-secondary);
+}
+
 .dashboard-att__stat[data-active="true"] .dashboard-att__stat-value {
-  color: var(--color-text-inverse);
+  color: var(--color-text-primary);
 }
 
 .dashboard-att__stat-label {

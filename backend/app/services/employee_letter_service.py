@@ -22,9 +22,36 @@ from app.services import audit_service, employee_service
 logger = logging.getLogger(__name__)
 
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif"}
+VERIFY_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".heif"}
+VERIFY_PDF_SUFFIXES = {".pdf"}
 
 _MISSING = "It is not created yet. Create them first."
+
+
+def _verify_upload_mime(filename: str, mime_type: str | None) -> str:
+    """Return a mime type Gemini can read for signature verification."""
+    suffix = ""
+    if "." in (filename or ""):
+        suffix = "." + filename.rsplit(".", 1)[-1].lower()
+    mime = (mime_type or "").lower().strip()
+    if mime.startswith("image/") or suffix in VERIFY_IMAGE_SUFFIXES:
+        if mime.startswith("image/"):
+            return mime
+        guessed = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+            ".heic": "image/heic",
+            ".heif": "image/heif",
+        }.get(suffix, "image/jpeg")
+        return guessed
+    if mime == "application/pdf" or suffix in VERIFY_PDF_SUFFIXES:
+        return "application/pdf"
+    raise ValidationFailed(
+        "Upload a PDF or image of the signed letter (PDF, PNG, or JPG)."
+    )
 
 
 def _category(kind: str) -> str:
@@ -241,7 +268,7 @@ def decide_letter_verification(kind: str, vision: dict[str, Any]) -> tuple[bool,
             False,
             "unreadable",
             notes
-            or "The image is too unclear to identify the letter. Retake a sharper photo of the signed page.",
+            or "The file is too unclear to identify the letter. Upload a sharper PDF or photo of the signed page.",
         )
     if wrong_type:
         return (
@@ -255,7 +282,7 @@ def decide_letter_verification(kind: str, vision: dict[str, Any]) -> tuple[bool,
             False,
             "not_letter",
             notes
-            or f"This image does not look like the {expected}. Upload a clear photo of the signed {expected}.",
+            or f"This file does not look like the {expected}. Upload a clear PDF or photo of the signed {expected}.",
         )
     if not has_sig:
         return (
@@ -315,9 +342,9 @@ def _ai_check_signature(
         if issued_letter_excerpt.strip()
         else ""
     )
-    prompt = f"""You are verifying a signed HR document image for Kafi Group.
+    prompt = f"""You are verifying a signed HR document (photo or PDF scan) for Kafi Group.
 
-Task: decide whether this photo is the employee's {expected} AND whether a handwritten signature is on it.
+Task: decide whether this file is the employee's {expected} AND whether a handwritten signature is on it.
 
 Employee on file:
 - full_name: {employee_name or "unknown"}
@@ -340,7 +367,7 @@ Return ONLY valid JSON (no markdown) with this exact shape:
 detected_document_kind must be one of: "appointment", "contract", "other".
 
 What counts as the {expected}:
-- A printed or photographed Kafi Group {expected} (letterhead, title, appointment/contract wording, employee name, role, CNIC, salary/terms, signature block).
+- A printed, photographed, or PDF-scanned Kafi Group {expected} (letterhead, title, appointment/contract wording, employee name, role, CNIC, salary/terms, signature block).
 - A last/signature page of that same letter is valid if it is clearly the acknowledgement/acceptance/signature page of the {expected} (not a random scrap).
 - Match the employee name/CNIC/role when they are readable.
 
@@ -353,7 +380,7 @@ Signature rules:
 - Printed names, typed "/sd", stamps alone, or a blank signature line do NOT count.
 - If the page is the right letter but unsigned, looks_like_expected_letter=true and has_handwritten_signature=false.
 
-If the image is too blurry, dark, or cropped to judge, set image_readable=false and has_handwritten_signature=false.
+If the file is too blurry, dark, or cropped to judge, set image_readable=false and has_handwritten_signature=false.
 """
     response = generate_content_with_fallback(
         api_keys=api_keys,
@@ -383,22 +410,15 @@ def verify_letter_signature(
     if _latest_letter(db, employee_id, kind) is None:
         raise BusinessRuleViolation(_MISSING)
 
-    suffix = ""
-    if "." in (filename or ""):
-        suffix = "." + filename.rsplit(".", 1)[-1].lower()
-    mime = (mime_type or "").lower()
-    if not mime.startswith("image/") and suffix not in IMAGE_SUFFIXES:
-        raise ValidationFailed(
-            "Upload an image of the signed letter (PNG, JPG, WEBP, GIF, or HEIC) — PDF is not accepted."
-        )
+    resolved_mime = _verify_upload_mime(filename or "", mime_type)
     if not content:
-        raise ValidationFailed("Uploaded image is empty")
+        raise ValidationFailed("Uploaded file is empty")
 
     excerpt = _issued_letter_excerpt(db, employee_id, kind)
     try:
         vision = _ai_check_signature(
             image_bytes=content,
-            mime_type=mime if mime.startswith("image/") else "image/jpeg",
+            mime_type=resolved_mime,
             kind=kind,
             employee_name=(employee.full_name or "").strip(),
             employee_code=(employee.employee_code or "").strip(),
@@ -426,10 +446,10 @@ def verify_letter_signature(
     _delete_category_docs(db, employee.id, signed_cat)
     path, stored_mime = store_employee_file(
         employee_id=employee.id,
-        filename=filename or "signed_letter.jpg",
+        filename=filename or ("signed_letter.pdf" if resolved_mime == "application/pdf" else "signed_letter.jpg"),
         content=content,
         subdir="letters",
-        images_only=True,
+        images_only=False,
     )
     row = EmployeeDocument(
         employee_id=employee.id,
@@ -440,8 +460,8 @@ def verify_letter_signature(
             else "Employment contract — signed (verified)"
         ),
         file_path=path,
-        original_filename=filename or "signed_letter.jpg",
-        mime_type=stored_mime or mime or "image/jpeg",
+        original_filename=filename or ("signed_letter.pdf" if resolved_mime == "application/pdf" else "signed_letter.jpg"),
+        mime_type=stored_mime or resolved_mime,
     )
     db.add(row)
     db.flush()

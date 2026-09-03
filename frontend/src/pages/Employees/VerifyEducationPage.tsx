@@ -52,7 +52,7 @@ export function VerifyEducationPage() {
     <>
       <PageHeader
         title="Verify education documents"
-        breadcrumb="Organization / Employees Management / Employees Document Verification / Verify education documents"
+        breadcrumb="Organization / Employees Document Verification / Verify education documents"
         actions={
           <Link to="/employees">
             <Button variant="secondary">Back to employees</Button>

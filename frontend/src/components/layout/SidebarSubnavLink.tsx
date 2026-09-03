@@ -20,7 +20,9 @@ export function SidebarSubnavLink({ to, icon, children, end, title }: LinkProps)
         `sidebar__sublink${isActive ? " sidebar__sublink--active" : ""}`
       }
     >
-      <HrModuleIcon icon={icon} size="sm" />
+      <span className="sidebar__sublink-icon" aria-hidden>
+        <HrModuleIcon icon={icon} size="sm" />
+      </span>
       <span className="sidebar__sublink-label">{children}</span>
     </NavLink>
   );
@@ -42,7 +44,9 @@ export function SidebarSubnavItem({ to, icon, children, title }: ItemProps) {
         `sidebar__subitem${isActive ? " sidebar__subitem--active" : ""}`
       }
     >
-      <HrModuleIcon icon={icon} size="sm" />
+      <span className="sidebar__sublink-icon" aria-hidden>
+        <HrModuleIcon icon={icon} size="sm" />
+      </span>
       <span className="sidebar__sublink-label">{children}</span>
     </NavLink>
   );

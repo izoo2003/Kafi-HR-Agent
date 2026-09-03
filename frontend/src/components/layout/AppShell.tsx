@@ -17,6 +17,7 @@ import { SIDEBAR_ICON_BY_PATH } from "../../constants/hrModuleIcons";
 import type { HrModuleIconKey } from "../../constants/hrModuleIcons";
 import { NotificationBell } from "./NotificationBell";
 import { EmployeeSectionMenus } from "../../pages/Employees/EmployeeSectionMenus";
+import { DocumentVerificationSectionMenus } from "../../pages/Employees/DocumentVerificationSectionMenus";
 import { EmployeeDevelopmentSectionMenus } from "../../pages/EmployeeDevelopment/EmployeeDevelopmentSectionMenus";
 import { UserManagementSectionMenus } from "../../pages/AdminPanel/UserManagementSectionMenus";
 import "./AppShell.css";
@@ -25,6 +26,12 @@ const NAV: { to: string; label: string; module: string | null; icon: HrModuleIco
   { to: "/admin/dashboard", label: "Admin", module: "admin_panel", icon: "analyticsDashboard" },
   { to: "/my-role", label: "My role", module: null, icon: "employeeHandbook" },
   { to: "/employees", label: "Employees Management", module: "employees", icon: "employeeDirectory" },
+  {
+    to: "/employees/verify-cnic",
+    label: "Employees Document Verification",
+    module: "employees",
+    icon: "documentManagement",
+  },
   { to: "/job-descriptions", label: "Job Postings", module: "job_descriptions", icon: "recruitment" },
   { to: "/cv-screening", label: "CV Screening", module: "cv_screening", icon: "documentManagement" },
   { to: "/attendance", label: "Attendance", module: "attendance", icon: "attendance" },
@@ -39,6 +46,20 @@ const NAV: { to: string; label: string; module: string | null; icon: HrModuleIco
   { to: "/hr-policies", label: "HR Policies", module: null, icon: "compliancePolicies" },
   { to: "/admin/users", label: "User Management", module: "users", icon: "addEmployee" },
 ];
+
+function isEmployeesManagementPath(pathname: string): boolean {
+  if (!pathname.startsWith("/employees")) return false;
+  if (pathname.startsWith("/employees/verify-cnic")) return false;
+  if (pathname.startsWith("/employees/verify-education")) return false;
+  return true;
+}
+
+function isDocumentVerificationPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/employees/verify-cnic") ||
+    pathname.startsWith("/employees/verify-education")
+  );
+}
 
 const SIDEBAR_STORAGE_KEY = "kafi.sidebar.collapsed";
 
@@ -180,23 +201,36 @@ export function AppShell() {
                 className={() => {
                   const active =
                     item.to === "/employees"
-                      ? location.pathname.startsWith("/employees")
-                      : item.to.startsWith("/employee-development")
-                        ? location.pathname.startsWith("/employee-development")
-                        : item.to === "/admin/users"
-                          ? location.pathname.startsWith("/admin/users")
-                          : location.pathname === item.to ||
-                            location.pathname.startsWith(`${item.to}/`);
+                      ? isEmployeesManagementPath(location.pathname)
+                      : item.to === "/employees/verify-cnic"
+                        ? isDocumentVerificationPath(location.pathname)
+                        : item.to.startsWith("/employee-development")
+                          ? location.pathname.startsWith("/employee-development")
+                          : item.to === "/admin/users"
+                            ? location.pathname.startsWith("/admin/users")
+                            : location.pathname === item.to ||
+                              location.pathname.startsWith(`${item.to}/`);
                   return `sidebar__link${active ? " sidebar__link--active" : ""}`;
                 }}
               >
-                <HrModuleIcon icon={iconKey} size="lg" label={item.label} />
-                <span>{item.label}</span>
+                <span className="sidebar__link-icon" aria-hidden>
+                  <HrModuleIcon icon={iconKey} size="md" label={item.label} />
+                </span>
+                <span className="sidebar__link-label">{item.label}</span>
               </NavLink>
             );
             if (item.to === "/employees") {
               return (
                 <EmployeeNavGroup
+                  key={`${item.to}-${item.label}`}
+                  link={link}
+                  allowSubnav={!railCollapsed}
+                />
+              );
+            }
+            if (item.to === "/employees/verify-cnic") {
+              return (
+                <DocumentVerificationNavGroup
                   key={`${item.to}-${item.label}`}
                   link={link}
                   allowSubnav={!railCollapsed}
@@ -281,7 +315,7 @@ function EmployeeNavGroup({
   allowSubnav: boolean;
 }) {
   const location = useLocation();
-  const onEmployees = location.pathname.startsWith("/employees");
+  const onEmployees = isEmployeesManagementPath(location.pathname);
   const [open, setOpen] = useState(onEmployees);
 
   useEffect(() => {
@@ -311,6 +345,50 @@ function EmployeeNavGroup({
         ) : null}
       </div>
       <EmployeeSectionMenus open={allowSubnav && open} />
+    </div>
+  );
+}
+
+function DocumentVerificationNavGroup({
+  link,
+  allowSubnav,
+}: {
+  link: ReactNode;
+  allowSubnav: boolean;
+}) {
+  const location = useLocation();
+  const onSection = isDocumentVerificationPath(location.pathname);
+  const [open, setOpen] = useState(onSection);
+
+  useEffect(() => {
+    if (onSection) setOpen(true);
+  }, [onSection]);
+
+  useEffect(() => {
+    if (!allowSubnav) setOpen(false);
+  }, [allowSubnav]);
+
+  return (
+    <div className="sidebar__group">
+      <div className="sidebar__link-row">
+        {link}
+        {allowSubnav ? (
+          <button
+            type="button"
+            className={`sidebar__group-toggle${open ? " is-open" : ""}`}
+            aria-expanded={open}
+            aria-label={
+              open
+                ? "Collapse Employees Document Verification menu"
+                : "Expand Employees Document Verification menu"
+            }
+            onClick={() => setOpen((value) => !value)}
+          >
+            <ChevronDown size={18} aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      <DocumentVerificationSectionMenus open={allowSubnav && open} />
     </div>
   );
 }
