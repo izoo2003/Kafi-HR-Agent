@@ -246,11 +246,11 @@ def compute_payroll_for_month(
         tenure_m = _tenure_months(emp.date_joined, period_end)
         leave_allowance = monthly_leave if tenure_m >= leave_after_months else 0
         leave_used = min(leave_allowance, days_absent)
-        # Chargeable calendar absents after leave forgiveness (lates deducted separately).
+        # Chargeable no-show absents after leave forgiveness (late offs are separate).
         raw_absents_after_leave = max(0, days_absent - leave_used)
-        # Absent column = recorded (calendar + late-off days). Leave does not reduce this.
-        days_absent_reported = days_absent + late_off_days
-        absents_after_leave_reported = raw_absents_after_leave + late_off_days
+        # Absent column = days the person did not come (never includes late-off days).
+        days_absent_reported = days_absent
+        absents_after_leave_reported = raw_absents_after_leave
         ot_days_final = ot_days
 
         if adj is not None:
@@ -258,7 +258,7 @@ def compute_payroll_for_month(
                 if adj.leave_used is not None:
                     leave_used = max(0, adj.leave_used)
                 if adj.days_absent is not None:
-                    # Sheet Absent is recorded absents — do not treat as already after-leave.
+                    # Sheet Absent is no-show days only.
                     days_absent_reported = max(0, adj.days_absent)
                 if adj.days_late is not None:
                     days_late = max(0, adj.days_late)
@@ -268,7 +268,7 @@ def compute_payroll_for_month(
                 if adj.overtime_bonus_days is not None:
                     ot_days_final = max(0, adj.overtime_bonus_days)
 
-                # Recompute forgiveness against the recorded Absent shown on the sheet.
+                # Recompute forgiveness against recorded no-show Absents only.
                 if adj.leave_used is not None or adj.days_absent is not None:
                     leave_used = min(leave_used, days_absent_reported)
                     raw_absents_after_leave = max(0, days_absent_reported - leave_used)

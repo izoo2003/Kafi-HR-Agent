@@ -174,7 +174,7 @@ export function applyAttendancePatch(
   const next = { ...patch };
   const days = monthDays || 30;
 
-  // Leave forgives pay only: +1 leave → +1 present, Absent stays as recorded.
+  // Leave forgives pay only: +1 leave → +1 present, Absent stays as recorded no-shows.
   if (patch.leaveUsed != null && patch.daysAbsent == null) {
     const prevLeave = n(current.leaveUsed);
     const absent = n(current.daysAbsent);
@@ -187,28 +187,17 @@ export function applyAttendancePatch(
     }
   }
 
-  if (patch.daysLate != null && patch.daysAbsent == null && next.daysAbsent == null) {
-    const prevLateOff = Math.floor(n(current.daysLate) / latesPerOff);
-    const nextLateOff = Math.floor(n(patch.daysLate) / latesPerOff);
-    const baseAbsent = Math.max(0, n(current.daysAbsent) - prevLateOff);
-    next.daysAbsent = String(Math.max(0, baseAbsent + nextLateOff));
-  }
-
+  // Late Coming changes Late Absents (floor(lates / 3)) for pay — never touches Absent.
   // Absent edits: keep Leave as forgiveness; Present = month − chargeable (Absent − Leave).
-  if (patch.daysAbsent != null && patch.daysPresent == null && next.daysPresent == null) {
+  if (patch.daysAbsent != null && patch.daysPresent == null) {
     const absent = Math.max(0, n(patch.daysAbsent));
-    const leave = Math.min(n(next.leaveUsed ?? current.leaveUsed), absent);
-    next.leaveUsed = String(leave);
-    next.daysPresent = String(Math.max(0, days - Math.max(0, absent - leave)));
-  } else if (next.daysAbsent != null && patch.daysPresent == null && next.daysPresent == null) {
-    // Late-driven absent change — same present rule.
-    const absent = Math.max(0, n(next.daysAbsent));
     const leave = Math.min(n(next.leaveUsed ?? current.leaveUsed), absent);
     next.leaveUsed = String(leave);
     next.daysPresent = String(Math.max(0, days - Math.max(0, absent - leave)));
   }
 
   // Manual Present edits stand alone — do not rewrite recorded Absent or Leave.
+  // Late Coming edits stand alone — Late Absents / Late Deduction derive from the count.
 
   const calcInputs = [
     "baseSalary",

@@ -226,11 +226,11 @@ export function SalaryComputePage() {
         <Card>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
             Edit this sheet like Excel. Changing base salary, leave, absents, lates, or half-days
-            immediately recalculates per-day rate, late offs (3 lates = 1 absent day), half-day
-            deduction, tax, and net payable. Leave forgives pay only — +1 Leave raises Present / net
-            but does not change the Absent column. Use the trash icon to remove a row from this
-            month&apos;s sheet, then Save. Full screen expands the editor. Present and absent stay
-            on a 30-day month.
+            immediately recalculates per-day rate, late absents (3 lates = 1 late absent day),
+            half-day deduction, tax, and net payable. Absent (A) is no-shows only — late absents
+            are a separate column and never add into A. Leave forgives pay only — +1 Leave raises
+            Present / net but does not change Absent. Use the trash icon to remove a row, then
+            Save. Full screen expands the editor. Present and absent stay on a 30-day month.
           </p>
           <div
             style={{

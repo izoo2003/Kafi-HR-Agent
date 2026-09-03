@@ -153,6 +153,7 @@ export function SalarySheet({
             <col style={{ width: 90 }} />
             <col style={{ width: 100 }} />
             <col style={{ width: 70 }} />
+            <col style={{ width: 72 }} />
             <col style={{ width: 110 }} />
             <col style={{ width: 90 }} />
             <col style={{ width: 110 }} />
@@ -165,12 +166,12 @@ export function SalarySheet({
           </colgroup>
           <thead>
             <tr>
-              <th className="salary-sheet__company" colSpan={22}>
+              <th className="salary-sheet__company" colSpan={23}>
                 {result.companyName || "KAFI COMMODITIES (PVT) LTD"}
               </th>
             </tr>
             <tr>
-              <th className="salary-sheet__month" colSpan={22}>
+              <th className="salary-sheet__month" colSpan={23}>
                 Salary Sheet For The Month Of {monthTitle(result.periodMonth, result.periodYear)}
               </th>
             </tr>
@@ -188,6 +189,9 @@ export function SalarySheet({
               <th className="salary-sheet__group">Bonus</th>
               <th className="salary-sheet__group">Gross</th>
               <th className="salary-sheet__group">Late Coming</th>
+              <th className="salary-sheet__group" title="Days deducted from late coming (3 lates = 1 late absent)">
+                Late Absents
+              </th>
               <th className="salary-sheet__group">Late Deduction</th>
               <th className="salary-sheet__group">Half Deduction</th>
               <th className="salary-sheet__group">Loan Deduction</th>
@@ -205,7 +209,9 @@ export function SalarySheet({
               <th className="salary-sheet__sub" />
               <th className="salary-sheet__sub">Salary</th>
               <th className="salary-sheet__sub">P</th>
-              <th className="salary-sheet__sub">A</th>
+              <th className="salary-sheet__sub" title="Days the person did not come (no-shows only)">
+                A
+              </th>
               <th className="salary-sheet__sub" title="Paid leave days forgiven for salary — does not change Absent">
                 Leave
               </th>
@@ -214,6 +220,7 @@ export function SalarySheet({
               <th className="salary-sheet__sub">Amount</th>
               <th className="salary-sheet__sub">Salary</th>
               <th className="salary-sheet__sub">Count</th>
+              <th className="salary-sheet__sub">Days</th>
               <th className="salary-sheet__sub">Amount</th>
               <th className="salary-sheet__sub">Amount</th>
               <th className="salary-sheet__sub" />
@@ -231,11 +238,6 @@ export function SalarySheet({
                 <td className="ctr">{i + 1}</td>
                 <td className="salary-sheet__name">
                   <div>{r.fullName}</div>
-                  {r.lateOffDays > 0 ? (
-                    <div className="salary-sheet__hint">
-                      {r.daysLate} lates → {r.lateOffDays} off
-                    </div>
-                  ) : null}
                   {r.leaveAllowance > 0 ? (
                     <div className="salary-sheet__hint salary-sheet__hint--muted">
                       Leave allowance {r.leaveAllowance}
@@ -335,6 +337,9 @@ export function SalarySheet({
                   ) : (
                     <span className="ctr">{r.daysLate}</span>
                   )}
+                </td>
+                <td className="ctr salary-sheet__formula" title={`${r.daysLate} lates ÷ ${latesPerOff} = ${r.lateOffDays}`}>
+                  {r.lateOffDays}
                 </td>
                 <td className="num salary-sheet__formula">{money(r.lateDed)}</td>
                 <td className="num salary-sheet__formula">{money(r.halfDed)}</td>
@@ -442,6 +447,7 @@ export function SalarySheet({
               <td className="num">{money(totals.bonus)}</td>
               <td className="num">{money(totals.gross)}</td>
               <td />
+              <td />
               <td className="num">{money(totals.lateDed)}</td>
               <td className="num">{money(totals.halfDed)}</td>
               <td className="num">{money(totals.loan)}</td>
@@ -451,7 +457,7 @@ export function SalarySheet({
               <td colSpan={3} />
             </tr>
             <tr className="salary-sheet__signoff">
-              <td colSpan={7}>
+              <td colSpan={8}>
                 <div className="salary-sheet__signoff-line">Prepared By</div>
               </td>
               <td colSpan={8}>
@@ -463,7 +469,7 @@ export function SalarySheet({
             </tr>
             {summary?.summaryText ? (
               <tr className="salary-sheet__ai">
-                <td colSpan={22}>
+                <td colSpan={23}>
                   <h2 className="salary-sheet__ai-title">AI salary sheet summary</h2>
                   <p className="salary-sheet__ai-meta">
                     Payment modes — IBFT {summary.paymentModeCounts.IBFT ?? 0}, Cash{" "}
