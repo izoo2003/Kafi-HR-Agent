@@ -512,6 +512,7 @@ def _persist_payroll_for_import(
             days_absent=row.absents_after_leave,
             days_late=row.days_late,
             days_half_day=row.days_half_day,
+            leave_used=row.leave_used,
             overtime_bonus_days=row.overtime_bonus_days,
             allowance_amount=row.allowance_amount,
             bonus_amount=row.bonus_amount,

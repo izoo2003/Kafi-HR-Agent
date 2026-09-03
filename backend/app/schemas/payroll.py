@@ -116,6 +116,7 @@ class PayrollSheetAdjustmentInput(BaseModel):
     days_absent: int | None = Field(default=None, ge=0)
     days_late: int | None = Field(default=None, ge=0)
     days_half_day: int | None = Field(default=None, ge=0)
+    leave_used: int | None = Field(default=None, ge=0)
     overtime_bonus_days: int | None = Field(default=None, ge=0)
     monthly_tax_override: Decimal | None = Field(default=None, ge=0)
 

@@ -92,6 +92,7 @@ class PayrollSheetAdjustment(Base, TimestampMixin):
     days_absent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     days_late: Mapped[int | None] = mapped_column(Integer, nullable=True)
     days_half_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    leave_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     overtime_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_tax_override: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 

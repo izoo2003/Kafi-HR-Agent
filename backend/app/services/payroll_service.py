@@ -147,6 +147,7 @@ def save_sheet_adjustments(
         row.days_absent = item.days_absent
         row.days_late = item.days_late
         row.days_half_day = item.days_half_day
+        row.leave_used = item.leave_used
         row.overtime_bonus_days = item.overtime_bonus_days
         row.monthly_tax_override = item.monthly_tax_override
         audit_service.log_from_auth(
@@ -169,6 +170,7 @@ def save_sheet_adjustments(
                 "days_absent": row.days_absent,
                 "days_late": row.days_late,
                 "days_half_day": row.days_half_day,
+                "leave_used": row.leave_used,
                 "overtime_bonus_days": row.overtime_bonus_days,
                 "monthly_tax_override": (
                     str(row.monthly_tax_override) if row.monthly_tax_override is not None else None

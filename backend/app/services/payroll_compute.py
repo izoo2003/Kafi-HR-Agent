@@ -243,6 +243,8 @@ def compute_payroll_for_month(
         adj = adjustments.get(emp.id)
         if adj is not None:
             if not ignore_attendance_overrides:
+                if adj.leave_used is not None:
+                    leave_used = max(0, adj.leave_used)
                 if adj.days_absent is not None:
                     absents_after_leave_reported = max(0, adj.days_absent)
                     days_absent_reported = absents_after_leave_reported

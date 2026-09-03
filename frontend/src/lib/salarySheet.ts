@@ -17,6 +17,7 @@ export type SheetDraft = {
   baseSalary: string;
   daysPresent: string;
   daysAbsent: string;
+  leaveUsed: string;
   daysLate: string;
   daysHalfDay: string;
   allowanceAmount: string;
@@ -35,6 +36,7 @@ export type LiveRow = {
   roleTitle: string;
   employeeCode: string;
   leaveAllowance: number;
+  leaveUsed: number;
   base: number;
   perDay: number;
   daysPresent: number;
@@ -90,6 +92,7 @@ export function computeLiveRow(
   const base = d ? n(d.baseSalary) : n(emp.baseSalary);
   const daysAbsent = d ? n(d.daysAbsent) : n(emp.absentsAfterLeave);
   const daysPresent = d ? n(d.daysPresent) : n(emp.daysPresent);
+  const leaveUsed = d ? n(d.leaveUsed) : n(emp.leaveUsed);
   const daysLate = d ? n(d.daysLate) : n(emp.daysLate);
   const daysHalfDay = d ? n(d.daysHalfDay) : n(emp.daysHalfDay);
   const allowance = d ? n(d.allowanceAmount) : n(emp.allowanceAmount);
@@ -110,6 +113,7 @@ export function computeLiveRow(
     roleTitle: emp.roleTitle,
     employeeCode: emp.employeeCode,
     leaveAllowance: emp.leaveAllowance,
+    leaveUsed,
     base,
     perDay,
     daysPresent,
@@ -138,6 +142,7 @@ export function draftFromEmployee(e: PayrollComputeRow): SheetDraft {
     baseSalary: String(e.baseSalary ?? ""),
     daysPresent: String(e.daysPresent ?? 0),
     daysAbsent: String(e.absentsAfterLeave ?? 0),
+    leaveUsed: String(e.leaveUsed ?? 0),
     daysLate: String(e.daysLate ?? 0),
     daysHalfDay: String(e.daysHalfDay ?? 0),
     allowanceAmount: String(e.allowanceAmount ?? 0),
@@ -168,29 +173,47 @@ export function applyAttendancePatch(
   const next = { ...patch };
   const days = monthDays || 30;
 
-  if (patch.daysLate != null && patch.daysAbsent == null) {
+  // Leave converts chargeable absents: +1 leave → −1 absent → +1 present (and vice versa).
+  if (patch.leaveUsed != null && patch.daysAbsent == null) {
+    const prevLeave = n(current.leaveUsed);
+    const requested = Math.max(0, n(patch.leaveUsed));
+    const delta = requested - prevLeave;
+    const currentAbsent = n(current.daysAbsent);
+    if (delta > 0) {
+      const applied = Math.min(delta, currentAbsent);
+      next.leaveUsed = String(prevLeave + applied);
+      next.daysAbsent = String(Math.max(0, currentAbsent - applied));
+    } else {
+      next.leaveUsed = String(requested);
+      next.daysAbsent = String(Math.max(0, currentAbsent - delta));
+    }
+  }
+
+  if (patch.daysLate != null && patch.daysAbsent == null && next.daysAbsent == null) {
     const prevLateOff = Math.floor(n(current.daysLate) / latesPerOff);
     const nextLateOff = Math.floor(n(patch.daysLate) / latesPerOff);
     const baseAbsent = Math.max(0, n(current.daysAbsent) - prevLateOff);
     next.daysAbsent = String(Math.max(0, baseAbsent + nextLateOff));
   }
 
-  if (patch.daysAbsent != null && patch.daysPresent == null) {
-    next.daysPresent = String(Math.max(0, days - n(patch.daysAbsent)));
+  const absentForPresent = next.daysAbsent != null ? n(next.daysAbsent) : null;
+  if (absentForPresent != null && patch.daysPresent == null) {
+    next.daysPresent = String(Math.max(0, days - absentForPresent));
   }
-  if (patch.daysPresent != null && patch.daysAbsent == null) {
+  if (patch.daysPresent != null && patch.daysAbsent == null && next.daysAbsent == null) {
     next.daysAbsent = String(Math.max(0, days - n(patch.daysPresent)));
   }
   const calcInputs = [
     "baseSalary",
     "daysPresent",
     "daysAbsent",
+    "leaveUsed",
     "daysLate",
     "daysHalfDay",
     "allowanceAmount",
     "bonusAmount",
   ];
-  if (calcInputs.some((k) => k in patch)) {
+  if (calcInputs.some((k) => k in patch || k in next)) {
     next.taxManual = false;
   }
   return next;

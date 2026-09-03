@@ -83,6 +83,7 @@ export function SalaryComputePage() {
             baseSalary: Number(d?.baseSalary ?? e.baseSalary),
             daysPresent: Number(d?.daysPresent ?? e.daysPresent),
             daysAbsent: Number(d?.daysAbsent ?? e.absentsAfterLeave),
+            leaveUsed: Number(d?.leaveUsed ?? e.leaveUsed ?? 0),
             daysLate: Number(d?.daysLate ?? e.daysLate),
             daysHalfDay: Number(d?.daysHalfDay ?? e.daysHalfDay),
             allowanceAmount: Number(d?.allowanceAmount ?? e.allowanceAmount ?? 0),
@@ -175,9 +176,11 @@ export function SalaryComputePage() {
       <div className="page" style={{ display: "grid", gap: "var(--space-5)" }}>
         <Card>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-            Edit this sheet like Excel. Changing base salary, absents, lates, or half-days immediately
-            recalculates per-day rate, late offs (3 lates = 1 absent day), half-day deduction, tax, and net
-            payable. Present and absent stay on a 30-day month. Save to keep this month&apos;s figures.
+            Edit this sheet like Excel. Changing base salary, leave, absents, lates, or half-days
+            immediately recalculates per-day rate, late offs (3 lates = 1 absent day), half-day
+            deduction, tax, and net payable. Increasing Leave by 1 reduces Absent by 1 (and raises
+            Present / net). Present and absent stay on a 30-day month. Use Full screen for a larger
+            edit surface. Save to keep this month&apos;s figures.
           </p>
           <div
             style={{

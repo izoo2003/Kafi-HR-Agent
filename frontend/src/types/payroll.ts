@@ -143,6 +143,7 @@ export interface PayrollSheetAdjustmentInput {
   daysAbsent?: number | null;
   daysLate?: number | null;
   daysHalfDay?: number | null;
+  leaveUsed?: number | null;
   overtimeBonusDays?: number | null;
   monthlyTaxOverride?: number | null;
 }
