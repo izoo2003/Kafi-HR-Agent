@@ -455,6 +455,12 @@
   min-width: 0;
 }
 
+/* Payroll salary sheet is wider than the content column — let it use full main width */
+.page:has(.salary-sheet-wrap) {
+  width: 100%;
+  max-width: none;
+}
+
 .sidebar__backdrop {
   display: none;
 }

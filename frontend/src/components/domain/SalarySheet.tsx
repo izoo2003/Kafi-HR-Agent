@@ -113,8 +113,11 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
   }
 
   const sheet = (
-    <div className="salary-sheet-wrap">
+    <div className={`salary-sheet-wrap${fullscreen ? " salary-sheet-wrap--fullscreen" : ""}`}>
       <div className="salary-sheet__toolbar">
+        <span className="salary-sheet__toolbar-hint">
+          Scroll inside the sheet · use Full screen for a larger editor
+        </span>
         <button
           type="button"
           className="salary-sheet__fullscreen-btn"
@@ -126,7 +129,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
           <span>{fullscreen ? "Exit full screen" : "Full screen"}</span>
         </button>
       </div>
-      <div className="salary-sheet__scroll">
+      <div className="salary-sheet__scroll" tabIndex={0} aria-label="Salary sheet table">
         <table className="salary-sheet">
           <colgroup>
             <col style={{ width: 48 }} />
