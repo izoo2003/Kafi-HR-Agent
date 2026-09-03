@@ -150,6 +150,7 @@ def save_sheet_adjustments(
         row.leave_used = item.leave_used
         row.overtime_bonus_days = item.overtime_bonus_days
         row.monthly_tax_override = item.monthly_tax_override
+        row.excluded = bool(item.excluded)
         audit_service.log_from_auth(
             db,
             auth,
@@ -175,6 +176,7 @@ def save_sheet_adjustments(
                 "monthly_tax_override": (
                     str(row.monthly_tax_override) if row.monthly_tax_override is not None else None
                 ),
+                "excluded": row.excluded,
             },
         )
         saved += 1

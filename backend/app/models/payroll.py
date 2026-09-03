@@ -95,6 +95,7 @@ class PayrollSheetAdjustment(Base, TimestampMixin):
     leave_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     overtime_bonus_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_tax_override: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class TaxYear(Base, TimestampMixin):

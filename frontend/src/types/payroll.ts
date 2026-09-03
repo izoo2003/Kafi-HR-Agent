@@ -146,6 +146,7 @@ export interface PayrollSheetAdjustmentInput {
   leaveUsed?: number | null;
   overtimeBonusDays?: number | null;
   monthlyTaxOverride?: number | null;
+  excluded?: boolean;
 }
 
 export interface PayrollSheetAdjustmentsSave {

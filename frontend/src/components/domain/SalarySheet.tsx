@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Trash2 } from "lucide-react";
 import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
 import {
   applyAttendancePatch,
@@ -29,6 +29,7 @@ type Props = {
   drafts: Record<number, SheetDraft>;
   canEdit: boolean;
   onDraftChange: (employeeId: number, patch: Partial<SheetDraft>) => void;
+  onDeleteRow?: (employeeId: number, fullName: string) => void;
   aiSummary?: PayrollAiSummary | null;
 };
 
@@ -56,7 +57,14 @@ function NumInput({
   );
 }
 
-export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary }: Props) {
+export function SalarySheet({
+  result,
+  drafts,
+  canEdit,
+  onDraftChange,
+  onDeleteRow,
+  aiSummary,
+}: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const monthDays = result.monthDays || 30;
   const latesPerOff = result.latesPerOff || 3;
@@ -153,15 +161,16 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
             <col style={{ width: 100 }} />
             <col style={{ width: 110 }} />
             <col style={{ width: 160 }} />
+            <col style={{ width: 72 }} />
           </colgroup>
           <thead>
             <tr>
-              <th className="salary-sheet__company" colSpan={21}>
+              <th className="salary-sheet__company" colSpan={22}>
                 {result.companyName || "KAFI COMMODITIES (PVT) LTD"}
               </th>
             </tr>
             <tr>
-              <th className="salary-sheet__month" colSpan={21}>
+              <th className="salary-sheet__month" colSpan={22}>
                 Salary Sheet For The Month Of {monthTitle(result.periodMonth, result.periodYear)}
               </th>
             </tr>
@@ -187,6 +196,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
               <th className="salary-sheet__group">Net Payable</th>
               <th className="salary-sheet__group">Mode of Payment</th>
               <th className="salary-sheet__group">Remarks</th>
+              <th className="salary-sheet__group">Actions</th>
             </tr>
             <tr>
               <th className="salary-sheet__sub">S.No#</th>
@@ -212,6 +222,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
               <th className="salary-sheet__sub" />
               <th className="salary-sheet__sub" />
               <th className="salary-sheet__sub" />
+              <th className="salary-sheet__sub">Delete</th>
             </tr>
           </thead>
           <tbody>
@@ -400,6 +411,21 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
                     r.remarks
                   )}
                 </td>
+                <td className="ctr">
+                  {canEdit && onDeleteRow ? (
+                    <button
+                      type="button"
+                      className="salary-sheet__delete-btn"
+                      title={`Remove ${r.fullName} from this month's salary sheet`}
+                      aria-label={`Delete row for ${r.fullName}`}
+                      onClick={() => onDeleteRow(r.employeeId, r.fullName)}
+                    >
+                      <Trash2 size={14} aria-hidden />
+                    </button>
+                  ) : (
+                    "—"
+                  )}
+                </td>
               </tr>
             ))}
             <tr className="salary-sheet__total">
@@ -422,10 +448,10 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
               <td className="num">{money(totals.advance)}</td>
               <td className="num">{money(totals.tax)}</td>
               <td className="num salary-sheet__net">{money(totals.net)}</td>
-              <td colSpan={2} />
+              <td colSpan={3} />
             </tr>
             <tr className="salary-sheet__signoff">
-              <td colSpan={6}>
+              <td colSpan={7}>
                 <div className="salary-sheet__signoff-line">Prepared By</div>
               </td>
               <td colSpan={8}>
@@ -437,7 +463,7 @@ export function SalarySheet({ result, drafts, canEdit, onDraftChange, aiSummary 
             </tr>
             {summary?.summaryText ? (
               <tr className="salary-sheet__ai">
-                <td colSpan={21}>
+                <td colSpan={22}>
                   <h2 className="salary-sheet__ai-title">AI salary sheet summary</h2>
                   <p className="salary-sheet__ai-meta">
                     Payment modes — IBFT {summary.paymentModeCounts.IBFT ?? 0}, Cash{" "}

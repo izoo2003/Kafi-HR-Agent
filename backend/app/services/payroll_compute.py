@@ -184,6 +184,15 @@ def compute_payroll_for_month(
 
     rows: list[PayrollComputeRow] = []
     for emp in employees:
+        adj = adjustments.get(emp.id)
+        # Rows removed from the edit salary sheet stay out until re-imported / un-excluded.
+        if (
+            adj is not None
+            and bool(getattr(adj, "excluded", False))
+            and not ignore_attendance_overrides
+        ):
+            continue
+
         base = Decimal(str(emp.base_salary or 0))
         per_day = (base / Decimal(month_days)).quantize(Decimal("0.01")) if base else Decimal("0")
         emp_punches = punches.get(emp.id, {})
@@ -240,7 +249,6 @@ def compute_payroll_for_month(
         days_absent_reported = days_absent + late_off_days
         ot_days_final = ot_days
 
-        adj = adjustments.get(emp.id)
         if adj is not None:
             if not ignore_attendance_overrides:
                 if adj.leave_used is not None:

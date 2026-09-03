@@ -10,7 +10,7 @@ import { usePayrollCompute, usePayrollAiSummary, useSavePayrollSheet, useTaxYear
 import { useAuth } from "../../hooks/useAuth";
 import { downloadSalarySheetExcel } from "../../api/payroll";
 import { ApiError } from "../../api/client";
-import type { PayrollAiSummary } from "../../types/payroll";
+import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
 
 export function SalaryComputePage() {
   const { hasPermission } = useAuth();
@@ -28,6 +28,7 @@ export function SalaryComputePage() {
   const taxYears = useTaxYears();
   const [taxYearId, setTaxYearId] = useState<number | "">("");
   const [drafts, setDrafts] = useState<Record<number, SheetDraft>>({});
+  const [removedIds, setRemovedIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [aiSummary, setAiSummary] = useState<PayrollAiSummary | null>(null);
@@ -54,12 +55,23 @@ export function SalaryComputePage() {
   useEffect(() => {
     if (compute.data) {
       setDrafts(draftFromResult(compute.data));
+      setRemovedIds([]);
     }
   }, [compute.data]);
 
   useEffect(() => {
     setAiSummary(null);
   }, [month, year]);
+
+  const displayResult: PayrollComputeResult | null = useMemo(() => {
+    if (!compute.data) return null;
+    if (removedIds.length === 0) return compute.data;
+    const removed = new Set(removedIds);
+    return {
+      ...compute.data,
+      employees: compute.data.employees.filter((e) => !removed.has(e.employeeId)),
+    };
+  }, [compute.data, removedIds]);
 
   function patchDraft(employeeId: number, patch: Partial<SheetDraft>) {
     setDrafts((prev) => ({
@@ -69,15 +81,30 @@ export function SalaryComputePage() {
     setMessage(null);
   }
 
+  function deleteRow(employeeId: number, fullName: string) {
+    const ok = window.confirm(
+      `Remove ${fullName} from this month's salary sheet?\n\nSave the sheet to keep them removed. A professional attendance import for this month can bring them back.`,
+    );
+    if (!ok) return;
+    setRemovedIds((prev) => (prev.includes(employeeId) ? prev : [...prev, employeeId]));
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[employeeId];
+      return next;
+    });
+    setMessage(`${fullName} removed from this sheet — save to keep the change.`);
+    setError(null);
+  }
+
   async function save() {
     if (!compute.data) return;
     setError(null);
     setMessage(null);
+    const removed = new Set(removedIds);
     try {
-      await saveSheet.mutateAsync({
-        periodMonth: month,
-        periodYear: year,
-        items: compute.data.employees.map((e) => {
+      const keptItems = compute.data.employees
+        .filter((e) => !removed.has(e.employeeId))
+        .map((e) => {
           const d = drafts[e.employeeId];
           const live = {
             baseSalary: Number(d?.baseSalary ?? e.baseSalary),
@@ -93,15 +120,37 @@ export function SalaryComputePage() {
             paymentMode: normalizePaymentMode(d?.paymentMode ?? e.paymentMode),
             remarks: d?.remarks || null,
             monthlyTaxOverride: d?.taxManual ? Number(d.monthlyTax) : null,
+            excluded: false,
           };
           return {
             employeeId: e.employeeId,
             ...live,
             baseSalary: Number.isFinite(live.baseSalary) ? live.baseSalary : Number(e.baseSalary),
           };
-        }),
+        });
+      const removedItems = compute.data.employees
+        .filter((e) => removed.has(e.employeeId))
+        .map((e) => ({
+          employeeId: e.employeeId,
+          allowanceAmount: 0,
+          bonusAmount: 0,
+          loanDeductionAmount: 0,
+          advanceAmount: 0,
+          paymentMode: normalizePaymentMode(e.paymentMode),
+          remarks: e.remarks || null,
+          excluded: true,
+        }));
+      await saveSheet.mutateAsync({
+        periodMonth: month,
+        periodYear: year,
+        items: [...keptItems, ...removedItems],
       });
-      setMessage("Salary sheet saved");
+      setMessage(
+        removedItems.length
+          ? `Salary sheet saved (${removedItems.length} row${removedItems.length === 1 ? "" : "s"} removed)`
+          : "Salary sheet saved",
+      );
+      setRemovedIds([]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Save failed");
     }
@@ -179,8 +228,8 @@ export function SalaryComputePage() {
             Edit this sheet like Excel. Changing base salary, leave, absents, lates, or half-days
             immediately recalculates per-day rate, late offs (3 lates = 1 absent day), half-day
             deduction, tax, and net payable. Increasing Leave by 1 reduces Absent by 1 (and raises
-            Present / net). Present and absent stay on a 30-day month. Use Full screen for a larger
-            edit surface. Save to keep this month&apos;s figures.
+            Present / net). Use the trash icon to remove a row from this month&apos;s sheet, then
+            Save. Full screen expands the editor. Present and absent stay on a 30-day month.
           </p>
           <div
             style={{
@@ -242,13 +291,14 @@ export function SalaryComputePage() {
           <p style={{ color: "var(--color-status-critical)" }}>Could not compute payroll.</p>
         ) : null}
 
-        {compute.data ? (
+        {displayResult ? (
           <SalarySheet
-            result={compute.data}
+            result={displayResult}
             drafts={drafts}
             canEdit={canEdit}
             onDraftChange={patchDraft}
-            aiSummary={aiSummary ?? compute.data.aiSummary}
+            onDeleteRow={canEdit ? deleteRow : undefined}
+            aiSummary={aiSummary ?? displayResult.aiSummary}
           />
         ) : null}
       </div>

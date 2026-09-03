@@ -521,6 +521,7 @@ def _persist_payroll_for_import(
             payment_mode=row.payment_mode,
             remarks=row.remarks,
             monthly_tax_override=row.monthly_tax if row.tax_manual else None,
+            excluded=False,
         )
         for row in computed.employees
         if row.employee_id in matched_employee_ids
