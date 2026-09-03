@@ -43,7 +43,10 @@ export function EmployeeListPage() {
   async function onExit(emp: Employee) {
     if (emp.status === "terminated") return;
     const ok = window.confirm(
-      `Remove ${emp.fullName} (${emp.employeeCode}) from the active roster?\n\nThey will be marked terminated (not hard-deleted) so attendance/KPI history stays intact.`,
+      `Remove ${emp.fullName} (${emp.employeeCode}) from the active roster?\n\n` +
+        `They will be marked terminated and related records will be removed ` +
+        `(salary sheet rows, pay structures, advances, payslips, attendance, leave, KPI entries, training). ` +
+        `They will no longer appear in employee dropdowns or the salary sheet.`,
     );
     if (!ok) return;
     setError(null);

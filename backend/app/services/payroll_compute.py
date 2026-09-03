@@ -125,6 +125,8 @@ def compute_payroll_for_month(
     dept_names = {
         d.id: d.name for d in db.query(Department).filter(Department.id.in_(dept_ids)).all()
     }
+    emp_ids = [e.id for e in employees]
+    emp_id_set = set(emp_ids)
     adj_rows = (
         db.query(PayrollSheetAdjustment)
         .filter(
@@ -133,9 +135,10 @@ def compute_payroll_for_month(
         )
         .all()
     )
-    adjustments: dict[int, PayrollSheetAdjustment] = {a.employee_id: a for a in adj_rows}
+    adjustments: dict[int, PayrollSheetAdjustment] = {
+        a.employee_id: a for a in adj_rows if a.employee_id in emp_id_set
+    }
 
-    emp_ids = [e.id for e in employees]
     records = (
         db.query(AttendanceRecord)
         .filter(

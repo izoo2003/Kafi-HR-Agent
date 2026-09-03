@@ -8,12 +8,27 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, EntityNotFound, ValidationFailed
 from app.ingestion.employee_docs import delete_stored_file, read_stored_file, store_employee_file
+from app.models.attendance import AttendanceRecord, LeaveRequest
 from app.models.employees import (
     Department,
     Employee,
     EmployeeDocument,
     EmployeeReference,
     EmployeeReferenceDocument,
+)
+from app.models.kpi import (
+    EmployeeMonthlyPerformance,
+    EmployeeResignationNotice,
+    EmployeeTrainingAssignment,
+    KpiDefinition,
+    KpiEntry,
+)
+from app.models.payroll import (
+    Deduction,
+    PayrollSheetAdjustment,
+    PayrollStructure,
+    Payslip,
+    SalaryAdvance,
 )
 from app.schemas.common import AuthContext, PaginatedResponse
 from app.schemas.employees import (
@@ -32,6 +47,113 @@ from app.schemas.employees import (
     EmployeeUpdate,
 )
 from app.services import audit_service
+
+
+def _purge_related_employee_records(db: Session, employee_id: int) -> dict[str, int]:
+    """Remove operational rows tied to an exited employee so they leave salary sheets, pickers, etc.
+
+    Profile documents/letters stay on the terminated employee row for audit; org FKs are cleared.
+    """
+    purged: dict[str, int] = {}
+
+    # Clear org pointers so this person is not still selected as head/manager.
+    db.query(Department).filter(Department.head_employee_id == employee_id).update(
+        {Department.head_employee_id: None},
+        synchronize_session=False,
+    )
+    db.query(Employee).filter(Employee.manager_id == employee_id).update(
+        {Employee.manager_id: None},
+        synchronize_session=False,
+    )
+
+    purged["payroll_sheet_adjustments"] = (
+        db.query(PayrollSheetAdjustment)
+        .filter(PayrollSheetAdjustment.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+    purged["payroll_structures"] = (
+        db.query(PayrollStructure)
+        .filter(PayrollStructure.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+    purged["salary_advances"] = (
+        db.query(SalaryAdvance)
+        .filter(SalaryAdvance.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+
+    payslip_ids = [
+        row.id
+        for row in db.query(Payslip.id).filter(Payslip.employee_id == employee_id).all()
+    ]
+    if payslip_ids:
+        purged["deductions"] = (
+            db.query(Deduction)
+            .filter(Deduction.payslip_id.in_(payslip_ids))
+            .delete(synchronize_session=False)
+        )
+        purged["payslips"] = (
+            db.query(Payslip)
+            .filter(Payslip.id.in_(payslip_ids))
+            .delete(synchronize_session=False)
+        )
+    else:
+        purged["deductions"] = 0
+        purged["payslips"] = 0
+
+    purged["attendance_records"] = (
+        db.query(AttendanceRecord)
+        .filter(AttendanceRecord.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+    purged["leave_requests"] = (
+        db.query(LeaveRequest)
+        .filter(LeaveRequest.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+
+    purged["kpi_entries"] = (
+        db.query(KpiEntry).filter(KpiEntry.employee_id == employee_id).delete(synchronize_session=False)
+    )
+    personal_kpi_ids = [
+        row.id
+        for row in db.query(KpiDefinition.id)
+        .filter(KpiDefinition.owner_employee_id == employee_id)
+        .all()
+    ]
+    if personal_kpi_ids:
+        # Entries may reference personal defs even if employee_id differed; remove both.
+        extra_entries = (
+            db.query(KpiEntry)
+            .filter(KpiEntry.kpi_definition_id.in_(personal_kpi_ids))
+            .delete(synchronize_session=False)
+        )
+        purged["kpi_entries"] = int(purged["kpi_entries"]) + int(extra_entries)
+        purged["personal_kpi_definitions"] = (
+            db.query(KpiDefinition)
+            .filter(KpiDefinition.id.in_(personal_kpi_ids))
+            .delete(synchronize_session=False)
+        )
+    else:
+        purged["personal_kpi_definitions"] = 0
+
+    purged["monthly_performance"] = (
+        db.query(EmployeeMonthlyPerformance)
+        .filter(EmployeeMonthlyPerformance.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+    purged["training_assignments"] = (
+        db.query(EmployeeTrainingAssignment)
+        .filter(EmployeeTrainingAssignment.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+    purged["resignation_notices"] = (
+        db.query(EmployeeResignationNotice)
+        .filter(EmployeeResignationNotice.employee_id == employee_id)
+        .delete(synchronize_session=False)
+    )
+
+    return purged
 
 
 def _letter_flags(emp: Employee) -> dict[str, bool]:
@@ -167,9 +289,25 @@ def update_employee(
 
 def exit_employee(db: Session, auth: AuthContext, employee_id: int) -> Employee:
     emp = get_employee(db, employee_id)
+    if emp.status == "terminated" and emp.date_exited is not None:
+        # Idempotent: still purge any leftover operational rows if re-run.
+        purged = _purge_related_employee_records(db, emp.id)
+        db.flush()
+        if any(purged.values()):
+            audit_service.log_from_auth(
+                db,
+                auth,
+                action="employee.exited_cleanup",
+                entity_type="employee",
+                entity_id=emp.id,
+                after_state={"purged": purged},
+            )
+        return emp
+
     before = {"status": emp.status, "date_exited": str(emp.date_exited) if emp.date_exited else None}
     emp.status = "terminated"
     emp.date_exited = date.today()
+    purged = _purge_related_employee_records(db, emp.id)
     db.flush()
     audit_service.log_from_auth(
         db,
@@ -178,7 +316,11 @@ def exit_employee(db: Session, auth: AuthContext, employee_id: int) -> Employee:
         entity_type="employee",
         entity_id=emp.id,
         before_state=before,
-        after_state={"status": emp.status, "date_exited": str(emp.date_exited)},
+        after_state={
+            "status": emp.status,
+            "date_exited": str(emp.date_exited),
+            "purged": purged,
+        },
     )
     return emp
 
