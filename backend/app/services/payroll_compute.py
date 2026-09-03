@@ -1,4 +1,4 @@
-"""Compute monthly net salary from attendance + tax slabs."""
+"""Compute monthly net salary from attendance + tax slabs (tax on net, not gross)."""
 from __future__ import annotations
 
 import calendar
@@ -297,19 +297,22 @@ def compute_payroll_for_month(
         gross_salary = (
             per_day * Decimal(days_present) + allowance + bonus + overtime_amount
         ).quantize(Decimal("0.01"))
-        annual_taxable = (gross_salary * Decimal("12")).quantize(Decimal("0.01"))
+        # Tax slabs apply to net (after late / half / loan / advance), not gross.
+        net_before_tax = (
+            gross_salary
+            - late_deduction_amount
+            - half_day_deduction
+            - loan
+            - advance
+        ).quantize(Decimal("0.01"))
+        if net_before_tax < 0:
+            net_before_tax = Decimal("0")
+        annual_taxable = (net_before_tax * Decimal("12")).quantize(Decimal("0.01"))
         annual_tax = calculate_annual_tax(annual_taxable, slabs)
         monthly_tax = (annual_tax / Decimal("12")).quantize(Decimal("0.01"))
         if adj is not None and adj.monthly_tax_override is not None:
             monthly_tax = Decimal(str(adj.monthly_tax_override)).quantize(Decimal("0.01"))
-        net_payable = (
-            gross_salary
-            - late_deduction_amount
-            - loan
-            - half_day_deduction
-            - advance
-            - monthly_tax
-        ).quantize(Decimal("0.01"))
+        net_payable = (net_before_tax - monthly_tax).quantize(Decimal("0.01"))
         if net_payable < 0:
             net_payable = Decimal("0")
         gross = gross_salary

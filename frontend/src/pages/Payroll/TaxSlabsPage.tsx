@@ -157,7 +157,8 @@ export function TaxSlabsPage() {
           <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Tax year</h2>
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
             Select a tax year (e.g. 2026-27) to view or edit progressive annual salary tax slabs.
-            Monthly withholding = annual tax ÷ 12.
+            Slabs apply to annualized <strong>net</strong> (gross minus late, half-day, loan, and
+            advance deductions) — not gross. Monthly withholding = annual tax ÷ 12.
           </p>
           {years.isLoading ? <Spinner /> : null}
           <label className="form-field" style={{ maxWidth: 320 }}>

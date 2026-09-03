@@ -77,8 +77,14 @@ export function annualTax(income: number, slabs: TaxSlabInput[]): number {
   return round2(match.fixedAmount + (excess * match.ratePercent) / 100);
 }
 
+export function monthlyTaxFromNet(netBeforeTax: number, slabs: TaxSlabInput[]): number {
+  const taxable = Math.max(0, netBeforeTax);
+  return round2(annualTax(taxable * 12, slabs) / 12);
+}
+
+/** @deprecated Use monthlyTaxFromNet — tax slabs apply to net, not gross. */
 export function monthlyTaxFromGross(gross: number, slabs: TaxSlabInput[]): number {
-  return round2(annualTax(gross * 12, slabs) / 12);
+  return monthlyTaxFromNet(gross, slabs);
 }
 
 export function computeLiveRow(
@@ -105,9 +111,10 @@ export function computeLiveRow(
   const lateDed = round2(lateOffDays * perDay);
   const halfDed = round2(daysHalfDay * perDay * 0.5);
   const gross = round2(perDay * daysPresent + allowance + bonus);
-  const taxComputed = monthlyTaxFromGross(gross, opts.slabs);
+  const netBeforeTax = Math.max(0, round2(gross - lateDed - loan - halfDed - advance));
+  const taxComputed = monthlyTaxFromNet(netBeforeTax, opts.slabs);
   const tax = d?.taxManual ? n(d.monthlyTax) : taxComputed;
-  const net = Math.max(0, round2(gross - lateDed - loan - halfDed - advance - tax));
+  const net = Math.max(0, round2(netBeforeTax - tax));
   return {
     employeeId: emp.employeeId,
     fullName: emp.fullName,
