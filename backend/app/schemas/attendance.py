@@ -255,6 +255,12 @@ class PeriodEmployeeReport(BaseModel):
     daily_entries: list[PeriodDayEntry] = []
 
 
+class PayrollPeriodSaved(BaseModel):
+    period_month: int
+    period_year: int
+    employees_saved: int = 0
+
+
 class AttendancePeriodReport(BaseModel):
     period_start: date
     period_end: date
@@ -271,3 +277,11 @@ class AttendancePeriodReport(BaseModel):
     saturday_off_mode: str = "second_saturday"
     saturday_off_dates: list[date] = []
     extra_holiday_dates: list[date] = []
+    import_mode: Literal["testing", "professional"] = "testing"
+    persisted: bool = False
+    payroll_saved: bool = False
+    payroll_period_month: int | None = None
+    payroll_period_year: int | None = None
+    payroll_employees_saved: int = 0
+    payroll_message: str | None = None
+    payroll_periods: list[PayrollPeriodSaved] = []

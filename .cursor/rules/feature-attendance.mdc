@@ -84,6 +84,7 @@ class RawPunchRecord(BaseModel):
 - `POST /attendance/import` accepts an Excel/CSV file matching a defined template (columns: `employee_code, date, check_in, check_out`).
 - Import is transactional per-row: valid rows are written (with `source = "import"`), invalid rows (unknown employee_code, malformed date, etc.) are collected and returned in the response as `{ imported: N, errors: [{ row: 3, message: "..." }] }` so HR can fix and re-upload just the failed rows rather than guessing.
 - Import always runs the same status-derivation logic as §2 — imported rows are not stored as "present" by default.
+- `POST /attendance/period-report` is the WebHR Excel flow. Files are always a single calendar month. Form field `import_mode`: `testing` analyzes only (no attendance, holiday, or payroll writes); `professional` overwrites attendance for that month and overwrites the calculated salary sheet for the same month. Unmatched names are shown and must be added as employees before their rows can be saved. Do not persist on analyze.
 
 ---
 

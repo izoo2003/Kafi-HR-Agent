@@ -60,6 +60,7 @@ def compute_payroll_for_month(
     period_month: int,
     period_year: int,
     tax_year_id: int,
+    ignore_attendance_overrides: bool = False,
 ) -> PayrollComputeResult:
     if period_month < 1 or period_month > 12:
         raise ValidationFailed("period_month must be 1–12")
@@ -148,7 +149,17 @@ def compute_payroll_for_month(
     for r in records:
         punches[r.employee_id][r.date] = r
 
-    # Day classification (same office rules as attendance period report)
+    stored_off_dates: set[date] = set()
+    statuses_by_date: dict[date, list[str]] = defaultdict(list)
+    for r in records:
+        statuses_by_date[r.date].append(r.status)
+    for day, statuses in statuses_by_date.items():
+        holiday_n = sum(1 for s in statuses if s == "holiday")
+        if statuses and holiday_n / len(statuses) >= 0.5:
+            stored_off_dates.add(day)
+
+    # Day classification (same office rules as attendance period report).
+    # Imported holiday/Saturday-off rows are the source of truth for that month.
     day_types: dict[date, str] = {}
     d = period_start
     while d <= period_end:
@@ -156,6 +167,8 @@ def compute_payroll_for_month(
             day_types[d] = "sunday_off"
         elif d in configured_holidays:
             day_types[d] = "configured_holiday"
+        elif d in stored_off_dates:
+            day_types[d] = "saturday_off" if d.weekday() == 5 else "auto_holiday"
         else:
             present_n = sum(
                 1
@@ -229,20 +242,25 @@ def compute_payroll_for_month(
 
         adj = adjustments.get(emp.id)
         if adj is not None:
-            if adj.days_absent is not None:
-                absents_after_leave_reported = max(0, adj.days_absent)
-                days_absent_reported = absents_after_leave_reported
-            if adj.days_late is not None:
-                days_late = max(0, adj.days_late)
-                late_off_days = days_late // lates_per_off
-            if adj.days_half_day is not None:
-                days_half = max(0, adj.days_half_day)
-            if adj.overtime_bonus_days is not None:
-                ot_days_final = max(0, adj.overtime_bonus_days)
+            if not ignore_attendance_overrides:
+                if adj.days_absent is not None:
+                    absents_after_leave_reported = max(0, adj.days_absent)
+                    days_absent_reported = absents_after_leave_reported
+                if adj.days_late is not None:
+                    days_late = max(0, adj.days_late)
+                    late_off_days = days_late // lates_per_off
+                if adj.days_half_day is not None:
+                    days_half = max(0, adj.days_half_day)
+                if adj.overtime_bonus_days is not None:
+                    ot_days_final = max(0, adj.overtime_bonus_days)
 
         days_present = (
             adj.days_present
-            if adj is not None and adj.days_present is not None
+            if (
+                adj is not None
+                and adj.days_present is not None
+                and not ignore_attendance_overrides
+            )
             else max(0, month_days - raw_absents_after_leave)
         )
 

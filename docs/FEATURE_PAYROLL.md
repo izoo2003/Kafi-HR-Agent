@@ -103,7 +103,7 @@ Per `AUTH_AND_RBAC.md`:
 ## 8. Frontend Pages
 
 - `PayrollRunListPage` — employee name, base salary, and net salary for the selected month; **Edit Salary Sheets** opens the Excel-format calculator.
-- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month. **Generate AI summary** writes the narrative onto the sheet itself; **Download Excel** exports the same format including that summary.
+- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month. A **professional** attendance Excel import also writes this month's sheet (attendance-derived days and net) for the file's calendar month; `?month=&year=` opens that period. **Generate AI summary** writes the narrative onto the sheet itself; **Download Excel** exports the same format including that summary.
 - `PayrollRunDetailPage` — all payslips in the run (table, net pay in `--font-data`), Generate/Submit/Approve/Mark Paid actions gated by permission, bulk export.
 - `PayslipDetailPage` — full breakdown matching the PDF layout, edit capability while still in draft/pending, download PDF button.
 - `SalaryAdvancesPage` — request/approve advances, recovery progress bar (reuse the KPI-style progress visual from `UI_DESIGN_SYSTEM.md`).

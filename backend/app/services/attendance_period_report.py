@@ -50,8 +50,10 @@ from app.schemas.attendance import (
     LateEvent,
     PeriodEmployeeReport,
     PeriodDayEntry,
+    PayrollPeriodSaved,
     UnmatchedAttendancePerson,
 )
+from app.schemas.payroll import PayrollSheetAdjustmentInput, PayrollSheetAdjustmentsSave
 from app.schemas.common import AuthContext
 from app.services import audit_service
 from app.services.attendance_service import (
@@ -444,6 +446,106 @@ If none look like an off day, return an empty list.
     return set(by_month.values())
 
 
+def _require_single_month(dates: list[date]) -> tuple[date, date]:
+    """Attendance files are always one calendar month. Period = 1st → last day of that month."""
+    period_start, period_end = _calendar_period(dates)
+    if (period_start.year, period_start.month) != (period_end.year, period_end.month):
+        raise ValidationFailed(
+            "This attendance file covers more than one month. Upload a single month only "
+            f"(found {period_start.strftime('%B %Y')} to {period_end.strftime('%B %Y')})."
+        )
+    return period_start, period_end
+
+
+def _tax_year_for_period(db: Session, as_of: date):
+    from app.models.payroll import TaxYear
+    from app.services.tax_service import ensure_default_tax_year
+
+    ensure_default_tax_year(db)
+    covering = (
+        db.query(TaxYear)
+        .filter(TaxYear.start_date <= as_of, TaxYear.end_date >= as_of)
+        .order_by(TaxYear.is_active.desc(), TaxYear.id.desc())
+        .first()
+    )
+    if covering is not None:
+        return covering
+    return (
+        db.query(TaxYear).filter(TaxYear.is_active.is_(True)).order_by(TaxYear.id.desc()).first()
+        or db.query(TaxYear).order_by(TaxYear.id.desc()).first()
+    )
+
+
+def _persist_payroll_for_import(
+    db: Session,
+    auth: AuthContext,
+    *,
+    period_start: date,
+    period_end: date,
+    matched_employee_ids: set[int],
+) -> tuple[list[PayrollPeriodSaved], str | None]:
+    """Overwrite the salary sheet for the single month in the attendance file."""
+    from app.services.payroll_compute import compute_payroll_for_month
+    from app.services.payroll_service import save_sheet_adjustments
+
+    if not matched_employee_ids:
+        return [], "No matched employees — payroll was not saved. Add them as employees and re-upload professionally."
+
+    tax_year = _tax_year_for_period(db, period_end)
+    if tax_year is None:
+        return [], "Attendance was saved, but payroll was not — no tax year is configured."
+
+    period_month, period_year = period_start.month, period_start.year
+    saved_periods: list[PayrollPeriodSaved] = []
+    computed = compute_payroll_for_month(
+        db,
+        period_month=period_month,
+        period_year=period_year,
+        tax_year_id=tax_year.id,
+        ignore_attendance_overrides=True,
+    )
+    items = [
+        PayrollSheetAdjustmentInput(
+            employee_id=row.employee_id,
+            base_salary=row.base_salary,
+            days_present=row.days_present,
+            days_absent=row.absents_after_leave,
+            days_late=row.days_late,
+            days_half_day=row.days_half_day,
+            overtime_bonus_days=row.overtime_bonus_days,
+            allowance_amount=row.allowance_amount,
+            bonus_amount=row.bonus_amount,
+            loan_deduction_amount=row.loan_deduction_amount,
+            advance_amount=row.advance_amount,
+            payment_mode=row.payment_mode,
+            remarks=row.remarks,
+            monthly_tax_override=row.monthly_tax if row.tax_manual else None,
+        )
+        for row in computed.employees
+        if row.employee_id in matched_employee_ids
+    ]
+    if items:
+        count = save_sheet_adjustments(
+            db,
+            auth,
+            PayrollSheetAdjustmentsSave(
+                period_month=period_month,
+                period_year=period_year,
+                items=items,
+            ),
+        )
+        saved_periods.append(
+            PayrollPeriodSaved(
+                period_month=period_month,
+                period_year=period_year,
+                employees_saved=count,
+            )
+        )
+    if not saved_periods:
+        return [], "Attendance was saved, but no payroll rows were written for this file's month."
+    return saved_periods, None
+
+
 def analyze_period_file(
     db: Session,
     auth: AuthContext,
@@ -454,6 +556,7 @@ def analyze_period_file(
     saturday_off_mode: str = "second_saturday",
     saturday_off_date: date | None = None,
     extra_holiday_dates: list[date] | None = None,
+    import_mode: str | None = None,
 ) -> AttendancePeriodReport:
     policy = _office_policy(db)
     late_after = _time_from_policy(policy["late_after"], LATE_AFTER)
@@ -466,7 +569,17 @@ def analyze_period_file(
 
     tz = _company_tz(db)
     extra_holidays = list(extra_holiday_dates or [])
-    configured_holidays = merge_holiday_dates(db, extra_holidays) if extra_holidays else _holiday_dates(db)
+    raw_mode = (import_mode or "").strip().lower()
+    if raw_mode in ("testing", "professional"):
+        mode_norm = raw_mode
+    else:
+        mode_norm = "professional" if persist else "testing"
+    persist = mode_norm == "professional"
+    # Testing: extra holidays apply to this analysis only. Professional: merge into company holidays.
+    if persist and extra_holidays:
+        configured_holidays = merge_holiday_dates(db, extra_holidays)
+    else:
+        configured_holidays = _holiday_dates(db) | set(extra_holidays)
     rows = _parse_excel_or_csv(content, filename)
     if not rows:
         raise ValidationFailed("No data rows found in file")
@@ -547,7 +660,7 @@ def analyze_period_file(
         )
 
     all_dates = [d for emp_days in punches.values() for d in emp_days]
-    period_start, period_end = _calendar_period(all_dates)
+    period_start, period_end = _require_single_month(all_dates)
     roster_keys = sorted(punches.keys(), key=lambda k: display_names[k].lower())
 
     mode = (saturday_off_mode or "second_saturday").strip().lower()
@@ -784,14 +897,32 @@ def analyze_period_file(
             ImportErrorRow(
                 row=0,
                 message=(
-                    f"{display_names.get(key, key)} is in the Excel file but is not in Employees yet. "
-                    "Use Add employees below, then re-upload so attendance can be saved."
+                    f"{display_names.get(key, key)} is in the Excel file but is not an employee yet. "
+                    "Add them as an employee below, then re-upload professionally to save their attendance and salary."
                 ),
             )
         )
 
+    payroll_periods: list[PayrollPeriodSaved] = []
+    payroll_message: str | None = None
     if persist:
         db.flush()
+        matched_ids = {emp.id for emp in linked_employee.values()}
+        try:
+            with db.begin_nested():
+                payroll_periods, payroll_message = _persist_payroll_for_import(
+                    db,
+                    auth,
+                    period_start=period_start,
+                    period_end=period_end,
+                    matched_employee_ids=matched_ids,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Payroll save after professional attendance import failed")
+            payroll_message = (
+                f"Attendance was saved for {period_start.strftime('%B %Y')}, "
+                f"but payroll could not be saved: {exc}"
+            )
         audit_service.log_from_auth(
             db,
             auth,
@@ -800,6 +931,7 @@ def analyze_period_file(
             entity_id=0,
             after_state={
                 "filename": filename,
+                "import_mode": mode_norm,
                 "imported": imported,
                 "errors": len(errors),
                 "period_start": str(period_start),
@@ -808,6 +940,14 @@ def analyze_period_file(
                 "saturday_off_mode": mode,
                 "saturday_off_dates": sorted(d.isoformat() for d in forced_saturday_offs),
                 "extra_holiday_dates": sorted(d.isoformat() for d in extra_holidays),
+                "payroll_periods": [
+                    {
+                        "period_month": p.period_month,
+                        "period_year": p.period_year,
+                        "employees_saved": p.employees_saved,
+                    }
+                    for p in payroll_periods
+                ],
             },
         )
 
@@ -821,6 +961,7 @@ def analyze_period_file(
         if dtype != "working"
     ]
 
+    first_payroll = payroll_periods[0] if payroll_periods else None
     return AttendancePeriodReport(
         period_start=period_start,
         period_end=period_end,
@@ -837,6 +978,14 @@ def analyze_period_file(
         saturday_off_mode=mode,
         saturday_off_dates=sorted(forced_saturday_offs),
         extra_holiday_dates=sorted(extra_holidays),
+        import_mode=mode_norm,  # type: ignore[arg-type]
+        persisted=persist,
+        payroll_saved=bool(payroll_periods),
+        payroll_period_month=first_payroll.period_month if first_payroll else period_start.month,
+        payroll_period_year=first_payroll.period_year if first_payroll else period_start.year,
+        payroll_employees_saved=sum(p.employees_saved for p in payroll_periods),
+        payroll_message=payroll_message,
+        payroll_periods=payroll_periods,
     )
 
 

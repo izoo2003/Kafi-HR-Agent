@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { Modal } from "../../components/ui/Modal";
 import { Spinner } from "../../components/ui/Spinner";
 import { Table } from "../../components/ui/Table";
 import {
@@ -16,6 +17,7 @@ import {
 import { attendanceImportTemplateCsv } from "../../api/attendance";
 import { ApiError } from "../../api/client";
 import type {
+  AttendanceImportMode,
   AttendancePeriodReport,
   PeriodEmployeeReport,
   SaturdayOffMode,
@@ -35,6 +37,18 @@ function isSaturdayIso(iso: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).getDay() === 6;
+}
+
+function monthLabel(iso: string | null | undefined): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "this month";
+  const [y, m] = iso.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en", { month: "long", year: "numeric" });
+}
+
+function monthYearFromReport(report: AttendancePeriodReport): { month: number; year: number } {
+  const month = report.payrollPeriodMonth ?? Number(report.periodStart.slice(5, 7));
+  const year = report.payrollPeriodYear ?? Number(report.periodStart.slice(0, 4));
+  return { month, year };
 }
 
 function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
@@ -148,11 +162,13 @@ function EmployeeDetail({ emp }: { emp: PeriodEmployeeReport }) {
 export function AttendancePeriodReportPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const lastFileRef = useRef<File | null>(null);
+  const lastModeRef = useRef<AttendanceImportMode>("testing");
   const analyze = useAttendancePeriodReport();
   const addEmployees = useCreateEmployeesFromAttendanceExcel();
   const [report, setReport] = useState<AttendancePeriodReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [reportView, setReportView] = useState<"summary" | "monthly">("summary");
   const [saturdayOffMode, setSaturdayOffMode] = useState<SaturdayOffMode>("second_saturday");
@@ -175,7 +191,7 @@ export function AttendancePeriodReportPage() {
     }));
   }, [report]);
 
-  async function runAnalyze(file: File) {
+  async function runAnalyze(file: File, importMode: AttendanceImportMode) {
     if (saturdayOffMode === "date") {
       if (!saturdayOffDate) {
         setError("Pick the Saturday off date on the calendar, or choose Recommended.");
@@ -191,12 +207,14 @@ export function AttendancePeriodReportPage() {
     setInfo(null);
     setReport(null);
     setExpanded(null);
+    lastModeRef.current = importMode;
     try {
       const res = await analyze.mutateAsync({
         file,
         saturdayOffMode,
         saturdayOffDate: saturdayOffMode === "date" ? saturdayOffDate : null,
         extraHolidayDates: holidayDates,
+        importMode,
       });
       setReport(res);
       const next: Record<string, boolean> = {};
@@ -205,24 +223,55 @@ export function AttendancePeriodReportPage() {
       }
       setSelected(next);
       const notes: string[] = [];
+      const fileMonth = monthLabel(res.periodStart);
+      if (importMode === "testing") {
+        notes.push(
+          `Testing only — ${fileMonth} was analyzed and nothing was saved (attendance or payroll).`,
+        );
+      } else if (res.payrollSaved) {
+        const people = res.payrollEmployeesSaved ?? 0;
+        notes.push(
+          `Professional save — attendance and calculated salary for ${fileMonth} are stored (${people} employee${people === 1 ? "" : "s"}).`,
+        );
+      } else if (res.persisted && (res.importedRows ?? 0) > 0) {
+        notes.push(`Professional save — attendance for ${fileMonth} was stored.`);
+      } else {
+        notes.push(
+          `Professional upload for ${fileMonth} — no matched employees were saved. Add unmatched people, then re-upload professionally.`,
+        );
+      }
+      if (res.payrollMessage) {
+        notes.push(res.payrollMessage);
+      }
       const offs = res.saturdayOffDates ?? [];
       if (offs.length > 0) {
         notes.push(`Saturday off treated as holiday (not absent): ${offs.join(", ")}.`);
       }
       const extras = res.extraHolidayDates ?? holidayDates;
       if (extras.length > 0) {
-        notes.push(`Extra holidays (not absent): ${extras.join(", ")}.`);
+        notes.push(
+          importMode === "professional"
+            ? `Extra holidays saved for this month (not absent): ${extras.join(", ")}.`
+            : `Extra holidays used for this analysis only (not saved): ${extras.join(", ")}.`,
+        );
       }
-      setInfo(notes.length ? notes.join(" ") : null);
+      setInfo(notes.join(" "));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed");
     }
   }
 
-  async function onUpload(files: FileList | null) {
+  function onUpload(files: FileList | null) {
     if (!files?.[0]) return;
     lastFileRef.current = files[0];
-    await runAnalyze(files[0]);
+    setPendingFile(files[0]);
+  }
+
+  async function onChooseMode(importMode: AttendanceImportMode) {
+    const file = pendingFile ?? lastFileRef.current;
+    setPendingFile(null);
+    if (!file) return;
+    await runAnalyze(file, importMode);
   }
 
   async function onAddEmployees() {
@@ -233,11 +282,15 @@ export function AttendancePeriodReportPage() {
       const res = await addEmployees.mutateAsync(selectedPeople);
       const skipNote = res.skipped.length ? ` Skipped: ${res.skipped.join("; ")}` : "";
       setInfo(
-        `Added ${res.created} employee(s) with Excel IDs as employee codes.${skipNote} Re-upload the same file to save their attendance.`,
+        `Added ${res.created} employee(s) with Excel IDs as employee codes.${skipNote} ${
+          lastModeRef.current === "professional"
+            ? "Re-uploading the same file professionally to save their attendance and salary."
+            : "Re-uploading in testing mode to show their analysis. Choose Professional when you want to save."
+        }`,
       );
       const file = lastFileRef.current;
       if (file && res.created > 0) {
-        await runAnalyze(file);
+        await runAnalyze(file, lastModeRef.current);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add employees");
@@ -278,10 +331,14 @@ export function AttendancePeriodReportPage() {
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
             Upload the WebHR attendance export (
             <strong>Employee ID</strong>, <strong>First Name</strong>, <strong>Date</strong>,{" "}
-            <strong>First Punch</strong>). Late and half-day count as <strong>present</strong>. Sundays
-            are official off. Tell us which <strong>Saturday is off</strong> below so that day is a
-            holiday, not absent. Use <strong>Add more holidays</strong> for gazetted or extra company
-            days. Anyone who punched that day gets +1 OT. 3 lates = 1 extra absent day.
+            <strong>First Punch</strong>). After you pick a file, choose{" "}
+            <strong>testing</strong> (analyze only — nothing is saved) or{" "}
+            <strong>professional</strong> (save that file&apos;s month of attendance and the
+            calculated salary in Payroll). Late and half-day count as <strong>present</strong>.
+            Sundays are official off. Tell us which <strong>Saturday is off</strong> below so that
+            day is a holiday, not absent. Use <strong>Add more holidays</strong> for gazetted or
+            extra company days. Anyone who punched that day gets +1 OT. 3 lates = 1 extra absent
+            day.
           </p>
 
           <fieldset style={{ border: 0, padding: 0, margin: "0 0 var(--space-4)" }}>
@@ -392,7 +449,7 @@ export function AttendancePeriodReportPage() {
               }}
             >
               Enter extra holiday dates (for example Independence Day). Those days are not counted as
-              absent.
+              absent. They are saved on the company holiday list only when you upload professionally.
             </p>
             <div style={radioStyle}>
               {extraHolidays.map((value, index) => (
@@ -451,7 +508,7 @@ export function AttendancePeriodReportPage() {
               disabled={analyze.isPending}
               onClick={() => fileRef.current?.click()}
             >
-              {analyze.isPending ? "Analyzing…" : "Upload & analyze"}
+              {analyze.isPending ? "Uploading…" : "Upload attendance file"}
             </Button>
             <Button
               type="button"
@@ -472,15 +529,94 @@ export function AttendancePeriodReportPage() {
         </Card>
 
         {error ? <p style={{ color: "var(--color-status-critical)", margin: 0 }}>{error}</p> : null}
-        {info ? <p style={{ color: "var(--color-status-info)", margin: 0 }}>{info}</p> : null}
+        {info ? (
+          <p
+            style={{
+              color:
+                report?.importMode === "professional"
+                  ? "var(--color-status-positive)"
+                  : "var(--color-status-info)",
+              margin: 0,
+            }}
+          >
+            {info}
+          </p>
+        ) : null}
         {analyze.isPending ? <Spinner label="Processing attendance file" /> : null}
+
+        {pendingFile ? (
+          <Modal
+            title="Is this professional or for testing?"
+            onClose={() => setPendingFile(null)}
+          >
+            <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
+              File: <strong>{pendingFile.name}</strong>. The month is taken from the dates inside
+              the Excel file, not today&apos;s date.
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gap: 4,
+                padding: "var(--space-3)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-surface-alt)",
+              }}
+            >
+              <strong>Testing purpose</strong>
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                Analyze the file and show present, late, absent, and estimated salary. Nothing is
+                saved to attendance or payroll.
+              </span>
+              <div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={analyze.isPending}
+                  onClick={() => void onChooseMode("testing")}
+                >
+                  Use for testing
+                </Button>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gap: 4,
+                padding: "var(--space-3)",
+                border: "1px solid var(--color-accent)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-accent-subtle)",
+              }}
+            >
+              <strong>Professional</strong>
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
+                Save attendance for the exact month in this file, then save the salary calculated
+                after absences, lates, and half-days into Payroll for that same month.
+              </span>
+              <div>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={analyze.isPending}
+                  onClick={() => void onChooseMode("professional")}
+                >
+                  Save professionally
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        ) : null}
 
         {report && unmatched.length > 0 ? (
           <Card status="warning">
-            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>New names in this file</h2>
+            <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>
+              Need to add them as employees
+            </h2>
             <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
-              These people are not in Employees yet. Add them to create a record with the Excel
-              Employee ID as their ID. You can fill salary and other details later.
+              These names are in the Excel file but are not in Employees yet. Attendance and salary
+              are not saved for them until you add them as employees (Excel ID becomes their employee
+              code). You can fill salary and other details later.
             </p>
             <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
               {unmatched.map((p) => {
@@ -529,15 +665,37 @@ export function AttendancePeriodReportPage() {
             <Card>
               <h2 style={{ marginTop: 0, fontSize: "var(--text-lg)" }}>Period summary</h2>
               <p style={{ margin: 0 }}>
+                File month: <span className="num">{monthLabel(report.periodStart)}</span>
+                {" · "}
                 <span className="num">{report.periodStart}</span> →{" "}
                 <span className="num">{report.periodEnd}</span>
+                {" · "}
+                {report.importMode === "professional"
+                  ? report.persisted
+                    ? `saved ${report.importedRows} attendance rows`
+                    : "professional upload (not persisted)"
+                  : "testing preview — not saved"}
                 {" · "}late after <span className="num">{report.lateAfter}</span>
                 {" · "}half day after <span className="num">{report.halfDayAfter}</span>
                 {" · "}
                 <span className="num">{report.latesPerOff}</span> lates = 1 absent
                 {" · "}month days <span className="num">{report.monthDays}</span>
-                {" · "}imported <span className="num">{report.importedRows}</span> rows
               </p>
+              {report.importMode === "professional" && report.payrollSaved ? (
+                <p style={{ margin: "var(--space-2) 0 0" }}>
+                  Calculated salary saved in Payroll for{" "}
+                  <span className="num">{monthLabel(report.periodStart)}</span>
+                  {report.payrollEmployeesSaved
+                    ? ` (${report.payrollEmployeesSaved} employees)`
+                    : ""}
+                  .{" "}
+                  <Link
+                    to={`/payroll/compute?month=${monthYearFromReport(report).month}&year=${monthYearFromReport(report).year}`}
+                  >
+                    Open salary sheet
+                  </Link>
+                </p>
+              ) : null}
               {(report.saturdayOffDates ?? []).length > 0 ? (
                 <p style={{ margin: "var(--space-2) 0 0" }}>
                   Saturday off (holiday, not absent):{" "}

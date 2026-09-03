@@ -146,7 +146,7 @@
 | POST | `/attendance` | Manually create/correct a record |
 | PATCH | `/attendance/{id}` | Edit a record (requires reason, audit-logged) |
 | POST | `/attendance/import` | Bulk import from biometric device export (Excel/CSV; `name` or `employee_code` + date + check_in) |
-| POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. Form: `saturday_off_mode` (`second_saturday` Recommended / `date`) + optional `saturday_off_date`; optional `extra_holiday_dates` (comma-separated YYYY-MM-DD extra holidays, not counted as absent). |
+| POST | `/attendance/period-report` | Upload Excel/CSV → office policy report. File must be a single calendar month. Form: `import_mode` (`testing` = analyze only, no save; `professional` = overwrite attendance and the calculated salary sheet for that month); `saturday_off_mode` (`second_saturday` Recommended / `date`) + optional `saturday_off_date`; optional `extra_holiday_dates` (comma-separated YYYY-MM-DD extra holidays, not counted as absent; persisted only in professional mode). |
 | POST | `/attendance/sync-biometric` | Pull latest data from biometric device integration (stubbed until device access confirmed) |
 | GET | `/attendance/summary` | Aggregated summary (present/absent/late days) per employee for a period, plus attendance-based net salary (`late_absents` = lates ÷ 3, deduction from absents + late-offs + half days) |
 | GET | `/leave-requests` | List leave requests (filter by employee, status); includes `reason` and employee name; self-service sees own only |

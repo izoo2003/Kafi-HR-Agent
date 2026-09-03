@@ -51,21 +51,27 @@ export function useAttendancePeriodReport() {
       saturdayOffMode,
       saturdayOffDate,
       extraHolidayDates,
+      importMode,
     }: {
       file: File;
       saturdayOffMode?: "second_saturday" | "date";
       saturdayOffDate?: string | null;
       extraHolidayDates?: string[];
+      importMode?: "testing" | "professional";
     }) =>
       api.uploadAttendancePeriodReport(file, {
         saturdayOffMode,
         saturdayOffDate,
         extraHolidayDates,
+        importMode,
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (!data.persisted) return;
       qc.invalidateQueries({ queryKey: ["attendance"] });
       qc.invalidateQueries({ queryKey: ["attendance-summary"] });
       qc.invalidateQueries({ queryKey: ["attendance-monthly-grid"] });
+      qc.invalidateQueries({ queryKey: ["payroll-compute"] });
+      qc.invalidateQueries({ queryKey: ["payroll-salaries"] });
     },
   });
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -15,9 +15,16 @@ import type { PayrollAiSummary } from "../../types/payroll";
 export function SalaryComputePage() {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission("payroll", "write");
+  const [searchParams] = useSearchParams();
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const paramMonth = Number(searchParams.get("month"));
+  const paramYear = Number(searchParams.get("year"));
+  const [month, setMonth] = useState(
+    paramMonth >= 1 && paramMonth <= 12 ? paramMonth : now.getMonth() + 1,
+  );
+  const [year, setYear] = useState(
+    paramYear >= 2000 && paramYear <= 2100 ? paramYear : now.getFullYear(),
+  );
   const taxYears = useTaxYears();
   const [taxYearId, setTaxYearId] = useState<number | "">("");
   const [drafts, setDrafts] = useState<Record<number, SheetDraft>>({});
@@ -26,6 +33,11 @@ export function SalaryComputePage() {
   const [aiSummary, setAiSummary] = useState<PayrollAiSummary | null>(null);
   const saveSheet = useSavePayrollSheet();
   const aiSummaryMutation = usePayrollAiSummary();
+
+  useEffect(() => {
+    if (paramMonth >= 1 && paramMonth <= 12) setMonth(paramMonth);
+    if (paramYear >= 2000 && paramYear <= 2100) setYear(paramYear);
+  }, [paramMonth, paramYear]);
 
   const activeTaxId = useMemo(() => {
     if (taxYearId !== "") return taxYearId;

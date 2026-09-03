@@ -67,11 +67,13 @@ export async function uploadAttendancePeriodReport(
     saturdayOffMode?: "second_saturday" | "date";
     saturdayOffDate?: string | null;
     extraHolidayDates?: string[];
+    importMode?: "testing" | "professional";
   } = {},
 ): Promise<AttendancePeriodReport> {
   const form = new FormData();
   form.append("file", file);
   form.append("saturday_off_mode", options.saturdayOffMode ?? "second_saturday");
+  form.append("import_mode", options.importMode ?? "testing");
   if (options.saturdayOffDate) {
     form.append("saturday_off_date", options.saturdayOffDate);
   }

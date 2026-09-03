@@ -179,6 +179,14 @@ export interface PeriodEmployeeReport {
   dailyEntries: PeriodDayEntry[];
 }
 
+export type AttendanceImportMode = "testing" | "professional";
+
+export interface PayrollPeriodSaved {
+  periodMonth: number;
+  periodYear: number;
+  employeesSaved: number;
+}
+
 export interface AttendancePeriodReport {
   periodStart: string;
   periodEnd: string;
@@ -195,6 +203,14 @@ export interface AttendancePeriodReport {
   saturdayOffMode?: string;
   saturdayOffDates?: string[];
   extraHolidayDates?: string[];
+  importMode?: AttendanceImportMode;
+  persisted?: boolean;
+  payrollSaved?: boolean;
+  payrollPeriodMonth?: number | null;
+  payrollPeriodYear?: number | null;
+  payrollEmployeesSaved?: number;
+  payrollMessage?: string | null;
+  payrollPeriods?: PayrollPeriodSaved[];
 }
 
 export type SaturdayOffMode = "second_saturday" | "date";
@@ -203,4 +219,5 @@ export interface AttendancePeriodReportOptions {
   saturdayOffMode: SaturdayOffMode;
   saturdayOffDate?: string | null;
   extraHolidayDates?: string[];
+  importMode?: AttendanceImportMode;
 }

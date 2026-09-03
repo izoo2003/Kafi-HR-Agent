@@ -124,8 +124,13 @@ async def attendance_period_report(
     saturday_off_mode: Annotated[str, Form()] = "second_saturday",
     saturday_off_date: Annotated[str | None, Form()] = None,
     extra_holiday_dates: Annotated[str | None, Form()] = None,
+    import_mode: Annotated[str, Form()] = "testing",
 ) -> AttendancePeriodReport:
     """Upload biometric Excel/CSV and return full office policy report.
+
+    import_mode:
+    - testing: analyze and return details only — nothing is saved
+    - professional: save attendance for the file's month and the calculated salary sheet
 
     saturday_off_mode:
     - second_saturday (Recommended): 2nd Saturday of each month in the file period
@@ -153,15 +158,19 @@ async def attendance_period_report(
                 extra.append(date.fromisoformat(token[:10]))
             except ValueError as exc:
                 raise ValidationFailed(f"Invalid holiday date: {token}") from exc
+    mode = (import_mode or "testing").strip().lower()
+    if mode not in ("testing", "professional"):
+        raise ValidationFailed("import_mode must be testing or professional")
     return analyze_period_file(
         db,
         auth,
         content,
         name,
-        persist=True,
+        persist=mode == "professional",
         saturday_off_mode=saturday_off_mode,
         saturday_off_date=parsed_date,
         extra_holiday_dates=extra,
+        import_mode=mode,  # type: ignore[arg-type]
     )
 
 

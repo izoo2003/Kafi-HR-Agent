@@ -122,6 +122,7 @@ This exact shape is what `FEATURE_PAYROLL.md`'s payroll generation step consumes
 ## 8. Frontend Pages
 
 - `AttendanceOverviewPage` — calendar/grid view, company or department-wide, day-by-day status color-coded via the status rail (`UI_DESIGN_SYSTEM.md` §4), quick filters.
+- `AttendancePeriodReportPage` — WebHR Excel upload (one calendar month per file). After choosing a file, HR must pick **testing** (analyze only; nothing is written) or **professional** (overwrite attendance for that month, then overwrite the calculated salary sheet for the same month in Payroll). Names not yet in Employees are listed with a prompt to add them. Extra holiday dates are merged into `attendance.holidays` only in professional mode.
 - `AttendanceRecordsPage` — tabular record list with manual add/edit, import button (with the error-row feedback from §5 surfaced inline), sync-biometric button (shows the "not yet connected" state honestly rather than pretending to sync). Monthly summary counts late/half-day as **present**; Absents are no-shows only; every 3 lates = 1 **late absent** (separate column).
 - `LeaveRequestsPage` — list + approve/reject actions, filtered by department for department heads (row-level filtering per `AUTH_AND_RBAC.md` §6 for the `department_head` role). Admin list shows leave type **and** the employee's reason/notes (why they are taking leave), not type alone.
 
@@ -129,6 +130,6 @@ This exact shape is what `FEATURE_PAYROLL.md`'s payroll generation step consumes
 
 ## 9. Edge Cases & Rules
 
-- Public holidays: stored as `system_config` key `attendance.holidays` (JSON list of dates). HR can add more holiday dates when uploading the attendance Excel (`Add more holidays`); those dates are merged into this list and are not counted as absent.
+- Public holidays: stored as `system_config` key `attendance.holidays` (JSON list of dates). HR can add more holiday dates when uploading the attendance Excel (`Add more holidays`); those dates are merged into this list **only on a professional upload** and are not counted as absent. A testing upload uses the extra dates for analysis only.
 - Timezone: all `check_in`/`check_out` stored in UTC, converted to company-local time only at the presentation layer for shift-time comparisons — document the company's operating timezone in `system_config` so the comparison logic has a fixed reference rather than assuming server-local time.
 - An employee with `status = "terminated"` should not appear in default attendance views/imports going forward, but historical records remain for payroll/reporting of their final pay period.
