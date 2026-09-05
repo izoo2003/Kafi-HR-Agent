@@ -27,7 +27,8 @@ from app.schemas.employees import (
     LetterContentRead,
     LetterContentUpdate,
     LetterSignatureVerifyResult,
-)from app.services import audit_service, employee_service
+)
+from app.services import audit_service, employee_service
 
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,12 @@ import type { PayrollComputeResult, PayrollComputeRow, TaxSlabInput } from "../t
 export const SALARY_PAYMENT_MODES = ["IBFT", "Cheque", "Cash"] as const;
 export type SalaryPaymentMode = (typeof SALARY_PAYMENT_MODES)[number];
 
+export type PaymentModeCounts = Record<SalaryPaymentMode, number>;
+
+export function emptyPaymentModeCounts(): PaymentModeCounts {
+  return { IBFT: 0, Cheque: 0, Cash: 0 };
+}
+
 /** Map legacy/free-text values onto IBFT | Cheque | Cash. */
 export function normalizePaymentMode(raw: string | null | undefined): SalaryPaymentMode {
   const v = (raw || "").trim().toLowerCase();
@@ -77,14 +83,19 @@ export function annualTax(income: number, slabs: TaxSlabInput[]): number {
   return round2(match.fixedAmount + (excess * match.ratePercent) / 100);
 }
 
-export function monthlyTaxFromNet(netBeforeTax: number, slabs: TaxSlabInput[]): number {
-  const taxable = Math.max(0, netBeforeTax);
+export function monthlyTaxFromBase(baseSalary: number, slabs: TaxSlabInput[]): number {
+  const taxable = Math.max(0, baseSalary);
   return round2(annualTax(taxable * 12, slabs) / 12);
 }
 
-/** @deprecated Use monthlyTaxFromNet — tax slabs apply to net, not gross. */
+/** @deprecated Use monthlyTaxFromBase — tax slabs apply to base salary. */
+export function monthlyTaxFromNet(netBeforeTax: number, slabs: TaxSlabInput[]): number {
+  return monthlyTaxFromBase(netBeforeTax, slabs);
+}
+
+/** @deprecated Use monthlyTaxFromBase — tax slabs apply to base salary. */
 export function monthlyTaxFromGross(gross: number, slabs: TaxSlabInput[]): number {
-  return monthlyTaxFromNet(gross, slabs);
+  return monthlyTaxFromBase(gross, slabs);
 }
 
 export function computeLiveRow(
@@ -112,7 +123,7 @@ export function computeLiveRow(
   const halfDed = round2(daysHalfDay * perDay * 0.5);
   const gross = round2(perDay * daysPresent + allowance + bonus);
   const netBeforeTax = Math.max(0, round2(gross - lateDed - loan - halfDed - advance));
-  const taxComputed = monthlyTaxFromNet(netBeforeTax, opts.slabs);
+  const taxComputed = monthlyTaxFromBase(base, opts.slabs);
   const tax = d?.taxManual ? n(d.monthlyTax) : taxComputed;
   const net = Math.max(0, round2(netBeforeTax - tax));
   return {
@@ -206,17 +217,8 @@ export function applyAttendancePatch(
   // Manual Present edits stand alone — do not rewrite recorded Absent or Leave.
   // Late Coming edits stand alone — Late Absents / Late Deduction derive from the count.
 
-  const calcInputs = [
-    "baseSalary",
-    "daysPresent",
-    "daysAbsent",
-    "leaveUsed",
-    "daysLate",
-    "daysHalfDay",
-    "allowanceAmount",
-    "bonusAmount",
-  ];
-  if (calcInputs.some((k) => k in patch || k in next)) {
+  // Tax is computed from base salary only — attendance / extras do not change it.
+  if ("baseSalary" in patch) {
     next.taxManual = false;
   }
   return next;

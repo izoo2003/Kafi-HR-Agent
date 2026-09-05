@@ -11,11 +11,11 @@ import {
   loadSalarySheetDraft,
   saveSalarySheetDraft,
 } from "../../lib/salarySheetDraft";
-import { usePayrollCompute, usePayrollAiSummary, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
+import { usePayrollCompute, useSavePayrollSheet, useTaxYears } from "../../hooks/usePayroll";
 import { useAuth } from "../../hooks/useAuth";
 import { downloadSalarySheetExcel } from "../../api/payroll";
 import { ApiError } from "../../api/client";
-import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
+import type { PayrollComputeResult } from "../../types/payroll";
 
 function periodKey(month: number, year: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
@@ -40,14 +40,12 @@ export function SalaryComputePage() {
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [aiSummary, setAiSummary] = useState<PayrollAiSummary | null>(null);
   /** Period key currently hydrated into drafts — avoids wiping edits on background refetch. */
   const [hydratedPeriod, setHydratedPeriod] = useState<string | null>(null);
   const [hasUnsavedLocal, setHasUnsavedLocal] = useState(false);
   const skipPersistRef = useRef(false);
   const dirtyRef = useRef(false);
   const saveSheet = useSavePayrollSheet();
-  const aiSummaryMutation = usePayrollAiSummary();
 
   useEffect(() => {
     if (paramMonth >= 1 && paramMonth <= 12) setMonth(paramMonth);
@@ -124,7 +122,6 @@ export function SalaryComputePage() {
   // Reset hydration marker when switching month/year so the next compute result reloads.
   useEffect(() => {
     setHydratedPeriod(null);
-    setAiSummary(null);
     setHasUnsavedLocal(false);
     dirtyRef.current = false;
   }, [month, year]);
@@ -291,21 +288,6 @@ export function SalaryComputePage() {
     }
   }
 
-  async function generateAiSummary() {
-    if (activeTaxId === "") return;
-    setError(null);
-    try {
-      const summary = await aiSummaryMutation.mutateAsync({
-        periodMonth: month,
-        periodYear: year,
-        taxYearId: Number(activeTaxId),
-      });
-      setAiSummary(summary);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "AI summary failed");
-    }
-  }
-
   return (
     <>
       <PageHeader
@@ -326,13 +308,6 @@ export function SalaryComputePage() {
             <Button variant="secondary" disabled={!compute.data} onClick={downloadExcel}>
               Download Excel
             </Button>
-            <Button
-              variant="secondary"
-              disabled={!compute.data || aiSummaryMutation.isPending || activeTaxId === ""}
-              onClick={() => void generateAiSummary()}
-            >
-              {aiSummaryMutation.isPending ? "Generating summary…" : "Generate AI summary"}
-            </Button>
             <Link to="/payroll/tax-slabs">
               <Button variant="secondary">Tax slabs</Button>
             </Link>
@@ -347,8 +322,8 @@ export function SalaryComputePage() {
           <p style={{ marginTop: 0, color: "var(--color-text-secondary)", fontSize: "var(--text-sm)" }}>
             Edit this sheet like Excel. Changing base salary, leave, absents, lates, or half-days
             immediately recalculates per-day rate, late absents (3 lates = 1 late absent day),
-            half-day deduction, tax, and net payable. Tax slabs apply to net (gross minus late,
-            half-day, loan, and advance) — not gross. Absent (A) is no-shows only — late absents
+            half-day deduction, and net payable. Tax slabs apply to base salary only — not
+            gross and not net payable. Absent (A) is no-shows only — late absents
             are a separate column and never add into A. Leave forgives pay only — +1 Leave raises
             Present / net but does not change Absent. Unsaved edits are remembered in this browser
             if you leave or the page refreshes — Save to store them on the server. Use the trash
@@ -434,7 +409,6 @@ export function SalaryComputePage() {
             canEdit={canEdit}
             onDraftChange={patchDraft}
             onDeleteRow={canEdit ? deleteRow : undefined}
-            aiSummary={aiSummary ?? displayResult.aiSummary}
           />
         ) : null}
       </div>

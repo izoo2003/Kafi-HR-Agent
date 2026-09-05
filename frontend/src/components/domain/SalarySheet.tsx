@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Maximize2, Minimize2, Trash2 } from "lucide-react";
-import type { PayrollAiSummary, PayrollComputeResult } from "../../types/payroll";
+import type { PayrollComputeResult } from "../../types/payroll";
 import {
   applyAttendancePatch,
   computeLiveRow,
+  emptyPaymentModeCounts,
   normalizePaymentMode,
   SALARY_PAYMENT_MODES,
   slabsFromResult,
+  type PaymentModeCounts,
   type SheetDraft,
 } from "../../lib/salarySheet";
 import "./SalarySheet.css";
@@ -24,13 +26,24 @@ function monthTitle(month: number, year: number): string {
   return `${label}-${year}`;
 }
 
+function PaymentModeTotals({ counts }: { counts: PaymentModeCounts }) {
+  return (
+    <div className="salary-sheet__mode-totals" aria-live="polite">
+      {SALARY_PAYMENT_MODES.map((mode) => (
+        <span key={mode} className="salary-sheet__mode-total">
+          {mode} <span className="font-data">{counts[mode]}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 type Props = {
   result: PayrollComputeResult;
   drafts: Record<number, SheetDraft>;
   canEdit: boolean;
   onDraftChange: (employeeId: number, patch: Partial<SheetDraft>) => void;
   onDeleteRow?: (employeeId: number, fullName: string) => void;
-  aiSummary?: PayrollAiSummary | null;
 };
 
 function NumInput({
@@ -63,7 +76,6 @@ export function SalarySheet({
   canEdit,
   onDraftChange,
   onDeleteRow,
-  aiSummary,
 }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const monthDays = result.monthDays || 30;
@@ -72,7 +84,10 @@ export function SalarySheet({
   const rows = result.employees.map((e) =>
     computeLiveRow(e, drafts[e.employeeId], { monthDays, latesPerOff, slabs }),
   );
-  const summary = aiSummary ?? result.aiSummary ?? null;
+  const paymentModeCounts = rows.reduce((acc, r) => {
+    acc[normalizePaymentMode(r.paymentMode)] += 1;
+    return acc;
+  }, emptyPaymentModeCounts());
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -198,7 +213,10 @@ export function SalarySheet({
               <th className="salary-sheet__group">Advance</th>
               <th className="salary-sheet__group">Tax/Other</th>
               <th className="salary-sheet__group">Net Payable</th>
-              <th className="salary-sheet__group">Mode of Payment</th>
+              <th className="salary-sheet__group">
+                Mode of Payment
+                <PaymentModeTotals counts={paymentModeCounts} />
+              </th>
               <th className="salary-sheet__group">Remarks</th>
               <th className="salary-sheet__group">Actions</th>
             </tr>
@@ -454,7 +472,10 @@ export function SalarySheet({
               <td className="num">{money(totals.advance)}</td>
               <td className="num">{money(totals.tax)}</td>
               <td className="num salary-sheet__net">{money(totals.net)}</td>
-              <td colSpan={3} />
+              <td>
+                <PaymentModeTotals counts={paymentModeCounts} />
+              </td>
+              <td colSpan={2} />
             </tr>
             <tr className="salary-sheet__signoff">
               <td colSpan={8}>
@@ -467,26 +488,6 @@ export function SalarySheet({
                 <div className="salary-sheet__signoff-line">Approved By</div>
               </td>
             </tr>
-            {summary?.summaryText ? (
-              <tr className="salary-sheet__ai">
-                <td colSpan={23}>
-                  <h2 className="salary-sheet__ai-title">AI salary sheet summary</h2>
-                  <p className="salary-sheet__ai-meta">
-                    Payment modes — IBFT {summary.paymentModeCounts.IBFT ?? 0}, Cash{" "}
-                    {summary.paymentModeCounts.Cash ?? 0}, Cheque {summary.paymentModeCounts.Cheque ?? 0}
-                    {" · "}
-                    {summary.employeeCount} employees · net{" "}
-                    <span className="font-data">
-                      {Number(summary.totalNetPayable).toLocaleString("en-PK", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </p>
-                  <pre className="salary-sheet__ai-body">{summary.summaryText}</pre>
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
       </div>

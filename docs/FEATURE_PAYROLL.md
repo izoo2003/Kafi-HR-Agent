@@ -103,7 +103,7 @@ Per `AUTH_AND_RBAC.md`:
 ## 8. Frontend Pages
 
 - `PayrollRunListPage` — employee name, base salary, and net salary for the selected month; **Edit Salary Sheets** opens the Excel-format calculator.
-- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month. A **professional** attendance Excel import also writes this month's sheet (attendance-derived days and net) for the file's calendar month; `?month=&year=` opens that period. **Generate AI summary** writes the narrative onto the sheet itself; **Download Excel** exports the same format including that summary.
+- `SalaryComputePage` — salary calculation in the Kafi salary-sheet Excel layout (company header, attendance P/A, gross, late/loan/advance/tax, net payable). Editable extras persist per month. A **professional** attendance Excel import also writes this month's sheet (attendance-derived days and net) for the file's calendar month; `?month=&year=` opens that period. The Mode of Payment column shows live IBFT / Cheque / Cash counts that update as rows are edited or removed. **Download Excel** exports the same format.
 - `PayrollRunDetailPage` — all payslips in the run (table, net pay in `--font-data`), Generate/Submit/Approve/Mark Paid actions gated by permission, bulk export.
 - `PayslipDetailPage` — full breakdown matching the PDF layout, edit capability while still in draft/pending, download PDF button.
 - `SalaryAdvancesPage` — request/approve advances, recovery progress bar (reuse the KPI-style progress visual from `UI_DESIGN_SYSTEM.md`).
@@ -115,6 +115,7 @@ per_day = base_salary / 30
 present + absent = 30  (editing one updates the other)
 late_off_days = floor(lates / 3)
 gross = per_day × present_days + allowance + (OT days × per_day)
+monthly_tax = annual_tax(base_salary × 12) ÷ 12   (slabs apply to base salary, not gross or net)
 net_payable = gross − (late_off_days × per_day) − loan − (half_days × per_day × 0.5) − advance − monthly_tax
 ```
 
@@ -126,4 +127,4 @@ net_payable = gross − (late_off_days × per_day) − loan − (half_days × pe
 - Employee exited mid-period (`date_exited` set): final payroll run for their last partial period should still generate correctly using the same proration logic, then the employee is excluded from all subsequent runs.
 - Re-generating a draft run overwrites previously generated (but not yet approved) payslips for that run — this is intentional (drafts are meant to be regenerated as attendance corrections come in) but must not touch advance `amount_recovered` until approval (see §5) to avoid double-counting on repeated regeneration.
 
-Salary-sheet AI summary (`POST /payroll/compute/ai-summary`) is persisted per month on `system_config` and rendered on the editable salary sheet. Excel download (`GET /payroll/compute/export`) includes that same narrative on the Salary Sheet tab and on an **AI Summary** worksheet.
+Excel download (`GET /payroll/compute/export`) includes a Payment Summary with IBFT / Cheque / Cash counts. The editable salary sheet shows those same counts live under Mode of Payment.
