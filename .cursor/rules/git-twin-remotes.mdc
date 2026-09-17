@@ -1,0 +1,38 @@
+---
+description: Twin GitHub remotes — always push to both izoo2003 and kafi-group repos
+alwaysApply: true
+---
+
+# Twin remotes — dual push
+
+This workspace has **two** GitHub remotes for the same codebase. Treat them as twins: every published commit should land on **both** unless the user explicitly says otherwise.
+
+## Remotes
+
+| Remote | Repo | Who |
+|---|---|---|
+| `origin` | https://github.com/izoo2003/Kafi-HR-Agent | Personal (`izoo2003`) |
+| `kafi` | https://github.com/kafi-group/Kafi-Admin-HR-Agent | Org (`kafi-group`) |
+
+Verify with `git remote -v` if unsure. Do not invent other remote names.
+
+## When the user asks to push
+
+1. Commit only if they asked to commit (existing commit rules still apply).
+2. Push the same branch to **both** remotes, in order:
+   - `git push origin HEAD`
+   - `git push kafi HEAD`
+3. If one push fails (auth/403), report which remote failed and do not claim both succeeded.
+4. Do **not** force-push either remote unless the user explicitly requests it.
+
+## Deploy / URL notes (do not mix up)
+
+- Live frontend: `https://kafi-admin-hr-agent.vercel.app` (often wired to the **org** repo).
+- Live API: `https://kafi-hr-agent-production.up.railway.app`
+- Old host `kafi-hr-agent.up.railway.app` is stale — do not point the frontend at it.
+
+## Do not
+
+- Push only to `origin` and leave `kafi` behind (or the reverse) when the user asked for a normal publish/push.
+- Assume Vercel/Railway redeployed from the remote you did not push to.
+- Commit secrets (`.env`, credentials) to either repo.

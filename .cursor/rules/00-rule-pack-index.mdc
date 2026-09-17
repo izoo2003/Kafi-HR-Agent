@@ -8,6 +8,12 @@ alwaysApply: true
 ## Foundational / Backend / Frontend
 See existing `foundational-*`, `backend-*`, `frontend-*` rules.
 
+## Git / deploy
+
+| Rule | Purpose |
+|---|---|
+| `git-twin-remotes.mdc` | Dual push: `origin` → izoo2003/Kafi-HR-Agent, `kafi` → kafi-group/Kafi-Admin-HR-Agent |
+
 ## Features & Phases (active)
 
 | Rule | Source |
