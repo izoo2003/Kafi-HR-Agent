@@ -18,12 +18,15 @@ Verify with `git remote -v` if unsure. Do not invent other remote names.
 
 ## When the user asks to push
 
+Triggers include: "push", "push both", "push to both repos", "publish", "twin push".
+
 1. Commit only if they asked to commit (existing commit rules still apply).
-2. Push the same branch to **both** remotes, in order:
+2. Push the same branch to **both** remotes **from the terminal / Shell tool** (never ask the user to open GitHub Desktop or push manually unless auth truly blocks the CLI):
    - `git push origin HEAD`
    - `git push kafi HEAD`
-3. If one push fails (auth/403), report which remote failed and do not claim both succeeded.
+3. If one push fails (auth/403), report which remote failed and do not claim both succeeded. Tell them which GitHub account the CLI is using if the error names one (e.g. denied to `kafi-group` when pushing `origin`).
 4. Do **not** force-push either remote unless the user explicitly requests it.
+5. After both succeed, confirm both remote `main` SHAs match local `HEAD`.
 
 ## Deploy / URL notes (do not mix up)
 
