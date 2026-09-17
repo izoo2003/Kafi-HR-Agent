@@ -9,8 +9,8 @@ Specs live in `docs/` and are mirrored as Cursor rules under `.cursor/rules/`.
 | Layer | URL |
 |-------|-----|
 | Frontend (Vercel) | https://kafi-hr-agent.vercel.app |
-| API (Railway) | https://kafi-hr-agent.up.railway.app |
-| OpenAPI | https://kafi-hr-agent.up.railway.app/docs |
+| API (Railway) | https://kafi-hr-agent-production.up.railway.app |
+| OpenAPI | https://kafi-hr-agent-production.up.railway.app/docs |
 
 **Source**
 
@@ -83,7 +83,7 @@ Open http://localhost:5288. Seed admin is in `backend/.env` (default `admin@kafi
 ## Deploy notes
 
 - **Railway:** `backend/` — `DATABASE_URL` (Supabase Postgres), JWT, Gemini, IMAP/Google Form, `CORS_ORIGINS` / `CORS_ORIGIN_REGEX`.
-- **Vercel:** root directory `frontend` — production API base `https://kafi-hr-agent.up.railway.app/api/v1`.
+- **Vercel:** root directory `frontend` — production API base `https://kafi-hr-agent-production.up.railway.app/api/v1`.
 - Never commit `backend/.env`, `frontend/.env`, or `backend/credentials/*.json`.
 - Do not commit runtime files under `backend/data/` (IMAP UIDs, Google Form state).
 

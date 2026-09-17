@@ -2,7 +2,7 @@ import { keysToCamel, keysToSnake } from "../lib/case";
 import type { ApiErrorResponse } from "../types/common";
 
 const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
-const PRODUCTION_API = "https://kafi-hr-agent.up.railway.app/api/v1";
+const PRODUCTION_API = "https://kafi-hr-agent-production.up.railway.app/api/v1";
 
 /** Prefer absolute Railway URL in production builds; never call the Vercel origin for API. */
 function resolveApiBase(): string {

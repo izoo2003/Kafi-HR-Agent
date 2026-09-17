@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
     # Allow Vercel production + preview hosts unless overridden.
     cors_origin_regex: str = r"https://.*\.vercel\.app"
-    public_api_url: str = "https://kafi-hr-agent.up.railway.app"
+    public_api_url: str = "https://kafi-hr-agent-production.up.railway.app"
     app_version: str = "0.1.0"
     environment: str = "development"  # development | staging | production
 
