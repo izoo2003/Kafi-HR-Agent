@@ -24,7 +24,11 @@ class GoogleCredentialsNotConfigured(RuntimeError):
 
 
 def restore_google_credential_files(settings) -> None:
-    """Write env-provided JSON onto disk when the file is missing (Railway)."""
+    """Write env-provided JSON onto disk (Railway ephemeral FS).
+
+    Always overwrites when the env var is non-empty so a bad/empty file from a
+    previous boot cannot block a corrected GOOGLE_*_JSON value.
+    """
     pairs = (
         (settings.google_oauth_client_json, settings.google_oauth_credentials_file),
         (settings.google_oauth_token_json, settings.google_oauth_token_file),
@@ -35,9 +39,27 @@ def restore_google_credential_files(settings) -> None:
         raw = (contents or "").strip()
         if not raw:
             continue
-        path = settings.resolved_path(relative)
-        if path.exists():
+        # Strip accidental wrapping quotes from Railway/UI paste.
+        if (raw.startswith("'") and raw.endswith("'")) or (
+            raw.startswith('"') and raw.endswith('"') and not raw.startswith('{"')
+        ):
+            raw = raw[1:-1].strip()
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "Invalid JSON in env for %s (%s) — skipping restore. "
+                "Paste a single-line JSON object starting with {",
+                relative,
+                exc,
+            )
+            print(
+                f"[startup] ERROR: {relative} env JSON is invalid ({exc}). "
+                "Fix GOOGLE_FORM_TOKEN_JSON / GOOGLE_OAUTH_CLIENT_JSON on Railway.",
+                flush=True,
+            )
             continue
+        path = settings.resolved_path(relative)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(raw, encoding="utf-8")
         logger.info("Restored %s from environment", path.name)
@@ -74,8 +96,30 @@ def get_credentials(
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception as exc:
+                # Revoked / expired refresh tokens raise invalid_grant — fall through
+                # to interactive re-auth when requested; otherwise surface as not configured.
+                logger.warning("%s token refresh failed: %s", purpose, exc)
+                creds = None
+                if interactive and token_file.exists():
+                    try:
+                        token_file.unlink()
+                        print(
+                            f"[auth] Removed stale token at {token_file}; starting browser sign-in…",
+                            flush=True,
+                        )
+                    except OSError:
+                        pass
+                elif not interactive:
+                    raise GoogleCredentialsNotConfigured(
+                        f"{purpose} OAuth refresh failed ({exc}). "
+                        "Re-authorize locally: python -m app.ingestion.authorize_google_form "
+                        "then set GOOGLE_FORM_TOKEN_JSON on Railway."
+                    ) from exc
+
+        if not creds or not creds.valid:
             if not client_secrets_file.exists():
                 raise GoogleCredentialsNotConfigured(
                     f"Missing Google OAuth client secrets file at {client_secrets_file}. "
